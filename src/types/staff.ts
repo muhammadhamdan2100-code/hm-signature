@@ -1,6 +1,8 @@
 export type StaffRole = "Super Admin" | "Manager" | "Order Manager" | "Content Manager";
 
-export type StaffStatus = "Active" | "Inactive" | "Suspended";
+export type DBStaffRole = "super_admin" | "manager" | "order_manager" | "content_manager";
+
+export type StaffStatus = "Active" | "Inactive" | "Suspended" | "active" | "inactive" | "suspended";
 
 export const PRIMARY_ADMIN_EMAIL = "muhammadhamdan2100@gmail.com";
 
@@ -26,6 +28,57 @@ export function isPrimaryAdmin(user: { email: string } | string | null | undefin
   if (!user) return false;
   const email = typeof user === "string" ? user : user.email;
   return email?.toLowerCase().trim() === PRIMARY_ADMIN_EMAIL.toLowerCase();
+}
+
+export function toDisplayRole(role: string): StaffRole {
+  const normalized = role?.toLowerCase().trim();
+  switch (normalized) {
+    case "super_admin":
+    case "super admin":
+      return "Super Admin";
+    case "order_manager":
+    case "order manager":
+      return "Order Manager";
+    case "content_manager":
+    case "content manager":
+      return "Content Manager";
+    case "manager":
+    default:
+      return "Manager";
+  }
+}
+
+export function toDBRole(role: string): DBStaffRole {
+  const normalized = role?.toLowerCase().trim();
+  switch (normalized) {
+    case "super admin":
+    case "super_admin":
+      return "super_admin";
+    case "order manager":
+    case "order_manager":
+      return "order_manager";
+    case "content manager":
+    case "content_manager":
+      return "content_manager";
+    case "manager":
+    default:
+      return "manager";
+  }
+}
+
+export function getDashboardName(role: string): string {
+  const displayRole = toDisplayRole(role);
+  switch (displayRole) {
+    case "Super Admin":
+      return "Full Admin Dashboard";
+    case "Order Manager":
+      return "Order Management Dashboard";
+    case "Content Manager":
+      return "Content Management Dashboard";
+    case "Manager":
+    default:
+      return "Manager Dashboard";
+  }
 }
 
 // Role Permission Configuration

@@ -40,7 +40,6 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), (req,
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       console.log("✅ Stripe Checkout Session Succeeded:", session.id, "Total:", session.amount_total);
-      // Trigger order payment status update & inventory adjustment
       break;
     }
     case "payment_intent.succeeded": {
@@ -72,7 +71,6 @@ app.post("/api/create-checkout-session", async (req, res) => {
       return res.status(400).json({ error: "Cart is empty." });
     }
 
-    // Server-side price calculation (never trust client prices)
     const line_items = items.map((item: any) => ({
       price_data: {
         currency: "pkr",
@@ -80,7 +78,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
           name: item.name,
           images: item.image ? [item.image] : [],
         },
-        unit_amount: Math.round(Number(item.price) * 100), // convert to cents / smallest unit
+        unit_amount: Math.round(Number(item.price) * 100),
       },
       quantity: item.quantity,
     }));
@@ -117,6 +115,56 @@ app.post("/api/send-email", async (req, res) => {
     res.json({ success: true, message: `Email dispatched successfully to ${to}` });
   } catch (error: any) {
     console.error("Email Error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. SECURE SERVER-SIDE STAFF CREATION ENDPOINT (Never exposes service_role key to client)
+app.post("/api/admin/create-staff", async (req, res) => {
+  try {
+    const { email, password, fullName, role } = req.body;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    if (!serviceRoleKey || !supabaseUrl) {
+      return res.status(400).json({ error: "Server SUPABASE_SERVICE_ROLE_KEY is not configured." });
+    }
+
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: password || "Password123!",
+      email_confirm: true,
+      user_metadata: { full_name: fullName, role },
+    });
+
+    if (userError || !userData.user) {
+      return res.status(400).json({ error: userError?.message || "User creation failed" });
+    }
+
+    // Connect auth.users.id to public.profiles.id
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .upsert({
+        id: userData.user.id,
+        email,
+        full_name: fullName,
+        role,
+        status: "active",
+        created_at: new Date().toISOString(),
+      });
+
+    if (profileError) {
+      console.error("Profile Upsert Error:", profileError.message);
+    }
+
+    res.json({ success: true, user: userData.user });
+  } catch (error: any) {
+    console.error("Server Staff Creation Error:", error.message);
     res.status(500).json({ error: error.message });
   }
 });

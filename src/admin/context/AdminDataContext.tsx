@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, type ReactNode } from "react";
 import { products as initialProductsData } from "../../data/products";
-import { type StaffMember, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
+import { type StaffMember, type StaffStatus, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
 import { INITIAL_STAFF_MEMBERS } from "../../services/staff";
+import { isSupabaseConfigured, dbService } from "../../lib/supabase";
 
 export type { StaffMember };
 export { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin };
@@ -1192,6 +1193,7 @@ interface AdminDataContextType {
 
   addStaffMember: (staff: Omit<StaffMember, "id" | "lastActive">) => void;
   updateStaffPermissions: (id: string, permissions: Record<string, boolean>) => void;
+  updateStaffStatus: (id: string, status: StaffStatus) => void;
   updateStaffMember: (id: string, updates: Partial<StaffMember>) => void;
   deleteStaffMember: (id: string) => void;
 
@@ -1572,6 +1574,24 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("success", "Staff permissions saved.");
   };
 
+  const updateStaffStatus = (id: string, status: StaffStatus) => {
+    const target = staffMembers.find((s) => s.id === id);
+    if (target && isPrimaryAdmin(target)) {
+      showToast("error", "The Primary Super Admin (Muhammad Hamdan) is protected and cannot be deactivated.");
+      return;
+    }
+
+    setStaffMembers((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, status } : s))
+    );
+
+    if (isSupabaseConfigured()) {
+      dbService.updateStaffProfileStatus(id, status.toLowerCase()).catch(() => {});
+    }
+
+    showToast("success", `Staff member ${target?.name || ""} status set to ${status}.`);
+  };
+
   const updateStaffMember = (id: string, updates: Partial<StaffMember>) => {
     setStaffMembers((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
     showToast("success", "Staff profile updated.");
@@ -1657,6 +1677,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         updateEmailTemplate,
         addStaffMember,
         updateStaffPermissions,
+        updateStaffStatus,
         updateStaffMember,
         deleteStaffMember,
         updateStoreSettings,

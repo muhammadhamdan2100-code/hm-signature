@@ -1,5 +1,6 @@
-import { type StaffMember, PRIMARY_ADMIN_EMAIL, ROLE_PERMISSIONS, isPrimaryAdmin } from "../types/staff";
-import { INITIAL_STAFF_MEMBERS } from "./staff";
+import { type StaffMember, PRIMARY_ADMIN_EMAIL, ROLE_PERMISSIONS, isPrimaryAdmin, toDisplayRole } from "../types/staff";
+import { INITIAL_STAFF_MEMBERS, getDefaultPermissionsForRole } from "./staff";
+import { supabase, isSupabaseConfigured, dbService } from "../lib/supabase";
 
 const MOCK_AUTH_STORAGE_KEY = "hm_signature_current_staff";
 const LOGGED_OUT_KEY = "hm_signature_logged_out";
@@ -19,7 +20,6 @@ function getAttemptRecord(email: string): AttemptRecord {
     if (raw) {
       const record: AttemptRecord = JSON.parse(raw);
       if (Date.now() > record.resetAt) {
-        // Expired lockout window, reset
         return { count: 0, resetAt: Date.now() + LOCKOUT_DURATION_MS };
       }
       return record;
@@ -53,7 +53,7 @@ export function getCurrentStaff(): StaffMember | null {
     if (stored) {
       return JSON.parse(stored);
     }
-    // Initial active session for primary admin before explicit logout
+    // Default initial active session for primary super admin
     return INITIAL_STAFF_MEMBERS[0];
   } catch (e) {
     console.error("Failed to parse stored staff auth", e);
@@ -73,7 +73,7 @@ export function setCurrentStaff(staff: StaffMember | null): void {
 
 export async function loginStaff(
   email: string,
-  _password?: string
+  password?: string
 ): Promise<{ success: boolean; staff?: StaffMember; error?: string }> {
   const trimmedEmail = email.toLowerCase().trim();
 
@@ -87,7 +87,69 @@ export async function loginStaff(
     };
   }
 
-  // Load staff records from initial list or local storage
+  // Supabase Auth Integration
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: password || "",
+      });
+
+      if (authError || !authData.user) {
+        recordFailedAttempt(trimmedEmail);
+        return { success: false, error: "Invalid email address or password." };
+      }
+
+      const profile = await dbService.getUserProfile(authData.user.id);
+      if (!profile) {
+        recordFailedAttempt(trimmedEmail);
+        return { success: false, error: "Staff profile record not found." };
+      }
+
+      // Check account status
+      const statusLower = (profile.status || "active").toLowerCase().trim();
+      if (statusLower === "inactive") {
+        await supabase.auth.signOut();
+        return { success: false, error: "Your staff account is currently inactive." };
+      }
+      if (statusLower === "suspended") {
+        await supabase.auth.signOut();
+        return { success: false, error: "Your staff account has been suspended." };
+      }
+      if (statusLower !== "active") {
+        await supabase.auth.signOut();
+        return { success: false, error: "Access denied. Account is not active." };
+      }
+
+      // Role authorization check
+      if (profile.role === "customer") {
+        await supabase.auth.signOut();
+        return { success: false, error: "Access denied. Customer accounts cannot access the staff portal." };
+      }
+
+      clearAttemptRecord(trimmedEmail);
+      const displayRole = toDisplayRole(profile.role);
+      const staffMember: StaffMember = {
+        id: authData.user.id,
+        name: profile.full_name || trimmedEmail.split("@")[0],
+        email: profile.email || trimmedEmail,
+        role: displayRole,
+        status: "Active",
+        lastActive: authData.user.last_sign_in_at ? new Date(authData.user.last_sign_in_at).toLocaleTimeString() : "Just now",
+        createdAt: profile.created_at ? profile.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
+        isPrimaryAdmin: isPrimaryAdmin(profile.email || trimmedEmail),
+        permissions: getDefaultPermissionsForRole(displayRole),
+      };
+
+      setCurrentStaff(staffMember);
+      return { success: true, staff: staffMember };
+    } catch (e: any) {
+      recordFailedAttempt(trimmedEmail);
+      return { success: false, error: e.message || "Authentication error." };
+    }
+  }
+
+  // Local Staff List Fallback (when running local preview without Supabase)
   let staffList = INITIAL_STAFF_MEMBERS;
   try {
     const localStaff = localStorage.getItem("hm_signature_staff_list");
@@ -98,10 +160,8 @@ export async function loginStaff(
     // fallback
   }
 
-  // Find staff member by email (server-side role resolution)
   const existingStaff = staffList.find((s) => s.email.toLowerCase() === trimmedEmail);
 
-  // Fallback for primary super admin email if not in list
   if (!existingStaff && trimmedEmail === PRIMARY_ADMIN_EMAIL.toLowerCase()) {
     const primaryStaff = INITIAL_STAFF_MEMBERS.find((s) => s.isPrimaryAdmin) || INITIAL_STAFF_MEMBERS[0];
     clearAttemptRecord(trimmedEmail);
@@ -109,18 +169,19 @@ export async function loginStaff(
     return { success: true, staff: primaryStaff };
   }
 
-  // Generic credential failure if email not in staff repository
   if (!existingStaff) {
     recordFailedAttempt(trimmedEmail);
     return { success: false, error: "Invalid email address or password." };
   }
 
-  // Account status check
-  if (existingStaff.status === "Inactive" || existingStaff.status === "Suspended") {
-    return { success: false, error: "This staff account has been deactivated. Access denied." };
+  const statusLower = (existingStaff.status || "Active").toLowerCase();
+  if (statusLower === "inactive") {
+    return { success: false, error: "Your staff account is currently inactive." };
+  }
+  if (statusLower === "suspended") {
+    return { success: false, error: "Your staff account has been suspended." };
   }
 
-  // Successful login
   clearAttemptRecord(trimmedEmail);
   const updated = { ...existingStaff, lastActive: "Just now" };
   setCurrentStaff(updated);
@@ -128,6 +189,9 @@ export async function loginStaff(
 }
 
 export function logoutStaff(): void {
+  if (isSupabaseConfigured()) {
+    supabase.auth.signOut().catch(() => {});
+  }
   setCurrentStaff(null);
 }
 
