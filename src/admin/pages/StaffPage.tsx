@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
-import { type StaffMember, type StaffRole, isPrimaryAdmin } from "../../types/staff";
+import { type StaffMember, type StaffRole, isPrimaryAdmin, toDisplayRole, getDashboardName } from "../../types/staff";
 import { getDefaultPermissionsForRole } from "../../services/staff";
 import { DataTable, type Column } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal, ConfirmDialog } from "../components/Modal";
-import { Plus, Trash2, KeyRound, Check, ShieldCheck, Users, UserCheck, ShieldAlert, Award } from "lucide-react";
+import { Plus, Trash2, KeyRound, ShieldCheck, Users, UserCheck, ShieldAlert, Award, Ban, CheckCircle2 } from "lucide-react";
 
 export const PERMISSION_KEYS = [
   { key: "products", label: "Products Management" },
@@ -27,6 +27,7 @@ export const StaffPage: React.FC = () => {
     staffMembers,
     addStaffMember,
     updateStaffPermissions,
+    updateStaffStatus,
     deleteStaffMember,
   } = useAdminData();
 
@@ -44,7 +45,7 @@ export const StaffPage: React.FC = () => {
 
   // Summary Metrics
   const totalStaffCount = staffMembers.length;
-  const activeStaffCount = staffMembers.filter((s) => s.status === "Active").length;
+  const activeStaffCount = staffMembers.filter((s) => s.status.toLowerCase() === "active").length;
   const superAdminCount = staffMembers.filter((s) => s.role === "Super Admin").length;
   const managerCount = staffMembers.filter((s) => s.role !== "Super Admin").length;
 
@@ -64,6 +65,12 @@ export const StaffPage: React.FC = () => {
     setEditingPermissionsStaff(null);
   };
 
+  const handleToggleStatus = (st: StaffMember) => {
+    if (isPrimaryAdmin(st)) return; // Primary admin protected
+    const nextStatus = st.status.toLowerCase() === "active" ? "Inactive" : "Active";
+    updateStaffStatus(st.id, nextStatus as any);
+  };
+
   const handleAddStaff = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email) return;
@@ -76,7 +83,7 @@ export const StaffPage: React.FC = () => {
       role,
       status: "Active",
       permissions: defaultPermissions,
-      lastActive: "Just added",
+      lastActive: "Never",
       createdAt: new Date().toISOString().split("T")[0],
       isPrimaryAdmin: isPrimaryAdmin(email),
     } as any);
@@ -125,7 +132,7 @@ export const StaffPage: React.FC = () => {
                 <h4 className="font-serif font-bold text-sm text-ivory">{st.name}</h4>
                 {isPrimary && (
                   <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-gold bg-gold/15 border border-gold/40 px-2 py-0.5 rounded uppercase tracking-wider">
-                    <ShieldCheck className="w-3 h-3" /> Primary Admin
+                    <ShieldCheck className="w-3 h-3" /> Protected Primary Admin
                   </span>
                 )}
               </div>
@@ -138,43 +145,73 @@ export const StaffPage: React.FC = () => {
     },
     {
       header: "Role Assignment",
+      accessor: (st) => {
+        const displayRole = toDisplayRole(st.role);
+        return (
+          <span
+            className={`font-mono text-xs font-semibold px-2.5 py-1 rounded border inline-block ${
+              displayRole === "Super Admin"
+                ? "bg-gold/10 text-gold border-gold/30"
+                : displayRole === "Manager"
+                ? "bg-amber-950/40 text-amber-300 border-amber-500/30"
+                : displayRole === "Order Manager"
+                ? "bg-sky-950/40 text-sky-300 border-sky-500/30"
+                : "bg-emerald-950/40 text-emerald-300 border-emerald-500/30"
+            }`}
+          >
+            {displayRole}
+          </span>
+        );
+      },
+      sortable: true,
+    },
+    {
+      header: "Login Access & Status",
+      accessor: (st) => {
+        const isActive = st.status.toLowerCase() === "active";
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center space-x-1.5">
+              <StatusBadge status={st.status} />
+              <span
+                className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                  isActive
+                    ? "bg-emerald-950/60 text-emerald-300 border border-emerald-500/30"
+                    : "bg-rose-950/60 text-rose-300 border border-rose-500/30"
+                }`}
+              >
+                {isActive ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+          </div>
+        );
+      },
+      sortable: true,
+    },
+    {
+      header: "Dashboard Access",
       accessor: (st) => (
-        <span
-          className={`font-mono text-xs font-semibold px-2.5 py-1 rounded border inline-block ${
-            st.role === "Super Admin"
-              ? "bg-gold/10 text-gold border-gold/30"
-              : st.role === "Manager"
-              ? "bg-amber-950/40 text-amber-300 border-amber-500/30"
-              : st.role === "Order Manager"
-              ? "bg-sky-950/40 text-sky-300 border-sky-500/30"
-              : "bg-emerald-950/40 text-emerald-300 border-emerald-500/30"
-          }`}
-        >
-          {st.role}
+        <span className="text-xs font-sans text-ivory font-medium block">
+          {getDashboardName(st.role)}
         </span>
       ),
-      sortable: true,
     },
     {
-      header: "Status",
-      accessor: (st) => <StatusBadge status={st.status} />,
-      sortable: true,
-    },
-    {
-      header: "Last Activity",
-      accessor: (st) => <span className="text-xs text-muted font-mono">{st.lastActive}</span>,
+      header: "Last Login",
+      accessor: (st) => <span className="text-xs text-muted font-mono">{st.lastActive || "Never"}</span>,
       sortable: true,
     },
     {
       header: "Actions",
       accessor: (st) => {
         const isPrimary = isPrimaryAdmin(st);
+        const isActive = st.status.toLowerCase() === "active";
 
         return (
           <div className="flex items-center justify-end space-x-2">
             <button
               onClick={() => handleOpenPermissions(st)}
-              className="px-3 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center space-x-1.5"
+              className="px-2.5 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center space-x-1"
               title="Edit Permissions Matrix"
             >
               <KeyRound className="w-3.5 h-3.5" />
@@ -187,14 +224,28 @@ export const StaffPage: React.FC = () => {
                 <span>Protected</span>
               </span>
             ) : (
-              <button
-                onClick={() => setTargetDeleteStaff(st)}
-                className="px-2.5 py-1.5 rounded bg-rose-950/30 border border-rose-500/30 hover:border-rose-400 text-rose-300 hover:text-rose-100 text-xs font-sans transition-colors flex items-center space-x-1"
-                title="Remove Staff Access"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Remove</span>
-              </button>
+              <>
+                <button
+                  onClick={() => handleToggleStatus(st)}
+                  className={`px-2.5 py-1.5 rounded text-xs font-sans transition-colors flex items-center space-x-1 border ${
+                    isActive
+                      ? "bg-amber-950/30 border-amber-500/30 hover:border-amber-400 text-amber-300"
+                      : "bg-emerald-950/30 border-emerald-500/30 hover:border-emerald-400 text-emerald-300"
+                  }`}
+                  title={isActive ? "Deactivate Staff Account" : "Activate Staff Account"}
+                >
+                  {isActive ? <Ban className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>{isActive ? "Deactivate" : "Activate"}</span>
+                </button>
+
+                <button
+                  onClick={() => setTargetDeleteStaff(st)}
+                  className="p-1.5 rounded bg-rose-950/30 border border-rose-500/30 hover:border-rose-400 text-rose-300 hover:text-rose-100 transition-colors"
+                  title="Remove Staff Access"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
             )}
           </div>
         );
@@ -204,7 +255,7 @@ export const StaffPage: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in font-sans">
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
@@ -212,232 +263,200 @@ export const StaffPage: React.FC = () => {
             ATELIER GOVERNANCE & ACCESS CONTROL
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Staff Management
+            Staff & Login Access Control
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manage your HM Signature team members, assign granular access levels, and audit active staff accounts.
+            Manage authenticated staff accounts, audit login access, and assign role-specific dashboards.
           </p>
         </div>
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Staff Member</span>
+          <span>Add Staff Account</span>
         </button>
       </div>
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-navy2 border border-gold/20 rounded-lg p-4 flex items-center space-x-3 shadow-md">
-          <div className="w-10 h-10 rounded-full bg-gold/10 border border-gold/30 flex items-center justify-center text-gold">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-mono uppercase text-muted tracking-wider block">Total Team</span>
-            <span className="font-serif text-xl font-bold text-ivory">{totalStaffCount} Members</span>
+        <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">TOTAL STAFF</span>
+          <div className="text-2xl font-serif font-bold text-ivory flex items-center gap-2">
+            <Users className="w-5 h-5 text-gold" />
+            <span>{totalStaffCount}</span>
           </div>
         </div>
-
-        <div className="bg-navy2 border border-gold/20 rounded-lg p-4 flex items-center space-x-3 shadow-md">
-          <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-mono uppercase text-muted tracking-wider block">Active Status</span>
-            <span className="font-serif text-xl font-bold text-emerald-300">{activeStaffCount} Active</span>
+        <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">ACTIVE LOGIN ACCESS</span>
+          <div className="text-2xl font-serif font-bold text-emerald-400 flex items-center gap-2">
+            <UserCheck className="w-5 h-5 text-emerald-400" />
+            <span>{activeStaffCount}</span>
           </div>
         </div>
-
-        <div className="bg-navy2 border border-gold/20 rounded-lg p-4 flex items-center space-x-3 shadow-md">
-          <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-gold">
-            <Award className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-mono uppercase text-muted tracking-wider block">Super Admins</span>
-            <span className="font-serif text-xl font-bold text-gold">{superAdminCount} Accounts</span>
+        <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">SUPER ADMINS</span>
+          <div className="text-2xl font-serif font-bold text-gold flex items-center gap-2">
+            <Award className="w-5 h-5 text-gold" />
+            <span>{superAdminCount}</span>
           </div>
         </div>
-
-        <div className="bg-navy2 border border-gold/20 rounded-lg p-4 flex items-center space-x-3 shadow-md">
-          <div className="w-10 h-10 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
-            <ShieldAlert className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-mono uppercase text-muted tracking-wider block">Department Managers</span>
-            <span className="font-serif text-xl font-bold text-sky-200">{managerCount} Managers</span>
+        <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">OPERATIONAL MANAGERS</span>
+          <div className="text-2xl font-serif font-bold text-sky-400 flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-sky-400" />
+            <span>{managerCount}</span>
           </div>
         </div>
       </div>
 
-      {/* Staff Table */}
+      {/* Main Staff Data Table */}
       <DataTable
         columns={columns}
         data={staffMembers}
         keyExtractor={(st) => st.id}
-        searchPlaceholder="Search staff name, email, role..."
-        emptyMessage="No staff members registered"
+        searchPlaceholder="Search staff by name, email, or role..."
+        emptyMessage="No staff members found"
       />
 
-      {/* Add Staff Modal */}
+      {/* Modal: Add New Staff */}
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        title="Add Atelier Staff Member"
+        title="Create Staff Account"
       >
-        <form onSubmit={handleAddStaff} className="space-y-4 font-sans text-xs">
+        <form onSubmit={handleAddStaff} className="space-y-4 text-xs font-sans">
           <div>
-            <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-              Full Name *
-            </label>
+            <label className="block text-ivory mb-1">Full Name *</label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Ayesha Tariq"
-              className="w-full bg-navy border border-gold/30 rounded px-3 py-2.5 text-xs text-ivory focus:outline-none focus:border-gold"
+              placeholder="e.g. Ali Khan"
+              className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-              Email Address *
-            </label>
+            <label className="block text-ivory mb-1">Staff Email Address *</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ayesha@hmsignature.com"
-              className="w-full bg-navy border border-gold/30 rounded px-3 py-2.5 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+              placeholder="e.g. ali@hmsignature.com"
+              className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-              Role Level Assignment *
-            </label>
+            <label className="block text-ivory mb-1">Assigned Staff Role *</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as StaffRole)}
-              className="w-full bg-navy border border-gold/30 rounded px-3 py-2.5 text-xs text-ivory focus:outline-none focus:border-gold"
+              className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="Super Admin">Super Admin (Full Platform Access)</option>
-              <option value="Manager">Manager (Catalog, Orders & Telemetry)</option>
-              <option value="Order Manager">Order Manager (Fulfillment & Shipping)</option>
-              <option value="Content Manager">Content Manager (CMS & Marketing)</option>
+              <option value="Order Manager">Order Manager (Fulfillment & Tracking)</option>
+              <option value="Content Manager">Content Manager (Catalog & CMS)</option>
+              <option value="Manager">Manager (Boutique Store Operations)</option>
+              <option value="Super Admin">Super Admin (Full Governance Access)</option>
             </select>
           </div>
 
-          <div className="p-3 bg-navy/60 border border-gold/15 rounded text-muted text-[11px] leading-relaxed">
-            <span className="text-gold font-bold font-serif block mb-0.5">Role Permission Default:</span>
-            Submitting this form creates a staff account profile with automated default permissions tailored to the assigned role level.
+          <div className="p-3 rounded bg-navy/60 border border-gold/15 text-[11px] text-muted leading-relaxed">
+            <span className="text-gold font-bold block mb-0.5">Authentication Note:</span>
+            Staff accounts require authentication via Supabase Auth. Passwords are never stored in plain text or public tables.
           </div>
 
-          <div className="pt-4 flex justify-end space-x-3 border-t border-gold/15">
+          <div className="flex justify-end space-x-2 pt-2">
             <button
               type="button"
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 rounded text-xs font-sans text-muted hover:text-ivory border border-gold/20"
+              className="px-4 py-2 rounded text-muted hover:text-ivory"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider shadow-md"
+              className="px-4 py-2 bg-gold text-navy font-semibold rounded hover:bg-goldLight"
             >
-              Add Staff Member
+              Create Account
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Permissions Matrix Modal */}
+      {/* Modal: Edit Permissions Matrix */}
       <Modal
-        isOpen={editingPermissionsStaff !== null}
+        isOpen={Boolean(editingPermissionsStaff)}
         onClose={() => setEditingPermissionsStaff(null)}
-        title={`Permission Matrix — ${editingPermissionsStaff?.name || ""}`}
-        maxWidth="lg"
+        title={`Permissions Matrix: ${editingPermissionsStaff?.name}`}
       >
-        {editingPermissionsStaff && (
-          <form onSubmit={handleSavePermissions} className="space-y-4 font-sans text-xs">
-            <div className="p-3 bg-navy/80 border border-gold/20 rounded flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-muted block">Staff Account</span>
-                <span className="font-serif font-bold text-sm text-ivory">{editingPermissionsStaff.name}</span>
-                <span className="text-xs text-gold font-mono block">{editingPermissionsStaff.email}</span>
-              </div>
-              <span className="font-mono text-xs font-bold text-gold bg-gold/10 border border-gold/30 px-2.5 py-1 rounded">
-                Role: {editingPermissionsStaff.role}
-              </span>
-            </div>
+        <div className="space-y-4 text-xs font-sans">
+          <div className="flex items-center justify-between border-b border-gold/15 pb-2">
+            <span className="text-gold font-mono uppercase tracking-wider text-[10px]">
+              Assigned Role: {editingPermissionsStaff?.role}
+            </span>
+            {isPrimaryAdmin(editingPermissionsStaff) && (
+              <span className="text-[10px] text-gold font-mono font-bold">FULL UNRESTRICTED ACCESS</span>
+            )}
+          </div>
 
-            <p className="text-xs text-muted font-light">
-              Configure granular administrative section access for this staff member.
-            </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+            {PERMISSION_KEYS.map((item) => {
+              const isChecked = Boolean(permissionsState[item.key]);
+              const isDisabled = isPrimaryAdmin(editingPermissionsStaff);
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              {PERMISSION_KEYS.map((perm) => {
-                const isGranted = Boolean(permissionsState[perm.key]);
+              return (
+                <label
+                  key={item.key}
+                  className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
+                    isChecked
+                      ? "bg-gold/10 border-gold/40 text-ivory"
+                      : "bg-navy border-gold/10 text-muted"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={isDisabled}
+                    checked={isChecked}
+                    onChange={() => handleTogglePermission(item.key)}
+                    className="rounded border-gold/30 bg-navy text-gold focus:ring-gold"
+                  />
+                  <span>{item.label}</span>
+                </label>
+              );
+            })}
+          </div>
 
-                return (
-                  <div
-                    key={perm.key}
-                    onClick={() => handleTogglePermission(perm.key)}
-                    className={`flex items-center justify-between p-3 rounded border cursor-pointer transition-colors text-xs font-sans ${
-                      isGranted
-                        ? "bg-navy2 border-gold/40 text-ivory"
-                        : "bg-navy border-gold/15 text-muted hover:border-gold/30"
-                    }`}
-                  >
-                    <span>{perm.label}</span>
-                    <div
-                      className={`w-4 h-4 rounded border flex items-center justify-center ${
-                        isGranted
-                          ? "bg-gold border-gold text-navy"
-                          : "border-gold/30 bg-navy"
-                      }`}
-                    >
-                      {isGranted && <Check className="w-3 h-3 stroke-[3]" />}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="pt-4 flex justify-end space-x-3 border-t border-gold/15">
+          <div className="flex justify-end space-x-2 pt-2 border-t border-gold/15">
+            <button
+              onClick={() => setEditingPermissionsStaff(null)}
+              className="px-4 py-2 rounded text-muted hover:text-ivory"
+            >
+              Close
+            </button>
+            {!isPrimaryAdmin(editingPermissionsStaff) && (
               <button
-                type="button"
-                onClick={() => setEditingPermissionsStaff(null)}
-                className="px-4 py-2 rounded text-xs font-sans text-muted hover:text-ivory border border-gold/20"
+                onClick={handleSavePermissions}
+                className="px-4 py-2 bg-gold text-navy font-semibold rounded hover:bg-goldLight"
               >
-                Cancel
+                Save Permissions
               </button>
-              <button
-                type="submit"
-                className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider shadow-md"
-              >
-                Save Permissions Matrix
-              </button>
-            </div>
-          </form>
-        )}
+            )}
+          </div>
+        </div>
       </Modal>
 
-      {/* Luxury Remove Staff Confirmation Dialog */}
+      {/* Confirm Staff Removal Dialog */}
       <ConfirmDialog
-        isOpen={targetDeleteStaff !== null}
+        isOpen={Boolean(targetDeleteStaff)}
         onClose={() => setTargetDeleteStaff(null)}
         onConfirm={handleConfirmRemove}
-        title="Remove Staff Member Access?"
-        message={
-          targetDeleteStaff
-            ? `You are about to revoke admin access for ${targetDeleteStaff.name} (${targetDeleteStaff.email}). This user will no longer be able to sign in or perform management actions.`
-            : ""
-        }
-        confirmText="Remove Staff Access"
-        isDanger={true}
+        title="Deactivate & Remove Staff Access"
+        message={`Are you sure you want to deactivate and remove login access for ${targetDeleteStaff?.name} (${targetDeleteStaff?.email})?`}
+        confirmText="Remove Access"
       />
     </div>
   );

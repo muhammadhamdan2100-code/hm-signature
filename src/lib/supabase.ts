@@ -1,14 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
 // Read Environment Variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://dummy-hm-signature.supabase.co";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "dummy-anon-key-12345";
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL || "https://dummy-hm-signature.supabase.co";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "dummy-anon-key-12345";
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(
-    import.meta.env.VITE_SUPABASE_URL &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    !import.meta.env.VITE_SUPABASE_URL.includes("dummy")
+    supabaseUrl &&
+    supabaseAnonKey &&
+    !supabaseUrl.includes("dummy")
   );
 };
 
@@ -22,6 +22,8 @@ export interface DBProfile {
   phone?: string;
   avatar_url?: string;
   role: "customer" | "super_admin" | "admin" | "manager" | "order_manager" | "content_manager" | "support" | string;
+  status: "active" | "inactive" | "suspended" | string;
+  last_sign_in_at?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -154,6 +156,18 @@ export const dbService = {
     return null;
   },
 
+  async getStaffProfiles(): Promise<DBProfile[]> {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .neq("role", "customer")
+        .order("created_at", { ascending: true });
+      if (!error && data) return data as DBProfile[];
+    }
+    return [];
+  },
+
   async createOrUpdateProfile(profile: Partial<DBProfile> & { id: string }): Promise<DBProfile | null> {
     if (isSupabaseConfigured()) {
       const { data, error } = await supabase
@@ -164,6 +178,22 @@ export const dbService = {
       if (!error && data) return data as DBProfile;
     }
     return null;
+  },
+
+  async updateStaffProfileStatus(id: string, status: string): Promise<boolean> {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from("profiles").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+      return !error;
+    }
+    return true;
+  },
+
+  async updateStaffProfileRole(id: string, role: string): Promise<boolean> {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from("profiles").update({ role, updated_at: new Date().toISOString() }).eq("id", id);
+      return !error;
+    }
+    return true;
   },
 
   // PRODUCTS

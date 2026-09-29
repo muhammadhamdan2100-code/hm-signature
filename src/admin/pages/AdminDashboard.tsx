@@ -1,6 +1,7 @@
 import React from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { getCurrentStaff } from "../../services/auth";
+import { toDisplayRole } from "../../types/staff";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { StatusBadge } from "../components/StatusBadge";
@@ -856,17 +857,17 @@ const FullAdminDashboard: React.FC = () => {
 // --- DYNAMIC ROLE DASHBOARD SELECTOR ---
 export const AdminDashboard: React.FC = () => {
   const currentStaff = getCurrentStaff();
-  const role = currentStaff?.role;
+  const displayRole = currentStaff ? toDisplayRole(currentStaff.role) : "Super Admin";
 
-  if (role === "Order Manager") {
+  if (displayRole === "Order Manager") {
     return <OrderManagerDashboard />;
   }
 
-  if (role === "Content Manager") {
+  if (displayRole === "Content Manager") {
     return <ContentManagerDashboard />;
   }
 
-  if (role === "Manager") {
+  if (displayRole === "Manager") {
     return <ManagerDashboard />;
   }
 
