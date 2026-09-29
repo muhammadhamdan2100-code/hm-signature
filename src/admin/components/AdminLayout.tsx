@@ -1,0 +1,125 @@
+import React, { useState, useEffect } from "react";
+import { Outlet, useLocation, Navigate, useNavigate } from "react-router-dom";
+import { getCurrentStaff, hasPermission } from "../../services/auth";
+import { ROUTE_PERMISSIONS } from "../../types/staff";
+import { AdminSidebar } from "./AdminSidebar";
+import { AdminTopbar } from "./AdminTopbar";
+import { AdminSearchModal } from "./AdminSearchModal";
+import { ToastContainer } from "./Toast";
+import { ShieldAlert, ArrowRight } from "lucide-react";
+
+export const AdminLayout: React.FC = () => {
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const currentStaff = getCurrentStaff();
+
+  // Route & Session Guard: Redirect to /admin/login if not signed in
+  if (!currentStaff) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  // Scroll to top on route change inside admin
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
+  // Keyboard shortcut for search modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+      if (e.key === "/") {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA") {
+          e.preventDefault();
+          setSearchOpen(true);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Route-Level Permission Check
+  const requiredPermission = ROUTE_PERMISSIONS[location.pathname];
+  const isAuthorized = !requiredPermission || hasPermission(currentStaff, requiredPermission);
+
+  if (!isAuthorized) {
+    const fallbackRoute =
+      currentStaff.role === "Order Manager"
+        ? "/admin/orders"
+        : currentStaff.role === "Content Manager"
+        ? "/admin/products"
+        : "/admin/dashboard";
+
+    return (
+      <div className="min-h-screen bg-navy text-ivory flex items-center justify-center p-6 text-center font-sans select-none">
+        <div className="max-w-md w-full bg-navy2/90 border border-gold/30 p-8 rounded-xl space-y-5 shadow-2xl backdrop-blur-md">
+          <div className="w-16 h-16 rounded-full bg-rose-950/60 border border-rose-500/40 text-rose-400 mx-auto flex items-center justify-center shadow-lg">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <span className="text-[10px] font-mono tracking-[3px] text-gold uppercase block font-semibold">
+              HM SIGNATURE SECURITY
+            </span>
+            <h2 className="font-serif text-2xl font-bold text-ivory">Access Restricted</h2>
+          </div>
+          <p className="text-xs text-muted leading-relaxed font-light">
+            Your assigned staff role (<span className="text-gold font-semibold font-mono">{currentStaff.role}</span>) does not have authorization to view or manage the section at <span className="font-mono text-ivory">{location.pathname}</span>.
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => navigate(fallbackRoute, { replace: true })}
+              className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow-lg flex items-center justify-center space-x-2 mx-auto"
+            >
+              <span>Return to Permitted Workspace</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-navy text-ivory font-sans relative">
+      {/* Toast System Container */}
+      <ToastContainer />
+
+      {/* Fixed Sidebar Navigation */}
+      <AdminSidebar
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed(!collapsed)}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
+
+      {/* Main Workspace Area */}
+      <div
+        className={`min-h-screen flex flex-col min-w-0 transition-all duration-300 ${
+          collapsed ? "lg:ml-[72px]" : "lg:ml-[260px]"
+        } ml-0`}
+      >
+        {/* Sticky Topbar */}
+        <AdminTopbar
+          onOpenMobileSidebar={() => setMobileOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
+        />
+
+        {/* Main Content Area */}
+        <main className="flex-1 p-6 md:p-8 max-w-[1400px] w-full mx-auto space-y-8">
+          <Outlet />
+        </main>
+      </div>
+
+      {/* Global Admin Search Modal */}
+      <AdminSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+    </div>
+  );
+};

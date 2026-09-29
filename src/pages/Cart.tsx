@@ -12,10 +12,10 @@ export default function CartPage() {
   const [promoInput, setPromoInput] = useState("");
   const [promoMsg, setPromoMsg] = useState("");
 
-  const submitPromo = (e: React.FormEvent) => {
+  const submitPromo = async (e: React.FormEvent) => {
     e.preventDefault();
-    const ok = applyPromo(promoInput);
-    setPromoMsg(ok ? "Promo code applied — 10% off!" : "Invalid promo code.");
+    const ok = await applyPromo(promoInput);
+    setPromoMsg(ok ? "Promo code applied!" : "Invalid promo code.");
   };
 
   const tax = subtotal * 0.08;

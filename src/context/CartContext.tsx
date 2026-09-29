@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Product } from "../data/products";
+import { dbService } from "../lib/supabase";
 
 export interface CartItem {
   product: Product;
@@ -15,17 +15,17 @@ interface CartContextType {
   addToCart: (product: Product, quantity?: number) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
+  clearCart: () => void;
   subtotal: number;
   shipping: number;
   total: number;
   itemCount: number;
   promoCode: string;
-  applyPromo: (code: string) => boolean;
-  promoDiscount: number;
+  applyPromo: (code: string) => Promise<boolean>;
+  promoDiscountAmount: number;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
-
 const STORAGE_KEY = "hm-signature-cart";
 
 export function CartProvider({ children }: { children: ReactNode }) {
@@ -37,9 +37,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return [];
     }
   });
+
   const [isOpen, setIsOpen] = useState(false);
   const [promoCode, setPromoCode] = useState("");
-  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoPercentage, setPromoPercentage] = useState(0);
+  const [fixedDiscount, setFixedDiscount] = useState(0);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
@@ -52,8 +54,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
+        // Enforce stock check if stock property is present
+        const currentStock = (product as any).stock ?? 50;
+        const targetQty = existing.quantity + quantity;
+        if (targetQty > currentStock) {
+          alert(`Maximum available stock reached (${currentStock} units).`);
+          return prev;
+        }
         return prev.map((i) =>
-          i.product.id === product.id ? { ...i, quantity: i.quantity + quantity } : i
+          i.product.id === product.id ? { ...i, quantity: targetQty } : i
         );
       }
       return [...prev, { product, quantity }];
@@ -70,20 +79,57 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems((prev) => prev.map((i) => (i.product.id === id ? { ...i, quantity } : i)));
   };
 
-  const applyPromo = (code: string) => {
-    if (code.trim().toUpperCase() === "SIGNATURE10") {
-      setPromoDiscount(0.1);
-      setPromoCode(code.toUpperCase());
+  const clearCart = () => {
+    setItems([]);
+    setPromoCode("");
+    setPromoPercentage(0);
+    setFixedDiscount(0);
+    localStorage.removeItem(STORAGE_KEY);
+  };
+
+  const applyPromo = async (code: string): Promise<boolean> => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) return false;
+
+    // First attempt database coupon lookup
+    const dbCoupon = await dbService.validateCoupon(cleanCode);
+    if (dbCoupon) {
+      setPromoCode(dbCoupon.code);
+      if (dbCoupon.type === "percentage") {
+        setPromoPercentage(dbCoupon.value / 100);
+        setFixedDiscount(0);
+      } else {
+        setFixedDiscount(dbCoupon.value);
+        setPromoPercentage(0);
+      }
       return true;
     }
-    setPromoDiscount(0);
+
+    // Built-in luxury promo fallbacks
+    if (cleanCode === "HMSIGNATURE10" || cleanCode === "SIGNATURE10") {
+      setPromoCode("HMSIGNATURE10");
+      setPromoPercentage(0.1);
+      setFixedDiscount(0);
+      return true;
+    }
+    if (cleanCode === "VIPLUXURY500") {
+      setPromoCode("VIPLUXURY500");
+      setFixedDiscount(500);
+      setPromoPercentage(0);
+      return true;
+    }
+
+    setPromoCode("");
+    setPromoPercentage(0);
+    setFixedDiscount(0);
     return false;
   };
 
-  const subtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
-  const discount = subtotal * promoDiscount;
-  const shipping = items.length === 0 || subtotal - discount >= 6000 ? 0 : 300;
-  const total = subtotal - discount + shipping;
+  const rawSubtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
+  const promoDiscountAmount = Math.round(rawSubtotal * promoPercentage + fixedDiscount);
+  const subtotal = Math.max(0, rawSubtotal - promoDiscountAmount);
+  const shipping = items.length === 0 || subtotal >= 6000 ? 0 : 300;
+  const total = subtotal + shipping;
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
@@ -96,13 +142,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
         addToCart,
         removeFromCart,
         updateQuantity,
-        subtotal: subtotal - discount,
+        clearCart,
+        subtotal,
         shipping,
         total,
         itemCount,
         promoCode,
         applyPromo,
-        promoDiscount,
+        promoDiscountAmount,
       }}
     >
       {children}
