@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { SlidersHorizontal, X } from "lucide-react";
-import { products } from "../data/products";
+import { products as fallbackProducts } from "../data/products";
 import type { Product } from "../data/products";
 import ProductCard from "../components/ProductCard";
 import { formatPKR } from "../utils/currency";
+import { useAdminData } from "../admin/context/AdminDataContext";
 
 interface Props {
   title: string;
@@ -15,18 +16,54 @@ interface Props {
   heroTexture?: string;
 }
 
-const categories = Array.from(new Set(products.map((p) => p.category)));
-
 export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTexture = "texture-navy" }: Props) {
+  const { products: adminProducts } = useAdminData();
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q")?.toLowerCase() || "";
   const [category, setCategory] = useState<string>("All");
-  const [maxPrice, setMaxPrice] = useState(5000);
+  const [maxPrice, setMaxPrice] = useState(10000);
   const [sort, setSort] = useState("featured");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Synchronize storefront products with AdminDataContext state
+  const catalogProducts: Product[] = useMemo(() => {
+    if (adminProducts && adminProducts.length > 0) {
+      return adminProducts
+        .filter((p) => p.active)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          price: p.price,
+          category: p.category,
+          gender: p.gender,
+          size: p.size,
+          concentration: p.concentration,
+          topNotes: p.topNotes,
+          heartNotes: p.heartNotes,
+          baseNotes: p.baseNotes,
+          description: p.description,
+          images: p.images,
+          photos: p.photos,
+          featured: p.featured,
+          bestseller: p.bestseller,
+          stock: p.stock,
+          ingredients: "Organic Sugar Cane Alcohol, Parfum, Water, Benzyl Salicylate",
+          rating: 4.9,
+          reviewCount: 24,
+          reviews: [],
+          texture: p.images?.[0] || "texture-velvet",
+        }));
+    }
+    return fallbackProducts;
+  }, [adminProducts]);
+
+  const categories = useMemo(() => {
+    return Array.from(new Set(catalogProducts.map((p) => p.category)));
+  }, [catalogProducts]);
+
   const filtered = useMemo(() => {
-    let list = products.filter(baseFilter);
+    let list = catalogProducts.filter(baseFilter);
     if (query) {
       list = list.filter(
         (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
@@ -52,91 +89,133 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
         list = [...list].sort((a, b) => Number(b.featured) - Number(a.featured));
     }
     return list;
-  }, [baseFilter, category, maxPrice, sort, query]);
+  }, [catalogProducts, baseFilter, category, maxPrice, sort, query]);
 
   return (
     <div className="pt-24">
       <section className={`relative py-24 ${heroTexture} border-b border-gold/20`}>
         <div className="absolute inset-0 bg-navy/60" />
-        <div className="max-w-[1400px] mx-auto px-6 lg:px-10 relative">
-          <div className="eyebrow mb-4">{eyebrow}</div>
-          <h1 className="font-serif text-4xl lg:text-6xl mb-4">{title}</h1>
-          <p className="text-muted max-w-lg leading-relaxed">{subtitle}</p>
+        <div className="relative max-w-[1400px] mx-auto px-6 lg:px-10 text-center">
+          <div className="eyebrow mb-3">{eyebrow}</div>
+          <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl tracking-wide mb-4">{title}</h1>
+          <p className="text-muted max-w-xl mx-auto leading-relaxed text-sm sm:text-base font-light">
+            {subtitle}
+          </p>
         </div>
       </section>
 
-      <section className="bg-navy py-16">
+      <section className="py-16 bg-navy">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
-          <div className="flex items-center justify-between mb-10">
-            <button
-              onClick={() => setFiltersOpen((s) => !s)}
-              className="lg:hidden flex items-center gap-2 text-xs tracking-widest border border-gold/30 px-4 py-2"
-            >
-              <SlidersHorizontal size={14} /> FILTERS
-            </button>
-            <span className="text-xs text-muted hidden lg:block">{filtered.length} fragrances</span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="bg-transparent border border-gold/30 text-xs tracking-widest px-4 py-2 focus:outline-none"
-            >
-              <option value="featured" className="bg-navy2">FEATURED</option>
-              <option value="newest" className="bg-navy2">NEWEST</option>
-              <option value="price-low" className="bg-navy2">PRICE: LOW TO HIGH</option>
-              <option value="price-high" className="bg-navy2">PRICE: HIGH TO LOW</option>
-              <option value="bestselling" className="bg-navy2">BEST SELLING</option>
-            </select>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-8 mb-10 border-b border-gold/15">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setFiltersOpen((o) => !o)}
+                className="btn-gold text-xs flex items-center gap-2"
+              >
+                <SlidersHorizontal size={14} /> FILTERS
+              </button>
+              <span className="text-xs text-muted font-mono">{filtered.length} FRAGRANCES</span>
+            </div>
+
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-muted tracking-widest hidden sm:inline">SORT BY:</span>
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                className="bg-transparent border border-gold/25 text-ivory px-3 py-2 text-xs focus:outline-none focus:border-gold rounded font-sans"
+              >
+                <option value="featured">Featured First</option>
+                <option value="bestselling">Bestsellers</option>
+                <option value="newest">New Arrivals</option>
+                <option value="price-low">Price: Low to High</option>
+                <option value="price-high">Price: High to Low</option>
+              </select>
+            </div>
           </div>
 
-          <div className="grid lg:grid-cols-[220px_1fr] gap-10">
-            <aside className={`${filtersOpen ? "block" : "hidden"} lg:block`}>
-              <div className="border border-gold/20 p-6 sticky top-28">
-                <div className="flex items-center justify-between mb-6 lg:hidden">
-                  <span className="text-xs tracking-widest text-gold">FILTERS</span>
-                  <button onClick={() => setFiltersOpen(false)}>
-                    <X size={16} />
-                  </button>
-                </div>
-                <div className="mb-8">
-                  <h4 className="text-xs tracking-[1.5px] text-goldLight mb-4">FRAGRANCE FAMILY</h4>
-                  <div className="flex flex-col gap-2 text-sm text-muted">
-                    <button onClick={() => setCategory("All")} className={`text-left hover:text-ivory ${category === "All" ? "text-gold" : ""}`}>
-                      All
+          {filtersOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden border border-gold/20 p-6 mb-12 bg-navy2/60 rounded-lg"
+            >
+              <div className="flex items-center justify-between mb-6 pb-3 border-b border-gold/15">
+                <span className="eyebrow">Refine Collection</span>
+                <button onClick={() => setFiltersOpen(false)} className="text-muted hover:text-ivory">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                <div>
+                  <span className="text-[11px] tracking-widest text-gold block mb-3 font-mono uppercase">Fragrance Family</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setCategory("All")}
+                      className={`text-xs px-3 py-1.5 border rounded transition-colors ${
+                        category === "All"
+                          ? "border-gold bg-gold text-navy font-semibold"
+                          : "border-gold/20 text-muted hover:text-ivory"
+                      }`}
+                    >
+                      All Families
                     </button>
                     {categories.map((c) => (
-                      <button key={c} onClick={() => setCategory(c)} className={`text-left hover:text-ivory ${category === c ? "text-gold" : ""}`}>
+                      <button
+                        key={c}
+                        onClick={() => setCategory(c)}
+                        className={`text-xs px-3 py-1.5 border rounded transition-colors ${
+                          category === c
+                            ? "border-gold bg-gold text-navy font-semibold"
+                            : "border-gold/20 text-muted hover:text-ivory"
+                        }`}
+                      >
                         {c}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="mb-2">
-                  <h4 className="text-xs tracking-[1.5px] text-goldLight mb-4">PRICE: UP TO {formatPKR(maxPrice)}</h4>
+
+                <div>
+                  <div className="flex justify-between items-center mb-3 text-xs font-mono">
+                    <span className="text-gold uppercase tracking-widest">Maximum Price</span>
+                    <span className="text-ivory font-bold">{formatPKR(maxPrice)}</span>
+                  </div>
                   <input
                     type="range"
-                    min={2500}
-                    max={5000}
+                    min={2000}
+                    max={10000}
                     step={100}
                     value={maxPrice}
                     onChange={(e) => setMaxPrice(Number(e.target.value))}
-                    className="w-full accent-gold"
+                    className="w-full accent-gold bg-navy border border-gold/20 rounded cursor-pointer"
                   />
                 </div>
               </div>
-            </aside>
+            </motion.div>
+          )}
 
-            <div>
-              {filtered.length === 0 ? (
-                <div className="text-center py-24 text-muted">No fragrances match your filters.</div>
-              ) : (
-                <motion.div layout className="grid sm:grid-cols-2 xl:grid-cols-3 gap-8">
-                  {filtered.map((p) => (
-                    <ProductCard key={p.id} product={p} />
-                  ))}
-                </motion.div>
-              )}
+          {filtered.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-muted text-sm font-sans mb-4">No fragrances match your selected criteria.</p>
+              <button
+                onClick={() => {
+                  setCategory("All");
+                  setMaxPrice(10000);
+                }}
+                className="btn-gold font-sans text-xs"
+              >
+                CLEAR ALL FILTERS
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              {filtered.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          )}
         </div>
       </section>
     </div>
