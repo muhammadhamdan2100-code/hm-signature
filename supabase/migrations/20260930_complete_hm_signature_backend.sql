@@ -143,6 +143,12 @@ END $$;
 CREATE OR REPLACE FUNCTION public.check_primary_admin_protection()
 RETURNS TRIGGER AS $$
 BEGIN
+    -- Allow session bypass ONLY when explicitly set by internal bootstrap_primary_admin() function
+    IF (current_setting('app.bypass_primary_admin_guard', true) = 'true') THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+
+    -- Block deletion of Primary Admin profile
     IF (TG_OP = 'DELETE') THEN
         IF (OLD.email = 'muhammadhamdan2100@gmail.com' OR OLD.is_primary_admin = true) THEN
             RAISE EXCEPTION 'CRITICAL SECURITY: Primary Super Admin profile cannot be deleted.';
@@ -150,6 +156,7 @@ BEGIN
         RETURN OLD;
     END IF;
 
+    -- Protect Primary Admin role & active status during updates
     IF (TG_OP = 'UPDATE') THEN
         IF (OLD.email = 'muhammadhamdan2100@gmail.com' OR OLD.is_primary_admin = true) THEN
             IF (NEW.status <> 'active') THEN
@@ -160,9 +167,9 @@ BEGIN
             END IF;
         END IF;
 
-        -- Prevent non-staff users from modifying roles, statuses, or primary admin flags
+        -- Prevent non-staff users from self-elevating roles, statuses, or primary admin flags
         IF (NEW.role <> OLD.role OR NEW.status <> OLD.status OR NEW.is_primary_admin <> OLD.is_primary_admin) THEN
-            IF NOT public.is_staff(auth.uid()) THEN
+            IF NOT public.is_staff(auth.uid()) AND auth.uid() IS NOT NULL THEN
                 RAISE EXCEPTION 'Access Denied: Only authorized staff members can modify user roles or account status.';
             END IF;
         END IF;
@@ -170,12 +177,90 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 DROP TRIGGER IF EXISTS trg_protect_primary_admin ON public.profiles;
 CREATE TRIGGER trg_protect_primary_admin
 BEFORE UPDATE OR DELETE ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.check_primary_admin_protection();
+
+-- Function to safely bootstrap Primary Admin role (Zero parameters, strictly hardcoded)
+CREATE OR REPLACE FUNCTION public.bootstrap_primary_admin()
+RETURNS JSONB AS $$
+DECLARE
+    v_primary_email CONSTANT TEXT := 'muhammadhamdan2100@gmail.com';
+    v_auth_user_id UUID;
+    v_profile_exists BOOLEAN := FALSE;
+BEGIN
+    -- 1. Check if auth.users record exists for the hardcoded primary email
+    SELECT id INTO v_auth_user_id
+    FROM auth.users
+    WHERE LOWER(email) = LOWER(v_primary_email)
+    LIMIT 1;
+
+    IF v_auth_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'email', v_primary_email,
+            'error', 'AUTH_USER_NOT_FOUND',
+            'message', 'No auth.users record found for muhammadhamdan2100@gmail.com. Please create the user in Supabase Auth first.'
+        );
+    END IF;
+
+    -- 2. Set session flag to bypass guard during bootstrap execution
+    PERFORM set_config('app.bypass_primary_admin_guard', 'true', true);
+
+    -- 3. Check if profile exists
+    SELECT EXISTS (
+        SELECT 1 FROM public.profiles WHERE id = v_auth_user_id OR LOWER(email) = LOWER(v_primary_email)
+    ) INTO v_profile_exists;
+
+    -- 4. Upsert or update profile strictly linked to exact auth.users ID
+    IF v_profile_exists THEN
+        UPDATE public.profiles
+        SET id = v_auth_user_id,
+            email = LOWER(v_primary_email),
+            role = 'super_admin',
+            status = 'active',
+            is_primary_admin = true,
+            updated_at = NOW()
+        WHERE id = v_auth_user_id OR LOWER(email) = LOWER(v_primary_email);
+    ELSE
+        INSERT INTO public.profiles (
+            id, email, full_name, role, status, is_primary_admin, created_at, updated_at
+        ) VALUES (
+            v_auth_user_id,
+            LOWER(v_primary_email),
+            'Muhammad Hamdan',
+            'super_admin',
+            'active',
+            true,
+            NOW(),
+            NOW()
+        );
+    END IF;
+
+    -- 5. Reset session flag
+    PERFORM set_config('app.bypass_primary_admin_guard', 'false', true);
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'email', v_primary_email,
+        'user_id', v_auth_user_id,
+        'role', 'super_admin',
+        'status', 'active',
+        'is_primary_admin', true,
+        'message', 'Primary Super Admin account bootstrapped successfully for muhammadhamdan2100@gmail.com.'
+    );
+EXCEPTION WHEN OTHERS THEN
+    PERFORM set_config('app.bypass_primary_admin_guard', 'false', true);
+    RAISE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+-- Revoke execution from public, authenticated, and anonymous roles
+REVOKE EXECUTE ON FUNCTION public.bootstrap_primary_admin() FROM PUBLIC, authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.bootstrap_primary_admin() TO postgres, service_role;
 
 -- Automatic Profile Creation Trigger on Auth Signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
