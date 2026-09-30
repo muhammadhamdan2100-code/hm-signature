@@ -130,21 +130,35 @@ BEGIN
     ON CONFLICT DO NOTHING;
 END $$;
 
--- Primary Admin Guard Trigger Function
+-- Primary Admin Guard & Role Protection Trigger Function
 CREATE OR REPLACE FUNCTION public.check_primary_admin_protection()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF (OLD.email = 'muhammadhamdan2100@gmail.com' OR OLD.is_primary_admin = true) THEN
-        IF (TG_OP = 'DELETE') THEN
+    IF (TG_OP = 'DELETE') THEN
+        IF (OLD.email = 'muhammadhamdan2100@gmail.com' OR OLD.is_primary_admin = true) THEN
             RAISE EXCEPTION 'CRITICAL SECURITY: Primary Super Admin profile cannot be deleted.';
         END IF;
-        IF (NEW.status <> 'active') THEN
-            RAISE EXCEPTION 'CRITICAL SECURITY: Primary Super Admin status cannot be deactivated or suspended.';
+        RETURN OLD;
+    END IF;
+
+    IF (TG_OP = 'UPDATE') THEN
+        IF (OLD.email = 'muhammadhamdan2100@gmail.com' OR OLD.is_primary_admin = true) THEN
+            IF (NEW.status <> 'active') THEN
+                RAISE EXCEPTION 'CRITICAL SECURITY: Primary Super Admin status cannot be deactivated or suspended.';
+            END IF;
+            IF (NEW.role <> 'super_admin') THEN
+                RAISE EXCEPTION 'CRITICAL SECURITY: Primary Super Admin role cannot be modified.';
+            END IF;
         END IF;
-        IF (NEW.role <> 'super_admin') THEN
-            RAISE EXCEPTION 'CRITICAL SECURITY: Primary Super Admin role cannot be modified.';
+
+        -- Prevent non-staff users from modifying roles, statuses, or primary admin flags
+        IF (NEW.role <> OLD.role OR NEW.status <> OLD.status OR NEW.is_primary_admin <> OLD.is_primary_admin) THEN
+            IF NOT public.is_staff(auth.uid()) THEN
+                RAISE EXCEPTION 'Access Denied: Only authorized staff members can modify user roles or account status.';
+            END IF;
         END IF;
     END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -153,6 +167,30 @@ DROP TRIGGER IF EXISTS trg_protect_primary_admin ON public.profiles;
 CREATE TRIGGER trg_protect_primary_admin
 BEFORE UPDATE OR DELETE ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.check_primary_admin_protection();
+
+-- Automatic Profile Creation Trigger on Auth Signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role, status)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
+    COALESCE(NEW.raw_user_meta_data->>'role', 'customer'),
+    'active'
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ====================================================================
 -- 3. DOMAIN 2: CATALOG, PRODUCTS, VARIANTS & FRAGRANCE NOTES
@@ -898,6 +936,11 @@ ALTER TABLE public.notification_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.seo_settings ENABLE ROW LEVEL SECURITY;
+
+-- Profile Policies
+CREATE POLICY "Users Read Own Profile" ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_staff(auth.uid()));
+CREATE POLICY "Users Update Own Profile" ON public.profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+CREATE POLICY "Staff Manage Profiles" ON public.profiles FOR ALL USING (public.is_staff(auth.uid()));
 
 -- Storage Buckets Configuration
 INSERT INTO storage.buckets (id, name, public) VALUES
