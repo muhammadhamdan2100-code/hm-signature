@@ -139,7 +139,80 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return saved ? JSON.parse(saved) : DEFAULT_ADDRESSES;
   });
 
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured());
+
+  // Helper to synchronize UserProfile and StaffMember states from a Supabase session
+  const syncUserFromSession = async (session: { user: { id: string; email?: string; user_metadata?: any } } | null) => {
+    if (!session?.user) {
+      setUser(null);
+      setCurrentStaff(null);
+      return null;
+    }
+
+    const sessionUser = session.user;
+    const email = (sessionUser.email || "").toLowerCase().trim();
+    const profile = await dbService.getUserProfile(sessionUser.id);
+
+    let role: UserRole = "customer";
+    let status = "active";
+    let fullName = sessionUser.user_metadata?.full_name || (email ? email.split("@")[0] : "Client");
+    let phone: string | undefined;
+
+    if (profile) {
+      role = (profile.role || "customer") as UserRole;
+      status = (profile.status || "active").toLowerCase().trim();
+      fullName = profile.full_name || fullName;
+      phone = profile.phone;
+    } else {
+      if (isPrimaryAdmin(email)) {
+        role = "super_admin";
+        status = "active";
+      } else if (sessionUser.user_metadata?.role && sessionUser.user_metadata.role !== "customer") {
+        role = sessionUser.user_metadata.role as UserRole;
+        status = "active";
+      }
+    }
+
+    // Account status check: block inactive/suspended accounts
+    if (status === "inactive" || status === "suspended") {
+      if (isSupabaseConfigured()) {
+        await supabase.auth.signOut();
+      }
+      setUser(null);
+      setCurrentStaff(null);
+      return null;
+    }
+
+    const userObj: UserProfile = {
+      id: sessionUser.id,
+      email,
+      fullName,
+      phone,
+      role,
+    };
+
+    setUser(userObj);
+
+    if (isStaffRole(role)) {
+      const displayRole = (role === "super_admin" ? "Super Admin" : role === "order_manager" ? "Order Manager" : role === "content_manager" ? "Content Manager" : "Manager") as StaffRole;
+      const staffObj: StaffMember = {
+        id: sessionUser.id,
+        name: fullName,
+        email,
+        role: displayRole,
+        status: "Active",
+        lastActive: "Just now",
+        createdAt: profile?.created_at ? profile.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
+        isPrimaryAdmin: isPrimaryAdmin(email),
+        permissions: getDefaultPermissionsForRole(displayRole),
+      };
+      setCurrentStaff(staffObj);
+    } else {
+      setCurrentStaff(null);
+    }
+
+    return userObj;
+  };
 
   // Sync user state to localStorage
   useEffect(() => {
@@ -154,77 +227,51 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem("hm_auth_addresses", JSON.stringify(addresses));
   }, [addresses]);
 
-  // Supabase Auth listener
+  // Supabase Auth session initialization & listener
   useEffect(() => {
     if (isSupabaseConfigured()) {
-      supabase.auth.getSession().then(async ({ data: { session } }) => {
-        if (session?.user) {
-          const profile = await dbService.getUserProfile(session.user.id);
-          const role = (profile?.role || session.user.user_metadata?.role || "customer") as UserRole;
-          const userObj: UserProfile = {
-            id: session.user.id,
-            email: session.user.email || "",
-            fullName: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Client",
-            phone: profile?.phone,
-            role,
-          };
-          setUser(userObj);
+      setIsLoading(true);
 
-          if (isStaffRole(role)) {
-            const mappedRole = (role === "super_admin" ? "Super Admin" : role === "order_manager" ? "Order Manager" : role === "content_manager" ? "Content Manager" : "Manager") as StaffRole;
-            const staffObj: StaffMember = {
-              id: userObj.id,
-              name: userObj.fullName,
-              email: userObj.email,
-              role: mappedRole,
-              status: "Active",
-              lastActive: "Just now",
-              createdAt: new Date().toISOString().split("T")[0],
-              isPrimaryAdmin: isPrimaryAdmin(userObj.email),
-              permissions: getDefaultPermissionsForRole(mappedRole),
-            };
-            setCurrentStaff(staffObj);
+      // Restore session on boot/refresh
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
+        try {
+          if (session) {
+            await syncUserFromSession(session);
+          } else {
+            setUser(null);
+            setCurrentStaff(null);
           }
+        } catch (e) {
+          console.error("Error retrieving Supabase session:", e);
+        } finally {
+          setIsLoading(false);
         }
+      }).catch((err) => {
+        console.error("Error initializing session:", err);
+        setIsLoading(false);
       });
 
-      const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          const profile = await dbService.getUserProfile(session.user.id);
-          const role = (profile?.role || session.user.user_metadata?.role || "customer") as UserRole;
-          const userObj: UserProfile = {
-            id: session.user.id,
-            email: session.user.email || "",
-            fullName: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Client",
-            phone: profile?.phone,
-            role,
-          };
-          setUser(userObj);
-
-          if (isStaffRole(role)) {
-            const mappedRole = (role === "super_admin" ? "Super Admin" : role === "order_manager" ? "Order Manager" : role === "content_manager" ? "Content Manager" : "Manager") as StaffRole;
-            const staffObj: StaffMember = {
-              id: userObj.id,
-              name: userObj.fullName,
-              email: userObj.email,
-              role: mappedRole,
-              status: "Active",
-              lastActive: "Just now",
-              createdAt: new Date().toISOString().split("T")[0],
-              isPrimaryAdmin: isPrimaryAdmin(userObj.email),
-              permissions: getDefaultPermissionsForRole(mappedRole),
-            };
-            setCurrentStaff(staffObj);
-          }
-        } else if (_event === "SIGNED_OUT") {
+      // Subscribe to auth state changes (tab sync, refresh token, sign in / sign out)
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === "SIGNED_OUT") {
           setUser(null);
-          logoutStaff();
+          setCurrentStaff(null);
+          setIsLoading(false);
+        } else if (session) {
+          await syncUserFromSession(session);
+          setIsLoading(false);
+        } else {
+          setUser(null);
+          setCurrentStaff(null);
+          setIsLoading(false);
         }
       });
 
       return () => {
         authListener.subscription.unsubscribe();
       };
+    } else {
+      setIsLoading(false);
     }
   }, []);
 
@@ -260,37 +307,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         clearLockout(trimmedEmail);
-        const profile = await dbService.getUserProfile(authData.user.id);
-        const role = (profile?.role || authData.user.user_metadata?.role || (isPrimaryAdmin(trimmedEmail) ? "super_admin" : "customer")) as UserRole;
-        const loggedUser: UserProfile = {
-          id: authData.user.id,
-          email: authData.user.email || trimmedEmail,
-          fullName: profile?.full_name || authData.user.user_metadata?.full_name || trimmedEmail.split("@")[0],
-          phone: profile?.phone,
-          role,
-        };
+        const syncedUser = await syncUserFromSession(authData.session);
 
-        setUser(loggedUser);
-        if (isStaffRole(role)) {
-          const mappedRole = (role === "super_admin" ? "Super Admin" : role === "order_manager" ? "Order Manager" : role === "content_manager" ? "Content Manager" : "Manager") as StaffRole;
-          const staffObj: StaffMember = {
-            id: loggedUser.id,
-            name: loggedUser.fullName,
-            email: loggedUser.email,
-            role: mappedRole,
-            status: "Active",
-            lastActive: "Just now",
-            createdAt: new Date().toISOString().split("T")[0],
-            isPrimaryAdmin: isPrimaryAdmin(loggedUser.email),
-            permissions: getDefaultPermissionsForRole(mappedRole),
-          };
-          setCurrentStaff(staffObj);
-        } else {
-          logoutStaff();
+        if (!syncedUser) {
+          setIsLoading(false);
+          return { success: false, error: "Access denied. Account is inactive, suspended, or unverified." };
         }
 
         setIsLoading(false);
-        return { success: true, role };
+        return { success: true, role: syncedUser.role };
       }
 
       // Fallback / Demo Credentials login
@@ -397,12 +422,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    if (isSupabaseConfigured()) {
-      await supabase.auth.signOut();
+    setIsLoading(true);
+    try {
+      if (isSupabaseConfigured()) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.error("Error during Supabase signout:", err);
+    } finally {
+      setUser(null);
+      setCurrentStaff(null);
+      localStorage.removeItem("hm_auth_user");
+      setIsLoading(false);
     }
-    setUser(null);
-    logoutStaff();
-    localStorage.removeItem("hm_auth_user");
   };
 
   const updateProfile = async (data: Partial<UserProfile>): Promise<boolean> => {
