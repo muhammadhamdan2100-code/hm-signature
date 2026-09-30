@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { WishlistProvider } from "./context/WishlistContext";
@@ -34,6 +34,7 @@ import RefundPolicy from "./pages/RefundPolicy";
 import ParentCompany from "./pages/ParentCompany";
 import NotFound from "./pages/NotFound";
 import AdminApp from "./admin/AdminApp";
+import { AdminLogin } from "./admin/pages/AdminLogin";
 import { StaffRouteGuard, CustomerRouteGuard } from "./components/ProtectedRoute";
 
 function CustomerLayout() {
@@ -59,11 +60,11 @@ export default function App() {
             <WishlistProvider>
               <ScrollToTop />
               <Routes>
-                {/* Single Login Route */}
+                {/* Customer Login Route */}
                 <Route path="/login" element={<Login />} />
 
-                {/* Legacy Admin Login Redirect */}
-                <Route path="/admin/login" element={<Navigate to="/login?next=/admin" replace />} />
+                {/* Staff Admin Login Portal */}
+                <Route path="/admin/login" element={<AdminLogin />} />
 
                 {/* Protected Staff Admin Console Routes */}
                 <Route element={<StaffRouteGuard />}>

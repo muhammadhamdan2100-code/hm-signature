@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Banknote, Smartphone, Building2, Truck, Copy } from "lucide-react";
+import { Check, Banknote, Smartphone, Building2, Truck, Copy, CreditCard } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAdminData, type PaymentMethod } from "../admin/context/AdminDataContext";
 import ProductVisual from "../components/ProductVisual";
@@ -87,9 +87,9 @@ export default function Checkout() {
           id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           productId: i.product.id,
           name: i.product.name,
-          sku: (i.product as any).sku || `HM-${i.product.name.slice(0, 3).toUpperCase()}-100`,
-          size: i.product.size || "100ML",
-          price: i.product.price,
+          sku: i.sku || (i.product as any).sku || `HM-${i.product.name.slice(0, 3).toUpperCase()}-100`,
+          size: i.selectedSize || i.product.size || "50ml",
+          price: i.price ?? i.product.price,
           quantity: i.quantity,
           image: i.product.images?.[0] || "texture-velvet",
         })),
@@ -248,17 +248,23 @@ export default function Checkout() {
                         { id: "JazzCash", label: "JazzCash Mobile Wallet", desc: "Instant mobile wallet transfer", icon: Smartphone },
                         { id: "Raast", label: "Raast Instant Transfer", desc: "State Bank zero-fee Raast ID", icon: Banknote },
                         { id: "Bank Transfer", label: "Direct Bank Transfer", desc: "Meezan Bank IBAN transfer", icon: Building2 },
+                        { id: "PayFast", label: "PayFast Card Gateway", desc: "Visa, Mastercard — Coming Soon", icon: CreditCard, disabled: true },
                       ].map((m) => {
                         const Icon = m.icon;
                         const isSelected = selectedMethod === m.id;
+                        const isDisabled = (m as any).disabled;
                         return (
                           <div
                             key={m.id}
-                            onClick={() => setSelectedMethod(m.id as PaymentMethod)}
-                            className={`p-4 rounded-lg border cursor-pointer transition-all space-y-2 ${
-                              isSelected
-                                ? "bg-navy2 border-gold shadow-lg ring-1 ring-gold/40"
-                                : "bg-navy/60 border-gold/20 hover:border-gold/40"
+                            onClick={() => {
+                              if (!isDisabled) setSelectedMethod(m.id as PaymentMethod);
+                            }}
+                            className={`p-4 rounded-lg border transition-all space-y-2 ${
+                              isDisabled
+                                ? "bg-navy/30 border-gold/10 opacity-50 cursor-not-allowed"
+                                : isSelected
+                                ? "bg-navy2 border-gold shadow-lg ring-1 ring-gold/40 cursor-pointer"
+                                : "bg-navy/60 border-gold/20 hover:border-gold/40 cursor-pointer"
                             }`}
                           >
                             <div className="flex items-center justify-between">
@@ -404,16 +410,26 @@ export default function Checkout() {
             <div className="border border-gold/25 p-8 h-fit bg-navy2 rounded-xl shadow-xl space-y-6">
               <h3 className="font-serif text-xl font-bold border-b border-gold/15 pb-3">Acquisition Summary</h3>
               <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
-                {items.map((item) => (
-                  <div key={item.product.id} className="flex gap-4 items-center">
-                    <ProductVisual product={item.product} className="w-14 h-16 shrink-0 flex items-center justify-center border border-gold/20 bg-navy rounded" bottleSize="w-6" />
-                    <div className="flex-1 font-sans">
-                      <div className="text-xs font-serif font-bold text-ivory">{item.product.name}</div>
-                      <div className="text-[10px] text-muted">Qty {item.quantity}</div>
+                {items.map((item) => {
+                  const itemId = item.id || `${item.product.id}-${item.selectedSize}`;
+                  const unitPrice = item.price ?? item.product.price;
+                  return (
+                    <div key={itemId} className="flex gap-4 items-center font-sans">
+                      <ProductVisual product={item.product} className="w-14 h-16 shrink-0 flex items-center justify-center border border-gold/20 bg-navy rounded" bottleSize="w-6" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-serif font-bold text-ivory truncate">{item.product.name}</div>
+                        <div className="flex items-center space-x-2 text-[10px] text-muted">
+                          <span className="font-mono text-gold font-bold bg-gold/10 px-1 py-0.2 rounded border border-gold/30">
+                            {item.selectedSize}
+                          </span>
+                          <span>•</span>
+                          <span>Qty: {item.quantity}</span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono text-gold font-semibold">{formatPKR(unitPrice * item.quantity)}</span>
                     </div>
-                    <span className="text-xs font-mono text-gold font-semibold">{formatPKR(item.product.price * item.quantity)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="space-y-2 text-xs font-sans pt-4 border-t border-gold/15">

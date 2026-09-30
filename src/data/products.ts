@@ -5,11 +5,21 @@ export interface Review {
   text: string;
 }
 
+export interface ProductVariant {
+  id: string;
+  size: string; // e.g. "10ml", "30ml", "50ml", "100ml"
+  price: number;
+  salePrice?: number;
+  sku: string;
+  stock: number;
+  active: boolean;
+}
+
 export interface Product {
   id: string;
   name: string;
   slug: string;
-  price: number;
+  price: number; // 50ml reference base price
   images: string[]; // texture-class keys used to render gallery placeholder panels
   photos?: string[]; // real product photography paths (public/), used in place of the placeholder when present
   category: string; // fragrance family
@@ -28,6 +38,57 @@ export interface Product {
   featured: boolean;
   bestseller: boolean;
   texture: string; // primary card texture class
+  variants?: ProductVariant[];
+}
+
+export function roundCleanPrice(amount: number): number {
+  return Math.round(amount / 50) * 50;
+}
+
+export function generateDefaultVariants(
+  basePrice: number,
+  baseSku: string = "HM-PRD",
+  baseStock: number = 30
+): ProductVariant[] {
+  const p10 = roundCleanPrice(basePrice * 0.3);
+  const p30 = roundCleanPrice(basePrice * 0.7);
+  const p50 = basePrice;
+  const p100 = roundCleanPrice(basePrice * 1.7);
+
+  return [
+    {
+      id: "v-10ml",
+      size: "10ml",
+      price: p10,
+      sku: `${baseSku}-10ML`,
+      stock: Math.max(10, Math.floor(baseStock * 0.8)),
+      active: true,
+    },
+    {
+      id: "v-30ml",
+      size: "30ml",
+      price: p30,
+      sku: `${baseSku}-30ML`,
+      stock: Math.max(15, Math.floor(baseStock * 0.9)),
+      active: true,
+    },
+    {
+      id: "v-50ml",
+      size: "50ml",
+      price: p50,
+      sku: `${baseSku}-50ML`,
+      stock: baseStock,
+      active: true,
+    },
+    {
+      id: "v-100ml",
+      size: "100ml",
+      price: p100,
+      sku: `${baseSku}-100ML`,
+      stock: Math.max(10, Math.floor(baseStock * 1.1)),
+      active: true,
+    },
+  ];
 }
 
 export const products: Product[] = [
@@ -52,7 +113,7 @@ export const products: Product[] = [
     heartNotes: ["Bulgarian Rose", "Oud Wood", "Cedar"],
     baseNotes: ["Amber", "Vanilla", "Leather"],
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Oud Extract, Amber Resinoid, Vanillin.",
-    size: "100ML",
+    size: "50ml",
     concentration: "Extrait de Parfum",
     rating: 4.8,
     reviewCount: 214,
@@ -65,6 +126,7 @@ export const products: Product[] = [
     featured: true,
     bestseller: true,
     texture: "texture-velvet",
+    variants: generateDefaultVariants(4500, "HM-MYS-100", 42),
   },
   {
     id: "2",
@@ -81,7 +143,7 @@ export const products: Product[] = [
     heartNotes: ["Vetiver", "Iris", "Sage"],
     baseNotes: ["Musk", "Cedarwood", "Ambroxan"],
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Vetiver Oil, Musk Blend, Ambroxan.",
-    size: "100ML",
+    size: "50ml",
     concentration: "Extrait de Parfum",
     rating: 4.6,
     reviewCount: 156,
@@ -93,6 +155,7 @@ export const products: Product[] = [
     featured: true,
     bestseller: false,
     texture: "texture-marble-dark",
+    variants: generateDefaultVariants(2800, "HM-UNK-101", 65),
   },
   {
     id: "3",
@@ -109,7 +172,7 @@ export const products: Product[] = [
     heartNotes: ["Jasmine", "Tuberose", "Orange Blossom"],
     baseNotes: ["Amber", "Sandalwood", "White Musk"],
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Jasmine Absolute, Amber Resinoid, Sandalwood Oil.",
-    size: "100ML",
+    size: "50ml",
     concentration: "Extrait de Parfum",
     rating: 4.9,
     reviewCount: 301,
@@ -122,6 +185,7 @@ export const products: Product[] = [
     featured: true,
     bestseller: true,
     texture: "texture-marble-champagne",
+    variants: generateDefaultVariants(3600, "HM-HAR-102", 38),
   },
   {
     id: "4",
@@ -138,7 +202,7 @@ export const products: Product[] = [
     heartNotes: ["Cashmere Wood", "Tobacco Leaf", "Iris"],
     baseNotes: ["Suede", "Amber", "Tonka Bean"],
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Tobacco Absolute, Tonka Bean, Amber Resinoid.",
-    size: "100ML",
+    size: "50ml",
     concentration: "Extrait de Parfum",
     rating: 4.7,
     reviewCount: 98,
@@ -149,6 +213,7 @@ export const products: Product[] = [
     featured: false,
     bestseller: true,
     texture: "texture-wood",
+    variants: generateDefaultVariants(4200, "HM-AUR-103", 51),
   },
   {
     id: "5",
@@ -165,7 +230,7 @@ export const products: Product[] = [
     heartNotes: ["Turkish Rose", "Peony", "Violet"],
     baseNotes: ["Smoked Woods", "Musk", "Vanilla"],
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Rose Absolute, Peony Extract, Musk Blend.",
-    size: "100ML",
+    size: "50ml",
     concentration: "Extrait de Parfum",
     rating: 4.8,
     reviewCount: 176,
@@ -176,6 +241,7 @@ export const products: Product[] = [
     featured: false,
     bestseller: true,
     texture: "texture-stone-beige",
+    variants: generateDefaultVariants(3200, "HM-ROS-104", 47),
   },
   {
     id: "6",
@@ -192,7 +258,7 @@ export const products: Product[] = [
     heartNotes: ["Amber", "Cinnamon", "Praline"],
     baseNotes: ["Vanilla", "Tonka Bean", "Sandalwood"],
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Vanilla Absolute, Amber Resinoid, Tonka Bean.",
-    size: "100ML",
+    size: "50ml",
     concentration: "Extrait de Parfum",
     rating: 4.7,
     reviewCount: 132,
@@ -203,6 +269,7 @@ export const products: Product[] = [
     featured: false,
     bestseller: false,
     texture: "texture-navy",
+    variants: generateDefaultVariants(2500, "HM-GOL-105", 59),
   },
 ];
 

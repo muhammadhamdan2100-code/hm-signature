@@ -33,48 +33,58 @@ export default function CartPage() {
         ) : (
           <div className="grid lg:grid-cols-[1fr_360px] gap-14">
             <div className="space-y-8">
-              {items.map((item) => (
-                <div key={item.product.id} className="flex gap-5 border-b border-gold/15 pb-8">
-                  <Link to={`/product/${item.product.slug}`}>
-                    <ProductVisual product={item.product} className="w-28 h-32 shrink-0 flex items-center justify-center border border-gold/20" bottleSize="w-14" />
-                  </Link>
-                  <div className="flex-1 flex flex-col justify-between">
-                    <div className="flex justify-between gap-4">
-                      <div>
-                        <div className="text-[11px] text-muted tracking-widest mb-1">{item.product.category}</div>
-                        <Link to={`/product/${item.product.slug}`} className="font-serif text-xl">{item.product.name}</Link>
-                        <div className="text-xs text-muted mt-1">{item.product.concentration} · {item.product.size}</div>
+              {items.map((item) => {
+                const itemId = item.id || `${item.product.id}-${item.selectedSize}`;
+                const unitPrice = item.price ?? item.product.price;
+                return (
+                  <div key={itemId} className="flex gap-5 border-b border-gold/15 pb-8">
+                    <Link to={`/product/${item.product.slug}`}>
+                      <ProductVisual product={item.product} className="w-28 h-32 shrink-0 flex items-center justify-center border border-gold/20" bottleSize="w-14" />
+                    </Link>
+                    <div className="flex-1 flex flex-col justify-between">
+                      <div className="flex justify-between gap-4">
+                        <div>
+                          <div className="text-[11px] text-muted tracking-widest mb-1">{item.product.category}</div>
+                          <Link to={`/product/${item.product.slug}`} className="font-serif text-xl">{item.product.name}</Link>
+                          <div className="text-xs text-muted mt-1 font-sans flex items-center gap-2">
+                            <span className="font-mono text-gold font-bold bg-gold/10 px-2 py-0.5 rounded border border-gold/30">
+                              {item.selectedSize}
+                            </span>
+                            <span>•</span>
+                            <span>{item.product.concentration}</span>
+                          </div>
+                        </div>
+                        <span className="text-goldLight font-mono font-bold text-lg">{formatPKR(unitPrice * item.quantity)}</span>
                       </div>
-                      <span className="text-goldLight">{formatPKR(item.product.price * item.quantity)}</span>
-                    </div>
-                    <div className="flex items-center justify-between mt-4">
-                      <div className="flex items-center border border-gold/25">
-                        <button className="px-3 py-2 hover:text-gold" onClick={() => updateQuantity(item.product.id, item.quantity - 1)}>
-                          <Minus size={13} />
-                        </button>
-                        <span className="px-4 text-sm">{item.quantity}</span>
-                        <button className="px-3 py-2 hover:text-gold" onClick={() => updateQuantity(item.product.id, item.quantity + 1)}>
-                          <Plus size={13} />
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-muted">
-                        <button
-                          onClick={() => {
-                            toggleWishlist(item.product.id);
-                            removeFromCart(item.product.id);
-                          }}
-                          className="flex items-center gap-1 hover:text-gold"
-                        >
-                          <Heart size={13} /> Save for later
-                        </button>
-                        <button onClick={() => removeFromCart(item.product.id)} className="flex items-center gap-1 hover:text-gold">
-                          <Trash2 size={13} /> Remove
-                        </button>
+                      <div className="flex items-center justify-between mt-4">
+                        <div className="flex items-center border border-gold/25">
+                          <button className="px-3 py-2 hover:text-gold" onClick={() => updateQuantity(itemId, item.quantity - 1)}>
+                            <Minus size={13} />
+                          </button>
+                          <span className="px-4 text-sm font-mono font-bold text-ivory">{item.quantity}</span>
+                          <button className="px-3 py-2 hover:text-gold" onClick={() => updateQuantity(itemId, item.quantity + 1)}>
+                            <Plus size={13} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted">
+                          <button
+                            onClick={() => {
+                              toggleWishlist(item.product.id);
+                              removeFromCart(itemId);
+                            }}
+                            className="flex items-center gap-1 hover:text-gold"
+                          >
+                            <Heart size={13} /> Save for later
+                          </button>
+                          <button onClick={() => removeFromCart(itemId)} className="flex items-center gap-1 hover:text-gold">
+                            <Trash2 size={13} /> Remove
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <form onSubmit={submitPromo} className="flex gap-3 max-w-sm pt-4">
                 <input

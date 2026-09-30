@@ -12,6 +12,10 @@ export default function ProductCard({ product, onQuickView }: { product: Product
   const { toggleWishlist, isWishlisted } = useWishlist();
   const wishlisted = isWishlisted(product.id);
 
+  const minPrice = product.variants && product.variants.length > 0
+    ? Math.min(...product.variants.map((v) => v.price))
+    : Math.round((product.price * 0.3) / 50) * 50;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
@@ -56,12 +60,18 @@ export default function ProductCard({ product, onQuickView }: { product: Product
       )}
 
       <div className="p-5">
-        <div className="text-[10px] tracking-[1.5px] text-muted mb-1">{product.category}</div>
+        <div className="flex items-center justify-between text-[10px] tracking-[1.5px] text-muted mb-1 font-sans">
+          <span>{product.category}</span>
+          <span className="text-gold/70 font-mono text-[9px]">10ml · 30ml · 50ml · 100ml</span>
+        </div>
         <div className="flex items-center justify-between">
           <Link to={`/product/${product.slug}`}>
             <h3 className="font-serif text-xl">{product.name}</h3>
           </Link>
-          <span className="text-goldLight text-sm">{formatPKR(product.price)}</span>
+          <div className="flex flex-col text-right">
+            <span className="text-goldLight text-sm font-mono font-bold">{formatPKR(product.price)}</span>
+            <span className="text-[9px] text-muted font-mono">From {formatPKR(minPrice)}</span>
+          </div>
         </div>
         <div className="flex gap-2 mt-4">
           <Link to={`/product/${product.slug}`} className="flex-1 text-center text-[11px] tracking-[1.5px] border border-gold/30 py-2.5 hover:border-gold transition-colors">

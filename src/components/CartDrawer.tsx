@@ -44,42 +44,52 @@ export default function CartDrawer() {
                   </div>
                 </div>
               )}
-              {items.map((item) => (
-                <div key={item.product.id} className="flex gap-4">
-                  <ProductVisual product={item.product} className="w-20 h-24 shrink-0 flex items-center justify-center" bottleSize="w-10" />
-                  <div className="flex-1 flex flex-col justify-between">
-                    <div className="flex justify-between gap-2">
-                      <div>
-                        <div className="font-serif text-lg leading-tight">{item.product.name}</div>
-                        <div className="text-xs text-muted mt-1">{item.product.concentration}</div>
-                      </div>
-                      <button onClick={() => removeFromCart(item.product.id)} aria-label="Remove" className="text-muted hover:text-gold">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center border border-gold/25">
-                        <button
-                          className="px-2 py-1 hover:text-gold"
-                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                          aria-label="Decrease"
-                        >
-                          <Minus size={12} />
-                        </button>
-                        <span className="px-3 text-sm">{item.quantity}</span>
-                        <button
-                          className="px-2 py-1 hover:text-gold"
-                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          aria-label="Increase"
-                        >
-                          <Plus size={12} />
+              {items.map((item) => {
+                const itemId = item.id || `${item.product.id}-${item.selectedSize}`;
+                const unitPrice = item.price ?? item.product.price;
+                return (
+                  <div key={itemId} className="flex gap-4">
+                    <ProductVisual product={item.product} className="w-20 h-24 shrink-0 flex items-center justify-center" bottleSize="w-10" />
+                    <div className="flex-1 flex flex-col justify-between">
+                      <div className="flex justify-between gap-2">
+                        <div>
+                          <div className="font-serif text-lg leading-tight">{item.product.name}</div>
+                          <div className="flex items-center space-x-2 text-xs text-muted mt-1">
+                            <span className="font-mono text-gold font-bold bg-gold/10 px-1.5 py-0.5 rounded border border-gold/30 text-[10px]">
+                              {item.selectedSize}
+                            </span>
+                            <span>•</span>
+                            <span>{item.product.concentration}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => removeFromCart(itemId)} aria-label="Remove" className="text-muted hover:text-gold">
+                          <Trash2 size={15} />
                         </button>
                       </div>
-                      <span className="text-goldLight text-sm">{formatPKR(item.product.price * item.quantity)}</span>
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex items-center border border-gold/25">
+                          <button
+                            className="px-2 py-1 hover:text-gold"
+                            onClick={() => updateQuantity(itemId, item.quantity - 1)}
+                            aria-label="Decrease"
+                          >
+                            <Minus size={12} />
+                          </button>
+                          <span className="px-3 text-sm font-mono font-bold text-ivory">{item.quantity}</span>
+                          <button
+                            className="px-2 py-1 hover:text-gold"
+                            onClick={() => updateQuantity(itemId, item.quantity + 1)}
+                            aria-label="Increase"
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
+                        <span className="text-goldLight font-mono text-sm font-bold">{formatPKR(unitPrice * item.quantity)}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {items.length > 0 && (

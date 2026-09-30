@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useAdminData, type AdminProduct } from "../context/AdminDataContext";
+import { type ProductVariant, generateDefaultVariants, roundCleanPrice } from "../../data/products";
 import { ImageUploader } from "../components/ImageUploader";
 import { GoogleSeoPreview } from "../components/GoogleSeoPreview";
 import { Breadcrumb } from "../components/Breadcrumb";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 export const ProductFormPage: React.FC = () => {
-  const { products, categories, collections, addProduct, updateProduct } =
-    useAdminData();
+  const { products, categories, collections, addProduct, updateProduct } = useAdminData();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -25,11 +25,11 @@ export const ProductFormPage: React.FC = () => {
   const [collection, setCollection] = useState(collections[0]?.name || "Unisex Collection");
   const [gender, setGender] = useState<"men" | "women" | "unisex">("unisex");
   const [fragranceType, setFragranceType] = useState("Extrait de Parfum");
-  const [size, setSize] = useState("100ML");
+  const [size, setSize] = useState("50ml");
   const [concentration, setConcentration] = useState("Extrait de Parfum (25-30% Oil)");
   const [stock, setStock] = useState<number>(50);
   const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
-  
+
   const [topNotes, setTopNotes] = useState<string>("Bergamot, Saffron, Pink Pepper");
   const [heartNotes, setHeartNotes] = useState<string>("Bulgarian Rose, Oud Wood, Cedar");
   const [baseNotes, setBaseNotes] = useState<string>("Amber, Vanilla, Leather");
@@ -46,6 +46,9 @@ export const ProductFormPage: React.FC = () => {
 
   const [seoTitle, setSeoTitle] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
+
+  // Bottle Sizes / ML Variants State
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
 
   // Populate data if editing
   useEffect(() => {
@@ -76,10 +79,18 @@ export const ProductFormPage: React.FC = () => {
       setActive(existingProduct.active);
       setSeoTitle(existingProduct.seoTitle || `${existingProduct.name} — HM Signature`);
       setSeoDescription(existingProduct.seoDescription || existingProduct.description);
+
+      if (existingProduct.variants && existingProduct.variants.length > 0) {
+        setVariants(existingProduct.variants);
+      } else {
+        setVariants(generateDefaultVariants(existingProduct.price, existingProduct.sku, existingProduct.stock));
+      }
+    } else if (!isEditing) {
+      setVariants(generateDefaultVariants(price, sku || "HM-PRD", stock));
     }
   }, [isEditing, existingProduct]);
 
-  // Auto generate slug from name if creating
+  // Auto generate slug & SKU from name if creating
   const handleNameChange = (val: string) => {
     setName(val);
     if (!isEditing) {
@@ -88,9 +99,57 @@ export const ProductFormPage: React.FC = () => {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)+/g, "");
       setSlug(generatedSlug);
-      setSku(`HM-${val.slice(0, 3).toUpperCase()}-100`);
+      const generatedSku = `HM-${val.slice(0, 3).toUpperCase()}-100`;
+      setSku(generatedSku);
       setSeoTitle(`${val} — HM Signature Extrait de Parfum`);
     }
+  };
+
+  // Update base price & sync 50ml variant price
+  const handlePriceChange = (newPrice: number) => {
+    setPrice(newPrice);
+    setVariants((prev) =>
+      prev.map((v) => (v.size.toLowerCase() === "50ml" ? { ...v, price: newPrice } : v))
+    );
+  };
+
+  // Variant Editor Handlers
+  const handleUpdateVariant = (index: number, field: keyof ProductVariant, value: any) => {
+    setVariants((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+
+      // If updating 50ml price, sync base product price
+      if (field === "price" && updated[index].size.toLowerCase() === "50ml") {
+        setPrice(Number(value));
+      }
+      return updated;
+    });
+  };
+
+  const handleAddVariant = (presetSize: string = "100ml") => {
+    const defaultPrice =
+      presetSize.toLowerCase() === "10ml"
+        ? roundCleanPrice(price * 0.3)
+        : presetSize.toLowerCase() === "30ml"
+        ? roundCleanPrice(price * 0.7)
+        : presetSize.toLowerCase() === "50ml"
+        ? price
+        : roundCleanPrice(price * 1.7);
+
+    const newV: ProductVariant = {
+      id: "v-" + Date.now() + Math.random().toString(36).substring(2, 5),
+      size: presetSize,
+      price: defaultPrice,
+      sku: `${sku || "HM-PRD"}-${presetSize.toUpperCase()}`,
+      stock: stock || 30,
+      active: true,
+    };
+    setVariants((prev) => [...prev, newV]);
+  };
+
+  const handleRemoveVariant = (index: number) => {
+    setVariants((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -126,6 +185,7 @@ export const ProductFormPage: React.FC = () => {
       active,
       seoTitle: seoTitle || `${name} — HM Signature`,
       seoDescription: seoDescription || description,
+      variants,
     };
 
     if (isEditing && existingProduct) {
@@ -138,7 +198,7 @@ export const ProductFormPage: React.FC = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+    <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in max-w-5xl mx-auto font-sans">
       <Breadcrumb
         items={[
           { label: "Products", path: "/admin/products" },
@@ -170,13 +230,13 @@ export const ProductFormPage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate("/admin/products")}
-            className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40"
+            className="px-4 py-2 rounded text-xs uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider transition-colors flex items-center space-x-2 shadow-lg"
+            className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors flex items-center space-x-2 shadow-lg"
           >
             <Save className="w-4 h-4" />
             <span>{isEditing ? "Save Changes" : "Publish Fragrance"}</span>
@@ -185,7 +245,7 @@ export const ProductFormPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Form Column (Main Information) */}
+        {/* Left Form Column (Main Information & Variants Editor) */}
         <div className="lg:col-span-2 space-y-6">
           {/* General Information */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
@@ -195,7 +255,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   Product Name *
                 </label>
                 <input
@@ -209,7 +269,7 @@ export const ProductFormPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   URL Slug *
                 </label>
                 <input
@@ -225,8 +285,8 @@ export const ProductFormPage: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  SKU Code *
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
+                  Base SKU Code *
                 </label>
                 <input
                   type="text"
@@ -239,7 +299,7 @@ export const ProductFormPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   Fragrance Family / Category
                 </label>
                 <select
@@ -257,7 +317,7 @@ export const ProductFormPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 Short Teaser Description
               </label>
               <textarea
@@ -270,7 +330,7 @@ export const ProductFormPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 Full Atelier Story & Formulation
               </label>
               <textarea
@@ -280,6 +340,145 @@ export const ProductFormPage: React.FC = () => {
                 placeholder="Handcrafted in small batches using rare botanical extracts..."
                 className="w-full bg-navy border border-gold/30 rounded p-3 text-xs text-ivory focus:outline-none focus:border-gold"
               />
+            </div>
+          </div>
+
+          {/* Bottle Sizes & ML Variants Manager */}
+          <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gold/15 pb-3">
+              <div>
+                <h3 className="font-serif text-base font-bold text-ivory">
+                  Bottle Sizes & ML Variants
+                </h3>
+                <p className="text-xs text-muted font-light">
+                  Manage variant prices, sale prices, SKUs, stock limits, and active availability for each size.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAddVariant("100ml")}
+                className="px-3 py-1.5 bg-gold/15 border border-gold/30 text-gold hover:bg-gold hover:text-navy rounded text-xs uppercase font-bold transition-all flex items-center space-x-1 shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Custom Size</span>
+              </button>
+            </div>
+
+            {/* Quick Presets Bar */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted text-[10px] uppercase font-mono">Add Preset Size:</span>
+              {["10ml", "30ml", "50ml", "100ml"].map((pz) => {
+                const exists = variants.some((v) => v.size.toLowerCase() === pz.toLowerCase());
+                return (
+                  <button
+                    key={pz}
+                    type="button"
+                    disabled={exists}
+                    onClick={() => handleAddVariant(pz)}
+                    className={`px-2.5 py-1 rounded border text-[11px] font-mono transition-all ${
+                      exists
+                        ? "bg-navy/40 border-gold/10 text-muted/40 cursor-not-allowed"
+                        : "bg-navy border-gold/30 text-gold hover:bg-gold/15 hover:border-gold"
+                    }`}
+                  >
+                    {exists ? `✓ ${pz}` : `+ ${pz}`}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Variants Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-navy text-gold uppercase tracking-wider text-[10px] border-b border-gold/15">
+                  <tr>
+                    <th className="py-2.5 px-3">Size</th>
+                    <th className="py-2.5 px-3">Price (PKR)</th>
+                    <th className="py-2.5 px-3">Sale Price</th>
+                    <th className="py-2.5 px-3">Variant SKU</th>
+                    <th className="py-2.5 px-3">Stock</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gold/10 text-ivory">
+                  {variants.map((v, idx) => (
+                    <tr key={v.id || idx} className="hover:bg-navy/40 transition-colors">
+                      {/* Size */}
+                      <td className="py-2.5 px-3 w-28">
+                        <input
+                          type="text"
+                          required
+                          value={v.size}
+                          onChange={(e) => handleUpdateVariant(idx, "size", e.target.value)}
+                          className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-gold font-mono font-bold focus:outline-none focus:border-gold"
+                        />
+                      </td>
+                      {/* Price */}
+                      <td className="py-2.5 px-3 w-32">
+                        <input
+                          type="number"
+                          required
+                          value={v.price}
+                          onChange={(e) => handleUpdateVariant(idx, "price", Number(e.target.value))}
+                          className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                        />
+                      </td>
+                      {/* Sale Price */}
+                      <td className="py-2.5 px-3 w-32">
+                        <input
+                          type="number"
+                          value={v.salePrice || ""}
+                          onChange={(e) =>
+                            handleUpdateVariant(idx, "salePrice", e.target.value ? Number(e.target.value) : undefined)
+                          }
+                          placeholder="Optional"
+                          className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                        />
+                      </td>
+                      {/* SKU */}
+                      <td className="py-2.5 px-3">
+                        <input
+                          type="text"
+                          value={v.sku}
+                          onChange={(e) => handleUpdateVariant(idx, "sku", e.target.value)}
+                          placeholder="SKU"
+                          className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                        />
+                      </td>
+                      {/* Stock */}
+                      <td className="py-2.5 px-3 w-24">
+                        <input
+                          type="number"
+                          value={v.stock}
+                          onChange={(e) => handleUpdateVariant(idx, "stock", Number(e.target.value))}
+                          className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                        />
+                      </td>
+                      {/* Status Toggle */}
+                      <td className="py-2.5 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={v.active !== false}
+                          onChange={(e) => handleUpdateVariant(idx, "active", e.target.checked)}
+                          className="rounded border-gold/30 bg-navy text-gold focus:ring-0 cursor-pointer"
+                        />
+                      </td>
+                      {/* Remove Action */}
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveVariant(idx)}
+                          className="p-1 text-muted hover:text-rose-400 transition-colors"
+                          title="Remove size variant"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -294,7 +493,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-sans text-gold mb-1 uppercase tracking-wider font-semibold">
+                <label className="block text-xs text-gold mb-1 uppercase tracking-wider font-semibold">
                   Top Notes (Initial Opening)
                 </label>
                 <input
@@ -307,7 +506,7 @@ export const ProductFormPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-gold mb-1 uppercase tracking-wider font-semibold">
+                <label className="block text-xs text-gold mb-1 uppercase tracking-wider font-semibold">
                   Heart / Middle Notes (Core Heart)
                 </label>
                 <input
@@ -320,7 +519,7 @@ export const ProductFormPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-gold mb-1 uppercase tracking-wider font-semibold">
+                <label className="block text-xs text-gold mb-1 uppercase tracking-wider font-semibold">
                   Base Notes (Dry Down Longevity)
                 </label>
                 <input
@@ -350,7 +549,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   SEO Meta Title
                 </label>
                 <input
@@ -363,7 +562,7 @@ export const ProductFormPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   SEO Meta Description
                 </label>
                 <textarea
@@ -384,29 +583,29 @@ export const ProductFormPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Sidebar Column (Pricing, Stock, Badges, Status) */}
+        {/* Right Sidebar Column (Base 50ml Pricing, Stock, Badges, Status) */}
         <div className="space-y-6">
-          {/* Pricing & Stock Card */}
+          {/* Base Pricing & Stock Card */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Pricing & Inventory
+              Base 50ml Reference Price
             </h3>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Regular Price (PKR) *
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
+                50ml Base Price (PKR) *
               </label>
               <input
                 type="number"
                 required
                 value={price}
-                onChange={(e) => setPrice(Number(e.target.value))}
+                onChange={(e) => handlePriceChange(Number(e.target.value))}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-gold font-mono font-bold text-base focus:outline-none focus:border-gold"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 Special Sale Price (PKR)
               </label>
               <input
@@ -422,7 +621,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   Stock Units *
                 </label>
                 <input
@@ -435,7 +634,7 @@ export const ProductFormPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                   Low Limit
                 </label>
                 <input
@@ -455,7 +654,7 @@ export const ProductFormPage: React.FC = () => {
             </h3>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 Gender Classification
               </label>
               <select
@@ -470,20 +669,20 @@ export const ProductFormPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Bottle Size
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
+                Base Flacon Size
               </label>
               <input
                 type="text"
                 value={size}
                 onChange={(e) => setSize(e.target.value)}
-                placeholder="100ML"
+                placeholder="50ml"
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 Concentration Tier
               </label>
               <input
@@ -496,7 +695,7 @@ export const ProductFormPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+              <label className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 Collection Assignment
               </label>
               <select
