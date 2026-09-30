@@ -44,6 +44,11 @@ function clearAttemptRecord(email: string): void {
   localStorage.removeItem(`${LOCKOUT_STORAGE_KEY}_${email.toLowerCase()}`);
 }
 
+export function isStaffRole(role?: string): boolean {
+  if (!role) return false;
+  return role.toLowerCase().trim() !== "customer";
+}
+
 export function getCurrentStaff(): StaffMember | null {
   try {
     if (localStorage.getItem(LOGGED_OUT_KEY) === "true") {
@@ -53,8 +58,26 @@ export function getCurrentStaff(): StaffMember | null {
     if (stored) {
       return JSON.parse(stored);
     }
-    // Default initial active session for primary super admin
-    return INITIAL_STAFF_MEMBERS[0];
+    // Check if hm_auth_user exists in local storage and is staff
+    const authUserRaw = localStorage.getItem("hm_auth_user");
+    if (authUserRaw) {
+      const user = JSON.parse(authUserRaw);
+      if (user && isStaffRole(user.role)) {
+        const displayRole = toDisplayRole(user.role);
+        return {
+          id: user.id,
+          name: user.fullName || user.email?.split("@")[0] || "Staff Member",
+          email: user.email,
+          role: displayRole,
+          status: "Active",
+          lastActive: "Just now",
+          createdAt: new Date().toISOString().split("T")[0],
+          isPrimaryAdmin: isPrimaryAdmin(user.email),
+          permissions: getDefaultPermissionsForRole(displayRole),
+        };
+      }
+    }
+    return null;
   } catch (e) {
     console.error("Failed to parse stored staff auth", e);
     return null;
@@ -67,6 +90,7 @@ export function setCurrentStaff(staff: StaffMember | null): void {
     localStorage.removeItem(LOGGED_OUT_KEY);
   } else {
     localStorage.removeItem(MOCK_AUTH_STORAGE_KEY);
+    localStorage.removeItem("hm_auth_user");
     localStorage.setItem(LOGGED_OUT_KEY, "true");
   }
 }
@@ -97,13 +121,52 @@ export async function loginStaff(
 
       if (authError || !authData.user) {
         recordFailedAttempt(trimmedEmail);
-        return { success: false, error: "Invalid email address or password." };
+        return { success: false, error: authError?.message || "Invalid email address or password." };
       }
 
-      const profile = await dbService.getUserProfile(authData.user.id);
+      let profile = await dbService.getUserProfile(authData.user.id);
+      
+      // If profile is missing in DB, fallback to metadata or primary admin role if applicable
       if (!profile) {
+        const metadataRole = authData.user.user_metadata?.role;
+        const metadataName = authData.user.user_metadata?.full_name || trimmedEmail.split("@")[0];
+        
+        if (isPrimaryAdmin(trimmedEmail)) {
+          const displayRole = "Super Admin";
+          const staffMember: StaffMember = {
+            id: authData.user.id,
+            name: metadataName || "Muhammad Hamdan",
+            email: trimmedEmail,
+            role: displayRole,
+            status: "Active",
+            lastActive: authData.user.last_sign_in_at ? new Date(authData.user.last_sign_in_at).toLocaleTimeString() : "Just now",
+            createdAt: new Date().toISOString().split("T")[0],
+            isPrimaryAdmin: true,
+            permissions: getDefaultPermissionsForRole(displayRole),
+          };
+          clearAttemptRecord(trimmedEmail);
+          setCurrentStaff(staffMember);
+          return { success: true, staff: staffMember };
+        } else if (metadataRole && metadataRole !== "customer") {
+          const displayRole = toDisplayRole(metadataRole);
+          const staffMember: StaffMember = {
+            id: authData.user.id,
+            name: metadataName,
+            email: trimmedEmail,
+            role: displayRole,
+            status: "Active",
+            lastActive: authData.user.last_sign_in_at ? new Date(authData.user.last_sign_in_at).toLocaleTimeString() : "Just now",
+            createdAt: new Date().toISOString().split("T")[0],
+            isPrimaryAdmin: false,
+            permissions: getDefaultPermissionsForRole(displayRole),
+          };
+          clearAttemptRecord(trimmedEmail);
+          setCurrentStaff(staffMember);
+          return { success: true, staff: staffMember };
+        }
+
         recordFailedAttempt(trimmedEmail);
-        return { success: false, error: "Staff profile record not found." };
+        return { success: false, error: "Authenticated with Supabase Auth, but no staff profile or authorized role record was found in the database." };
       }
 
       // Check account status

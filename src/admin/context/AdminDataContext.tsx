@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, type ReactNode } from "react";
-import { products as initialProductsData } from "../../data/products";
+import { products as initialProductsData, type ProductVariant, generateDefaultVariants } from "../../data/products";
 import { type StaffMember, type StaffStatus, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
 import { INITIAL_STAFF_MEMBERS } from "../../services/staff";
 import { isSupabaseConfigured, dbService } from "../../lib/supabase";
 
-export type { StaffMember };
+export type { StaffMember, ProductVariant };
 export { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin };
 
 // --- TYPES ---
@@ -37,6 +37,7 @@ export interface AdminProduct {
   seoTitle?: string;
   seoDescription?: string;
   createdAt: string;
+  variants: ProductVariant[];
 }
 
 export interface Category {
@@ -70,9 +71,9 @@ export type OrderStatus =
   | "Cancelled"
   | "Returned";
 
-export type PaymentMethod = "Cash on Delivery" | "JazzCash" | "Raast" | "Bank Transfer" | "Credit Card";
+export type PaymentMethod = "Cash on Delivery" | "JazzCash" | "Raast" | "Bank Transfer" | "Credit Card" | "PayFast" | "payfast";
 
-export type PaymentStatus = "Pending" | "Verified" | "Paid" | "Failed" | "Rejected" | "Refunded";
+export type PaymentStatus = "Pending" | "Verified" | "Paid" | "Failed" | "Rejected" | "Refunded" | "Verification Pending";
 
 export interface PaymentRecord {
   id: string;
@@ -136,6 +137,8 @@ export interface Order {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
   paymentReference?: string;
+  paymentProofUrl?: string;
+  paymentProofNote?: string;
   courier?: string;
   trackingNumber?: string;
   timeline: OrderTimelineItem[];
@@ -342,6 +345,7 @@ const initialProducts: AdminProduct[] = initialProductsData.map((p, idx) => ({
   seoTitle: `${p.name} — HM Signature Luxury Perfume`,
   seoDescription: p.description,
   createdAt: "2026-08-15",
+  variants: p.variants || generateDefaultVariants(p.price, `HM-${p.name.toUpperCase().slice(0, 3)}-${100 + idx}`, p.stock),
 }));
 
 const initialCategories: Category[] = [
@@ -1162,6 +1166,7 @@ interface AdminDataContextType {
   generateTrackingId: () => string;
   updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => void;
   updateOrderShipping: (orderId: string, courier: string, trackingNumber: string, shippingStatus: Order["shippingStatus"]) => void;
+  uploadPaymentProof: (orderId: string, proofUrl: string, note?: string) => void;
 
   // Payments Management
   updatePaymentStatus: (paymentId: string, status: PaymentStatus, note?: string) => void;
@@ -1396,6 +1401,41 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       )
     );
     showToast("success", `Tracking info updated for order.`);
+  };
+
+  const uploadPaymentProof = (orderId: string, proofUrl: string, note?: string) => {
+    const timeString = new Date().toISOString().replace("T", " ").slice(0, 16);
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id === orderId) {
+          return {
+            ...o,
+            paymentStatus: "Verification Pending" as PaymentStatus,
+            paymentProofUrl: proofUrl,
+            paymentProofNote: note || "Payment receipt screenshot attached by customer",
+            timeline: [
+              ...o.timeline,
+              { status: o.status, date: timeString, note: "Payment proof uploaded — verification pending" },
+            ],
+          };
+        }
+        return o;
+      })
+    );
+    setPayments((prev) =>
+      prev.map((p) => {
+        if (p.orderId === orderId) {
+          return {
+            ...p,
+            status: "Verification Pending" as PaymentStatus,
+            proofNote: note || "Payment receipt screenshot attached by customer",
+            referenceId: proofUrl ? "PROOF-ATTACHED" : p.referenceId,
+          };
+        }
+        return p;
+      })
+    );
+    showToast("success", "Payment proof uploaded successfully. Verification is pending approval.");
   };
 
   // Payments Management
@@ -1657,6 +1697,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         generateTrackingId,
         updateOrderStatus,
         updateOrderShipping,
+        uploadPaymentProof,
         updatePaymentStatus,
         verifyPayment,
         rejectPayment,

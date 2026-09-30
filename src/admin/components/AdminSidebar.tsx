@@ -1,7 +1,8 @@
 import React from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAdminData } from "../context/AdminDataContext";
-import { getCurrentStaff, logoutStaff, hasPermission } from "../../services/auth";
+import { getCurrentStaff, hasPermission } from "../../services/auth";
+import { useAuth } from "../../context/AuthContext";
 import { ROUTE_PERMISSIONS } from "../../types/staff";
 import {
   LayoutDashboard,
@@ -106,13 +107,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useAdminData();
+  const { logout } = useAuth();
   const currentStaff = getCurrentStaff();
 
-  const handleLogout = () => {
-    logoutStaff();
+  const handleLogout = async () => {
+    if (mobileOpen) onCloseMobile();
+    await logout();
     showToast("info", "Signed out of admin session.");
     navigate("/admin/login", { replace: true });
-    if (mobileOpen) onCloseMobile();
   };
 
   // Filter navigation groups based on current staff role permissions

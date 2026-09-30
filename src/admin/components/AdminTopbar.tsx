@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
-import { getCurrentStaff, logoutStaff, hasPermission } from "../../services/auth";
+import { getCurrentStaff, hasPermission } from "../../services/auth";
+import { useAuth } from "../../context/AuthContext";
 import {
   Search,
   Bell,
@@ -28,6 +29,7 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
 }) => {
   const { notifications, storeSettings, updateStoreSettings, markNotificationRead } =
     useAdminData();
+  const { logout } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
@@ -297,9 +299,9 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
 
               <div className="border-t border-gold/15 my-1" />
               <button
-                onClick={() => {
-                  logoutStaff();
+                onClick={async () => {
                   setShowProfileMenu(false);
+                  await logout();
                   navigate("/admin/login", { replace: true });
                 }}
                 className="w-full flex items-center space-x-2 px-4 py-2 hover:bg-rose-950/40 text-rose-300 font-semibold"

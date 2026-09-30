@@ -1,10 +1,9 @@
 import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { useAuth, isStaffRole, isCustomerRole } from "../context/AuthContext";
+import { useAuth, isStaffRole } from "../context/AuthContext";
 
 export const StaffRouteGuard: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -14,20 +13,11 @@ export const StaffRouteGuard: React.FC = () => {
     );
   }
 
-  if (!user) {
-    const nextPath = encodeURIComponent(location.pathname + location.search);
-    return <Navigate to={`/login?next=${nextPath}`} replace />;
+  if (!user || !isStaffRole(user.role)) {
+    return <Navigate to="/admin/login" replace />;
   }
 
-  if (isCustomerRole(user.role)) {
-    return <Navigate to="/account" replace />;
-  }
-
-  if (isStaffRole(user.role)) {
-    return <Outlet />;
-  }
-
-  return <Navigate to="/login" replace />;
+  return <Outlet />;
 };
 
 export const CustomerRouteGuard: React.FC = () => {

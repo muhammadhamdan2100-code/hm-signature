@@ -3,8 +3,12 @@ import type { Product } from "../data/products";
 import { dbService } from "../lib/supabase";
 
 export interface CartItem {
+  id: string; // unique item id: e.g. `${product.id}-${selectedSize}`
   product: Product;
+  selectedSize: string; // e.g. "10ml", "30ml", "50ml", "100ml"
+  price: number; // variant price
   quantity: number;
+  sku?: string;
 }
 
 interface CartContextType {
@@ -12,7 +16,13 @@ interface CartContextType {
   isOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
-  addToCart: (product: Product, quantity?: number) => void;
+  addToCart: (
+    product: Product,
+    selectedSize?: string,
+    quantity?: number,
+    variantPrice?: number,
+    variantSku?: string
+  ) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
@@ -32,7 +42,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      // Migrate old format cart items if necessary
+      return parsed.map((item: any) => ({
+        id: item.id || `${item.product.id}-${item.selectedSize || item.product?.size || "50ml"}`,
+        product: item.product,
+        selectedSize: item.selectedSize || item.product?.size || "50ml",
+        price: item.price ?? item.product?.price ?? 0,
+        sku: item.sku || item.product?.sku || `HM-${item.product?.name?.slice(0, 3).toUpperCase()}-100`,
+        quantity: item.quantity,
+      }));
     } catch {
       return [];
     }
@@ -50,33 +70,71 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const openCart = () => setIsOpen(true);
   const closeCart = () => setIsOpen(false);
 
-  const addToCart = (product: Product, quantity = 1) => {
+  const addToCart = (
+    product: Product,
+    selectedSize?: string,
+    quantity = 1,
+    variantPrice?: number,
+    variantSku?: string
+  ) => {
+    const size = selectedSize || product.size || "50ml";
+    const matchedVariant = product.variants?.find((v) => v.size.toLowerCase() === size.toLowerCase());
+    const price = variantPrice ?? matchedVariant?.price ?? product.price;
+    const sku =
+      variantSku ||
+      matchedVariant?.sku ||
+      (product as any).sku ||
+      `HM-${product.name.slice(0, 3).toUpperCase()}-100`;
+    const cartItemId = `${product.id}-${size}`;
+
     setItems((prev) => {
-      const existing = prev.find((i) => i.product.id === product.id);
-      if (existing) {
-        // Enforce stock check if stock property is present
-        const currentStock = (product as any).stock ?? 50;
+      const existingIdx = prev.findIndex(
+        (i) => (i.id || `${i.product.id}-${i.selectedSize}`) === cartItemId
+      );
+
+      if (existingIdx > -1) {
+        const existing = prev[existingIdx];
+        const currentStock = matchedVariant?.stock ?? (product as any).stock ?? 50;
         const targetQty = existing.quantity + quantity;
         if (targetQty > currentStock) {
-          alert(`Maximum available stock reached (${currentStock} units).`);
+          alert(`Maximum available stock reached for ${product.name} (${size}) [${currentStock} available].`);
           return prev;
         }
-        return prev.map((i) =>
-          i.product.id === product.id ? { ...i, quantity: targetQty } : i
-        );
+        const updated = [...prev];
+        updated[existingIdx] = {
+          ...existing,
+          selectedSize: size,
+          price,
+          sku,
+          quantity: targetQty,
+        };
+        return updated;
       }
-      return [...prev, { product, quantity }];
+
+      return [
+        ...prev,
+        {
+          id: cartItemId,
+          product,
+          selectedSize: size,
+          price,
+          sku,
+          quantity,
+        },
+      ];
     });
     setIsOpen(true);
   };
 
   const removeFromCart = (id: string) => {
-    setItems((prev) => prev.filter((i) => i.product.id !== id));
+    setItems((prev) => prev.filter((i) => i.id !== id && i.product.id !== id));
   };
 
   const updateQuantity = (id: string, quantity: number) => {
     if (quantity < 1) return removeFromCart(id);
-    setItems((prev) => prev.map((i) => (i.product.id === id ? { ...i, quantity } : i)));
+    setItems((prev) =>
+      prev.map((i) => (i.id === id || i.product.id === id ? { ...i, quantity } : i))
+    );
   };
 
   const clearCart = () => {
@@ -125,7 +183,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return false;
   };
 
-  const rawSubtotal = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
+  const rawSubtotal = items.reduce((sum, i) => sum + (i.price ?? i.product.price) * i.quantity, 0);
   const promoDiscountAmount = Math.round(rawSubtotal * promoPercentage + fixedDiscount);
   const subtotal = Math.max(0, rawSubtotal - promoDiscountAmount);
   const shipping = items.length === 0 || subtotal >= 6000 ? 0 : 300;

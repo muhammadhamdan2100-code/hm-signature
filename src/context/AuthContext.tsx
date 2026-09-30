@@ -256,12 +256,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (authError || !authData.user) {
           recordFailedAttempt(trimmedEmail);
           setIsLoading(false);
-          return { success: false, error: "Invalid email or password" };
+          return { success: false, error: authError?.message || "Invalid email or password" };
         }
 
         clearLockout(trimmedEmail);
         const profile = await dbService.getUserProfile(authData.user.id);
-        const role = (profile?.role || authData.user.user_metadata?.role || "customer") as UserRole;
+        const role = (profile?.role || authData.user.user_metadata?.role || (isPrimaryAdmin(trimmedEmail) ? "super_admin" : "customer")) as UserRole;
         const loggedUser: UserProfile = {
           id: authData.user.id,
           email: authData.user.email || trimmedEmail,

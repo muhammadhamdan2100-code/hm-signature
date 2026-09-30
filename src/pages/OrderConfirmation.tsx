@@ -105,7 +105,7 @@ export default function OrderConfirmation() {
                     </div>
                     <div>
                       <h4 className="font-serif font-bold text-sm text-ivory">{item.name}</h4>
-                      <p className="text-[10px] text-muted font-mono">{item.sku} • Qty {item.quantity}</p>
+                      <p className="text-[10px] text-muted font-mono">{item.size ? `${item.size} • ` : ''}{item.sku} • Qty {item.quantity}</p>
                     </div>
                   </div>
                   <span className="font-mono font-bold text-gold">Rs. {(item.price * item.quantity).toLocaleString()}</span>

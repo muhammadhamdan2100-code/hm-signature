@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Star, Minus, Plus, Heart, Truck } from "lucide-react";
-import { getProductBySlug, products } from "../data/products";
+import { getProductBySlug, products, generateDefaultVariants } from "../data/products";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import TexturePanel from "../components/TexturePanel";
@@ -23,6 +23,25 @@ export default function ProductPage() {
   const [activeImage, setActiveImage] = useState(0);
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState<(typeof tabs)[number]>("DESCRIPTION");
+
+  const availableVariants = product?.variants && product.variants.length > 0
+    ? product.variants.filter((v) => v.active !== false)
+    : product
+    ? generateDefaultVariants(product.price, (product as any).sku || "HM-PRD", product.stock)
+    : [];
+
+  const [selectedSize, setSelectedSize] = useState<string>("50ml");
+
+  useEffect(() => {
+    if (availableVariants.length > 0) {
+      const has50 = availableVariants.find((v) => v.size.toLowerCase() === "50ml");
+      setSelectedSize(has50 ? has50.size : availableVariants[0].size);
+    }
+  }, [slug]);
+
+  const selectedVariant = availableVariants.find((v) => v.size.toLowerCase() === selectedSize.toLowerCase()) || availableVariants[0];
+  const currentPrice = selectedVariant ? selectedVariant.price : product?.price || 0;
+  const currentStock = selectedVariant ? selectedVariant.stock : product?.stock || 0;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -104,8 +123,40 @@ export default function ProductPage() {
               </div>
               <span className="text-xs text-muted">{product.rating} ({product.reviewCount} reviews)</span>
             </div>
-            <div className="text-3xl text-goldLight font-serif mb-6">{formatPKR(product.price)}</div>
+            <div className="text-3xl text-goldLight font-serif mb-6">{formatPKR(currentPrice)}</div>
             <p className="text-muted leading-[1.9] mb-8 max-w-md">{product.description}</p>
+
+            {/* Bottle Size Selector (10ml, 30ml, 50ml, 100ml) */}
+            <div className="mb-8 space-y-3 font-sans">
+              <div className="flex items-center justify-between text-xs tracking-widest text-muted uppercase">
+                <span>SELECT BOTTLE SIZE:</span>
+                <span className="text-gold font-bold font-mono text-sm">{selectedSize}</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {availableVariants.map((v) => {
+                  const isSelected = v.size.toLowerCase() === selectedSize.toLowerCase();
+                  const isOutOfStock = v.stock <= 0;
+                  return (
+                    <button
+                      key={v.size}
+                      type="button"
+                      disabled={isOutOfStock}
+                      onClick={() => setSelectedSize(v.size)}
+                      className={`py-3 px-2 rounded-lg border text-center transition-all flex flex-col items-center justify-center space-y-1 ${
+                        isSelected
+                          ? "bg-navy2 border-gold text-gold font-bold shadow-lg ring-1 ring-gold/40"
+                          : isOutOfStock
+                          ? "bg-navy/40 border-gold/10 text-muted/40 cursor-not-allowed line-through"
+                          : "bg-navy/80 border-gold/20 text-ivory hover:border-gold/40 hover:text-gold"
+                      }`}
+                    >
+                      <span className="text-xs font-mono font-bold tracking-wider">{v.size}</span>
+                      <span className="text-[10px] font-mono text-goldLight">{formatPKR(v.price)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
               <div>
@@ -113,12 +164,14 @@ export default function ProductPage() {
                 <div>{product.concentration}</div>
               </div>
               <div>
-                <div className="text-[11px] text-muted tracking-widest mb-1">SIZE</div>
-                <div>{product.size}</div>
+                <div className="text-[11px] text-muted tracking-widest mb-1">SELECTED SIZE</div>
+                <div className="text-gold font-bold font-mono">{selectedSize}</div>
               </div>
               <div>
                 <div className="text-[11px] text-muted tracking-widest mb-1">AVAILABILITY</div>
-                <div className="text-goldLight">{product.stock > 0 ? "IN STOCK" : "OUT OF STOCK"}</div>
+                <div className={currentStock > 0 ? "text-emerald-400 font-medium" : "text-rose-400 font-medium"}>
+                  {currentStock > 0 ? `IN STOCK (${currentStock} available)` : "OUT OF STOCK"}
+                </div>
               </div>
               <div>
                 <div className="text-[11px] text-muted tracking-widest mb-1">GENDER</div>
@@ -145,16 +198,21 @@ export default function ProductPage() {
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 mb-8">
-              <button onClick={() => addToCart(product, qty)} className="flex-1 btn-gold-fill text-center">
-                ADD TO CART
+            <div className="flex flex-col sm:flex-row gap-4 mb-8 font-sans">
+              <button
+                onClick={() => addToCart(product, selectedSize, qty, currentPrice, selectedVariant?.sku)}
+                disabled={currentStock <= 0}
+                className="flex-1 btn-gold-fill text-center disabled:opacity-40"
+              >
+                ADD TO CART ({selectedSize})
               </button>
               <button
+                disabled={currentStock <= 0}
                 onClick={() => {
-                  addToCart(product, qty);
+                  addToCart(product, selectedSize, qty, currentPrice, selectedVariant?.sku);
                   navigate("/checkout");
                 }}
-                className="flex-1 btn-gold text-center"
+                className="flex-1 btn-gold text-center disabled:opacity-40"
               >
                 BUY NOW
               </button>

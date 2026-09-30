@@ -75,7 +75,7 @@ export const ProductsList: React.FC = () => {
       accessor: (p) => (
         <div>
           <span className="text-xs text-ivory block font-medium">{p.category}</span>
-          <span className="text-[10px] text-muted capitalize">{p.gender} • {p.size}</span>
+          <span className="text-[10px] text-muted capitalize">{p.gender} • {p.variants?.length ? p.variants.map((v) => v.size).join(" / ") : p.size}</span>
         </div>
       ),
       sortable: true,
@@ -380,7 +380,7 @@ export const ProductsList: React.FC = () => {
                     <p><span className="text-muted">Fragrance Type:</span> {quickViewProduct.fragranceType}</p>
                     <p><span className="text-muted">Concentration:</span> {quickViewProduct.concentration}</p>
                     <p><span className="text-muted">Target Gender:</span> <span className="capitalize">{quickViewProduct.gender}</span></p>
-                    <p><span className="text-muted">Bottle Size:</span> {quickViewProduct.size}</p>
+                    <p><span className="text-muted">Available Sizes:</span> {quickViewProduct.variants?.length ? quickViewProduct.variants.map((v) => v.size).join(", ") : quickViewProduct.size}</p>
                   </div>
                 </div>
 
