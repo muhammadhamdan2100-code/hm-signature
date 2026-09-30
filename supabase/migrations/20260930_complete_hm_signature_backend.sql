@@ -1,6 +1,6 @@
 -- ====================================================================
--- HM SIGNATURE LUXURY FRAGRANCE - COMPLETE SUPABASE BACKEND SCHEMA
--- Date: 2026-09-30
+-- HM SIGNATURE LUXURY FRAGRANCE - COMPLETE SUPABASE BACKEND MIGRATION
+-- Migration Date: 2026-09-30
 -- ====================================================================
 
 -- 1. EXTENSIONS
@@ -11,27 +11,31 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 2. DOMAIN 1: AUTHENTICATION, ROLES, PERMISSIONS & PROFILES
 -- ====================================================================
 
+-- ROLES TABLE
 CREATE TABLE IF NOT EXISTS public.roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT UNIQUE NOT NULL,
+    name TEXT UNIQUE NOT NULL, -- e.g. 'super_admin', 'manager', 'order_manager', 'content_manager', 'customer'
     display_name TEXT NOT NULL,
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- PERMISSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.permissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code TEXT UNIQUE NOT NULL,
+    code TEXT UNIQUE NOT NULL, -- e.g. 'manage_products', 'manage_orders', 'verify_payments', 'manage_staff'
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- ROLE PERMISSIONS JUNCTION
 CREATE TABLE IF NOT EXISTS public.role_permissions (
     role_id UUID NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
     permission_id UUID NOT NULL REFERENCES public.permissions(id) ON DELETE CASCADE,
     PRIMARY KEY (role_id, permission_id)
 );
 
+-- PROFILES TABLE (Linked to auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
@@ -46,6 +50,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- CUSTOMERS EXTENSION TABLE
 CREATE TABLE IF NOT EXISTS public.customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     profile_id UUID UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -112,19 +117,23 @@ BEGIN
     SELECT id INTO p_staff FROM public.permissions WHERE code = 'manage_staff';
     SELECT id INTO p_sett FROM public.permissions WHERE code = 'manage_settings';
 
+    -- Super Admin gets ALL permissions
     INSERT INTO public.role_permissions (role_id, permission_id) VALUES
     (r_super, p_prod), (r_super, p_ord), (r_super, p_pay), (r_super, p_inv),
     (r_super, p_cust), (r_super, p_cms), (r_super, p_staff), (r_super, p_sett)
     ON CONFLICT DO NOTHING;
 
+    -- Manager gets products, orders, payments, inventory, customers, cms
     INSERT INTO public.role_permissions (role_id, permission_id) VALUES
     (r_mgr, p_prod), (r_mgr, p_ord), (r_mgr, p_pay), (r_mgr, p_inv), (r_mgr, p_cust), (r_mgr, p_cms)
     ON CONFLICT DO NOTHING;
 
+    -- Order Manager gets orders, payments, inventory, customers
     INSERT INTO public.role_permissions (role_id, permission_id) VALUES
     (r_order, p_ord), (r_order, p_pay), (r_order, p_inv), (r_order, p_cust)
     ON CONFLICT DO NOTHING;
 
+    -- Content Manager gets products, cms, inventory
     INSERT INTO public.role_permissions (role_id, permission_id) VALUES
     (r_content, p_prod), (r_content, p_cms), (r_content, p_inv)
     ON CONFLICT DO NOTHING;
@@ -158,6 +167,7 @@ FOR EACH ROW EXECUTE FUNCTION public.check_primary_admin_protection();
 -- 3. DOMAIN 2: CATALOG, PRODUCTS, VARIANTS & FRAGRANCE NOTES
 -- ====================================================================
 
+-- CATEGORIES
 CREATE TABLE IF NOT EXISTS public.categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL,
@@ -170,6 +180,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- COLLECTIONS
 CREATE TABLE IF NOT EXISTS public.collections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL,
@@ -183,6 +194,7 @@ CREATE TABLE IF NOT EXISTS public.collections (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- PRODUCTS
 CREATE TABLE IF NOT EXISTS public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sku TEXT UNIQUE NOT NULL,
@@ -190,7 +202,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     slug TEXT UNIQUE NOT NULL,
     description TEXT NOT NULL,
     full_description TEXT,
-    base_price NUMERIC(10, 2) NOT NULL CHECK (base_price >= 0),
+    base_price NUMERIC(10, 2) NOT NULL CHECK (base_price >= 0), -- 50ml price serves as base
     sale_price NUMERIC(10, 2) CHECK (sale_price IS NULL OR sale_price < base_price),
     category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
     collection_id UUID REFERENCES public.collections(id) ON DELETE SET NULL,
@@ -207,6 +219,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- PRODUCT IMAGES
 CREATE TABLE IF NOT EXISTS public.product_images (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
@@ -217,6 +230,7 @@ CREATE TABLE IF NOT EXISTS public.product_images (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- PRODUCT VARIANTS (10ml, 30ml, 50ml, 100ml)
 CREATE TABLE IF NOT EXISTS public.product_variants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
@@ -232,6 +246,7 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
     UNIQUE(product_id, size)
 );
 
+-- COLLECTION PRODUCTS JUNCTION
 CREATE TABLE IF NOT EXISTS public.collection_products (
     collection_id UUID NOT NULL REFERENCES public.collections(id) ON DELETE CASCADE,
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
@@ -239,6 +254,7 @@ CREATE TABLE IF NOT EXISTS public.collection_products (
     PRIMARY KEY (collection_id, product_id)
 );
 
+-- FRAGRANCE NOTES
 CREATE TABLE IF NOT EXISTS public.fragrance_notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL,
@@ -248,6 +264,7 @@ CREATE TABLE IF NOT EXISTS public.fragrance_notes (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- PRODUCT FRAGRANCE NOTES JUNCTION
 CREATE TABLE IF NOT EXISTS public.product_fragrance_notes (
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
     note_id UUID NOT NULL REFERENCES public.fragrance_notes(id) ON DELETE CASCADE,
@@ -259,6 +276,7 @@ CREATE TABLE IF NOT EXISTS public.product_fragrance_notes (
 -- 4. DOMAIN 3: INVENTORY & LOGS
 -- ====================================================================
 
+-- INVENTORY RECORD
 CREATE TABLE IF NOT EXISTS public.inventory (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_variant_id UUID UNIQUE NOT NULL REFERENCES public.product_variants(id) ON DELETE CASCADE,
@@ -269,6 +287,7 @@ CREATE TABLE IF NOT EXISTS public.inventory (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- INVENTORY TRANSACTIONS AUDIT
 CREATE TABLE IF NOT EXISTS public.inventory_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     variant_id UUID NOT NULL REFERENCES public.product_variants(id) ON DELETE CASCADE,
@@ -286,6 +305,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_transactions (
 -- 5. DOMAIN 4: CART & WISHLIST
 -- ====================================================================
 
+-- CART
 CREATE TABLE IF NOT EXISTS public.cart (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -294,6 +314,7 @@ CREATE TABLE IF NOT EXISTS public.cart (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- CART ITEMS
 CREATE TABLE IF NOT EXISTS public.cart_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cart_id UUID NOT NULL REFERENCES public.cart(id) ON DELETE CASCADE,
@@ -305,12 +326,14 @@ CREATE TABLE IF NOT EXISTS public.cart_items (
     UNIQUE(cart_id, variant_id)
 );
 
+-- WISHLISTS
 CREATE TABLE IF NOT EXISTS public.wishlists (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- WISHLIST ITEMS
 CREATE TABLE IF NOT EXISTS public.wishlist_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wishlist_id UUID NOT NULL REFERENCES public.wishlists(id) ON DELETE CASCADE,
@@ -319,6 +342,7 @@ CREATE TABLE IF NOT EXISTS public.wishlist_items (
     UNIQUE(wishlist_id, product_id)
 );
 
+-- ABANDONED CARTS AUDIT
 CREATE TABLE IF NOT EXISTS public.abandoned_carts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cart_id UUID REFERENCES public.cart(id) ON DELETE SET NULL,
@@ -335,6 +359,7 @@ CREATE TABLE IF NOT EXISTS public.abandoned_carts (
 -- 6. DOMAIN 5: SHIPPING, SHIPPING ZONES & COUPONS
 -- ====================================================================
 
+-- SHIPPING ZONES
 CREATE TABLE IF NOT EXISTS public.shipping_zones (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -344,6 +369,7 @@ CREATE TABLE IF NOT EXISTS public.shipping_zones (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- SHIPPING METHODS
 CREATE TABLE IF NOT EXISTS public.shipping_methods (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     zone_id UUID REFERENCES public.shipping_zones(id) ON DELETE CASCADE,
@@ -357,6 +383,7 @@ CREATE TABLE IF NOT EXISTS public.shipping_methods (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- COUPONS
 CREATE TABLE IF NOT EXISTS public.coupons (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code TEXT UNIQUE NOT NULL,
@@ -376,6 +403,7 @@ CREATE TABLE IF NOT EXISTS public.coupons (
 -- 7. DOMAIN 6: ORDERS, ORDER ITEMS & SHIPMENTS
 -- ====================================================================
 
+-- ORDERS TABLE
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_number TEXT UNIQUE NOT NULL,
@@ -400,6 +428,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- ORDER ITEMS TABLE
 CREATE TABLE IF NOT EXISTS public.order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
@@ -415,6 +444,7 @@ CREATE TABLE IF NOT EXISTS public.order_items (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- ORDER STATUS HISTORY
 CREATE TABLE IF NOT EXISTS public.order_status_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
@@ -424,6 +454,7 @@ CREATE TABLE IF NOT EXISTS public.order_status_history (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- SHIPMENTS TABLE
 CREATE TABLE IF NOT EXISTS public.shipments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID UNIQUE NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
@@ -438,6 +469,7 @@ CREATE TABLE IF NOT EXISTS public.shipments (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- COUPON USAGE TRACKING
 CREATE TABLE IF NOT EXISTS public.coupon_usage (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     coupon_id UUID NOT NULL REFERENCES public.coupons(id) ON DELETE CASCADE,
@@ -451,6 +483,7 @@ CREATE TABLE IF NOT EXISTS public.coupon_usage (
 -- 8. DOMAIN 7: PAYMENTS & PAYMENT EVENTS
 -- ====================================================================
 
+-- PAYMENTS TABLE
 CREATE TABLE IF NOT EXISTS public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
@@ -461,7 +494,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
     method TEXT NOT NULL CHECK (method IN ('COD', 'JazzCash', 'Raast', 'Bank Transfer', 'PayFast', 'Cash on Delivery')),
     status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Verification Pending', 'Verified', 'Paid', 'Failed', 'Rejected', 'Refunded')),
     reference_id TEXT,
-    proof_file_path TEXT,
+    proof_file_path TEXT, -- Storage path in private 'payment-proofs' bucket
     proof_note TEXT,
     verified_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     verified_at TIMESTAMPTZ,
@@ -469,6 +502,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- PAYMENT EVENTS AUDIT LOG
 CREATE TABLE IF NOT EXISTS public.payment_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     payment_id UUID NOT NULL REFERENCES public.payments(id) ON DELETE CASCADE,
@@ -483,6 +517,7 @@ CREATE TABLE IF NOT EXISTS public.payment_events (
 -- 9. DOMAIN 8: REVIEWS, CMS, MARKETING & SETTINGS
 -- ====================================================================
 
+-- REVIEWS TABLE
 CREATE TABLE IF NOT EXISTS public.reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
@@ -498,6 +533,7 @@ CREATE TABLE IF NOT EXISTS public.reviews (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- HOMEPAGE SECTIONS CMS
 CREATE TABLE IF NOT EXISTS public.homepage_sections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     section_key TEXT UNIQUE NOT NULL,
@@ -510,6 +546,7 @@ CREATE TABLE IF NOT EXISTS public.homepage_sections (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- BANNERS CMS
 CREATE TABLE IF NOT EXISTS public.banners (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
@@ -523,6 +560,7 @@ CREATE TABLE IF NOT EXISTS public.banners (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- MARKETING CAMPAIGNS
 CREATE TABLE IF NOT EXISTS public.marketing_campaigns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -536,6 +574,7 @@ CREATE TABLE IF NOT EXISTS public.marketing_campaigns (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- NOTIFICATION TEMPLATES
 CREATE TABLE IF NOT EXISTS public.notification_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code TEXT UNIQUE NOT NULL,
@@ -546,6 +585,7 @@ CREATE TABLE IF NOT EXISTS public.notification_templates (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- NOTIFICATIONS LOG
 CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -557,6 +597,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     sent_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- SITE SETTINGS
 CREATE TABLE IF NOT EXISTS public.site_settings (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL,
@@ -564,6 +605,7 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- SEO SETTINGS
 CREATE TABLE IF NOT EXISTS public.seo_settings (
     page_path TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -596,6 +638,7 @@ CREATE INDEX IF NOT EXISTS idx_cart_session ON public.cart(session_token);
 -- 11. DATABASE FUNCTIONS & TRIGGERS
 -- ====================================================================
 
+-- Helper: Check if User is Staff
 CREATE OR REPLACE FUNCTION public.is_staff(p_user_id UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -611,6 +654,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Helper: Check Permission Code
 CREATE OR REPLACE FUNCTION public.has_permission(p_user_id UUID, p_perm_code TEXT)
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -638,7 +682,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Atomic Server-Side Order Placement Function
+-- Atomic Server-Side Function: Place Order
 CREATE OR REPLACE FUNCTION public.place_order(
     p_customer_id UUID,
     p_customer_name TEXT,
@@ -647,7 +691,7 @@ CREATE OR REPLACE FUNCTION public.place_order(
     p_shipping_address JSONB,
     p_payment_method TEXT,
     p_coupon_code TEXT DEFAULT NULL,
-    p_items JSONB DEFAULT '[]'::JSONB
+    p_items JSONB DEFAULT '[]'::JSONB -- Array of { variant_id: "uuid", quantity: int }
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -670,9 +714,11 @@ BEGIN
         RAISE EXCEPTION 'Cannot place order with an empty cart.';
     END IF;
 
+    -- Generate unique order number
     v_order_number := 'HMS-' || to_char(NOW(), 'YYYYMMDD') || '-' || lpad(floor(random() * 10000)::text, 4, '0');
     v_order_id := gen_random_uuid();
 
+    -- Calculate subtotal & validate stock per variant
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
     LOOP
         v_variant_id := (v_item->>'variant_id')::UUID;
@@ -682,6 +728,7 @@ BEGIN
             RAISE EXCEPTION 'Invalid item quantity %', v_quantity;
         END IF;
 
+        -- Lock variant row for update
         SELECT * INTO v_variant FROM public.product_variants WHERE id = v_variant_id FOR UPDATE;
         IF NOT FOUND THEN
             RAISE EXCEPTION 'Product variant % not found.', v_variant_id;
@@ -697,15 +744,18 @@ BEGIN
 
         SELECT * INTO v_product FROM public.products WHERE id = v_variant.product_id;
 
+        -- Determine server-side authoritative price
         v_unit_price := COALESCE(v_variant.sale_price, v_variant.price);
         v_line_total := v_unit_price * v_quantity;
         v_subtotal := v_subtotal + v_line_total;
 
+        -- Deduct stock safely
         UPDATE public.product_variants
         SET stock = stock - v_quantity,
             updated_at = NOW()
         WHERE id = v_variant_id;
 
+        -- Audit Inventory Transaction
         INSERT INTO public.inventory_transactions (
             variant_id, transaction_type, quantity_change, previous_stock, new_stock, reference_id, notes
         ) VALUES (
@@ -713,6 +763,7 @@ BEGIN
         );
     END LOOP;
 
+    -- Calculate Coupon Discount if applicable
     IF p_coupon_code IS NOT NULL AND TRIM(p_coupon_code) <> '' THEN
         SELECT * INTO v_coupon FROM public.coupons
         WHERE UPPER(code) = UPPER(TRIM(p_coupon_code)) AND active = TRUE FOR UPDATE;
@@ -732,11 +783,13 @@ BEGIN
                     v_discount := LEAST(v_coupon.value, v_subtotal);
                 END IF;
 
+                -- Update coupon usage count
                 UPDATE public.coupons SET used_count = used_count + 1 WHERE id = v_coupon.id;
             END IF;
         END IF;
     END IF;
 
+    -- Calculate Shipping Fee (Free for orders >= Rs 10,000, else standard Rs 250)
     IF v_subtotal >= 10000 THEN
         v_shipping := 0;
     ELSE
@@ -745,6 +798,7 @@ BEGIN
 
     v_total := GREATEST(0, v_subtotal - v_discount) + v_shipping;
 
+    -- Create Order Record
     INSERT INTO public.orders (
         id, order_number, customer_id, customer_name, customer_email, customer_phone,
         shipping_address, status, payment_status, payment_method, subtotal,
@@ -755,6 +809,7 @@ BEGIN
         v_discount, v_shipping, v_total, p_coupon_code
     );
 
+    -- Create Order Items Snapshots
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
     LOOP
         v_variant_id := (v_item->>'variant_id')::UUID;
@@ -773,18 +828,21 @@ BEGIN
         );
     END LOOP;
 
+    -- Create Initial Payment Record
     INSERT INTO public.payments (
         order_id, order_number, customer_name, customer_email, amount, method, status
     ) VALUES (
         v_order_id, v_order_number, p_customer_name, p_customer_email, v_total, p_payment_method, 'Pending'
     );
 
+    -- Create Order Status History
     INSERT INTO public.order_status_history (
         order_id, status, note
     ) VALUES (
         v_order_id, 'Pending', 'Order created and payment pending.'
     );
 
+    -- Create Coupon Usage Record if applied
     IF v_discount > 0 AND v_coupon.id IS NOT NULL THEN
         INSERT INTO public.coupon_usage (coupon_id, user_id, order_id, discount_amount)
         VALUES (v_coupon.id, p_customer_id, v_order_id, v_discount);
@@ -806,7 +864,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.verify_payment(
     p_payment_id UUID,
     p_staff_id UUID,
-    p_new_status TEXT,
+    p_new_status TEXT, -- 'Verified', 'Paid', 'Rejected', 'Failed'
     p_note TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
@@ -826,6 +884,7 @@ BEGIN
         RAISE EXCEPTION 'Invalid payment status: %', p_new_status;
     END IF;
 
+    -- Update payment
     UPDATE public.payments
     SET status = p_new_status,
         verified_by = p_staff_id,
@@ -833,6 +892,7 @@ BEGIN
         updated_at = NOW()
     WHERE id = p_payment_id;
 
+    -- Update order payment_status & order_status
     IF p_new_status IN ('Verified', 'Paid') THEN
         UPDATE public.orders
         SET payment_status = 'Paid',
@@ -846,6 +906,7 @@ BEGIN
         WHERE id = v_payment.order_id;
     END IF;
 
+    -- Audit Payment Event
     INSERT INTO public.payment_events (
         payment_id, event_type, actor_id, notes
     ) VALUES (
@@ -860,7 +921,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ====================================================================
--- 12. ROW LEVEL SECURITY (RLS) POLICIES & STORAGE BUCKETS
+-- 12. ROW LEVEL SECURITY (RLS) POLICIES
 -- ====================================================================
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -899,7 +960,91 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.seo_settings ENABLE ROW LEVEL SECURITY;
 
--- Storage Buckets Configuration
+-- Catalog Policies (Public Read, Staff Write)
+CREATE POLICY "Public Read Active Categories" ON public.categories FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Categories" ON public.categories FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Active Collections" ON public.collections FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Collections" ON public.collections FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Active Products" ON public.products FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Products" ON public.products FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Product Images" ON public.product_images FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Product Images" ON public.product_images FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Active Variants" ON public.product_variants FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Product Variants" ON public.product_variants FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Collection Products" ON public.collection_products FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Collection Products" ON public.collection_products FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Notes" ON public.fragrance_notes FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Notes" ON public.fragrance_notes FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Product Notes" ON public.product_fragrance_notes FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Product Notes" ON public.product_fragrance_notes FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Profile & Customer Policies
+CREATE POLICY "Users Read Own Profile" ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_staff(auth.uid()));
+CREATE POLICY "Users Update Own Profile" ON public.profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id AND role = OLD.role);
+CREATE POLICY "Staff Manage Profiles" ON public.profiles FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Users Read Own Customer Record" ON public.customers FOR SELECT USING (profile_id = auth.uid() OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Customers" ON public.customers FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Orders & Payments Policies
+CREATE POLICY "Users Read Own Orders" ON public.orders FOR SELECT USING (customer_id = auth.uid() OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Orders" ON public.orders FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Users Read Own Order Items" ON public.order_items FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.orders WHERE id = order_items.order_id AND (customer_id = auth.uid() OR public.is_staff(auth.uid())))
+);
+CREATE POLICY "Staff Manage Order Items" ON public.order_items FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Users Read Own Payments" ON public.payments FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.orders WHERE id = payments.order_id AND (customer_id = auth.uid() OR public.is_staff(auth.uid())))
+);
+CREATE POLICY "Staff Manage Payments" ON public.payments FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Staff Manage Payment Events" ON public.payment_events FOR ALL USING (public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Inventory" ON public.inventory FOR ALL USING (public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Inventory Logs" ON public.inventory_transactions FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Cart & Wishlist Policies
+CREATE POLICY "User Manage Own Cart" ON public.cart FOR ALL USING (user_id = auth.uid() OR session_token IS NOT NULL);
+CREATE POLICY "User Manage Own Cart Items" ON public.cart_items FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.cart WHERE id = cart_items.cart_id AND (user_id = auth.uid() OR session_token IS NOT NULL))
+);
+
+CREATE POLICY "User Manage Own Wishlist" ON public.wishlists FOR ALL USING (user_id = auth.uid());
+CREATE POLICY "User Manage Own Wishlist Items" ON public.wishlist_items FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.wishlists WHERE id = wishlist_items.wishlist_id AND user_id = auth.uid())
+);
+
+-- Reviews Policies
+CREATE POLICY "Public Read Approved Reviews" ON public.reviews FOR SELECT USING (status = 'Approved' OR public.is_staff(auth.uid()));
+CREATE POLICY "Users Create Reviews" ON public.reviews FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "Staff Manage Reviews" ON public.reviews FOR ALL USING (public.is_staff(auth.uid()));
+
+-- CMS & Settings Policies
+CREATE POLICY "Public Read CMS Sections" ON public.homepage_sections FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage CMS Sections" ON public.homepage_sections FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Banners" ON public.banners FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Banners" ON public.banners FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Settings" ON public.site_settings FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Settings" ON public.site_settings FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read SEO Settings" ON public.seo_settings FOR SELECT USING (true);
+CREATE POLICY "Staff Manage SEO Settings" ON public.seo_settings FOR ALL USING (public.is_staff(auth.uid()));
+
+-- ====================================================================
+-- 13. STORAGE BUCKETS & STORAGE OBJECT RLS POLICIES
+-- ====================================================================
+
+-- Insert Default Storage Buckets
 INSERT INTO storage.buckets (id, name, public) VALUES
 ('products', 'products', true),
 ('categories', 'categories', true),
@@ -908,5 +1053,20 @@ INSERT INTO storage.buckets (id, name, public) VALUES
 ('banners', 'banners', true),
 ('reviews', 'reviews', true),
 ('avatars', 'avatars', true),
-('payment-proofs', 'payment-proofs', false)
+('payment-proofs', 'payment-proofs', false) -- MUST BE PRIVATE!
 ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+
+-- Storage Policies for Public Buckets
+CREATE POLICY "Public Storage Read Access" ON storage.objects FOR SELECT USING (bucket_id IN ('products', 'categories', 'collections', 'homepage', 'banners', 'reviews', 'avatars'));
+CREATE POLICY "Staff Storage All Access" ON storage.objects FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Strict Private Storage Policies for 'payment-proofs' Bucket
+CREATE POLICY "Customer Upload Payment Proof" ON storage.objects FOR INSERT WITH CHECK (
+    bucket_id = 'payment-proofs' AND auth.role() = 'authenticated'
+);
+
+CREATE POLICY "Customer & Staff Read Payment Proof" ON storage.objects FOR SELECT USING (
+    bucket_id = 'payment-proofs' AND (
+        auth.uid() = owner OR public.is_staff(auth.uid())
+    )
+);
