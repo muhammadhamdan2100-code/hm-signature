@@ -1148,82 +1148,127 @@ ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.seo_settings ENABLE ROW LEVEL SECURITY;
 
 -- Catalog Policies (Public Read, Staff Write)
+DROP POLICY IF EXISTS "Public Read Active Categories" ON public.categories;
+DROP POLICY IF EXISTS "Staff Manage Categories" ON public.categories;
 CREATE POLICY "Public Read Active Categories" ON public.categories FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Categories" ON public.categories FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Active Collections" ON public.collections;
+DROP POLICY IF EXISTS "Staff Manage Collections" ON public.collections;
 CREATE POLICY "Public Read Active Collections" ON public.collections FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Collections" ON public.collections FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Active Products" ON public.products;
+DROP POLICY IF EXISTS "Staff Manage Products" ON public.products;
 CREATE POLICY "Public Read Active Products" ON public.products FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Products" ON public.products FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Product Images" ON public.product_images;
+DROP POLICY IF EXISTS "Staff Manage Product Images" ON public.product_images;
 CREATE POLICY "Public Read Product Images" ON public.product_images FOR SELECT USING (true);
 CREATE POLICY "Staff Manage Product Images" ON public.product_images FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Active Variants" ON public.product_variants;
+DROP POLICY IF EXISTS "Staff Manage Product Variants" ON public.product_variants;
 CREATE POLICY "Public Read Active Variants" ON public.product_variants FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Product Variants" ON public.product_variants FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Collection Products" ON public.collection_products;
+DROP POLICY IF EXISTS "Staff Manage Collection Products" ON public.collection_products;
 CREATE POLICY "Public Read Collection Products" ON public.collection_products FOR SELECT USING (true);
 CREATE POLICY "Staff Manage Collection Products" ON public.collection_products FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Notes" ON public.fragrance_notes;
+DROP POLICY IF EXISTS "Staff Manage Notes" ON public.fragrance_notes;
 CREATE POLICY "Public Read Notes" ON public.fragrance_notes FOR SELECT USING (true);
 CREATE POLICY "Staff Manage Notes" ON public.fragrance_notes FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Product Notes" ON public.product_fragrance_notes;
+DROP POLICY IF EXISTS "Staff Manage Product Notes" ON public.product_fragrance_notes;
 CREATE POLICY "Public Read Product Notes" ON public.product_fragrance_notes FOR SELECT USING (true);
 CREATE POLICY "Staff Manage Product Notes" ON public.product_fragrance_notes FOR ALL USING (public.is_staff(auth.uid()));
 
 -- Profile & Customer Policies
+DROP POLICY IF EXISTS "Users Read Own Profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users Update Own Profile" ON public.profiles;
+DROP POLICY IF EXISTS "Staff Manage Profiles" ON public.profiles;
 CREATE POLICY "Users Read Own Profile" ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_staff(auth.uid()));
 CREATE POLICY "Users Update Own Profile" ON public.profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 CREATE POLICY "Staff Manage Profiles" ON public.profiles FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Users Read Own Customer Record" ON public.customers;
+DROP POLICY IF EXISTS "Staff Manage Customers" ON public.customers;
 CREATE POLICY "Users Read Own Customer Record" ON public.customers FOR SELECT USING (profile_id = auth.uid() OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Customers" ON public.customers FOR ALL USING (public.is_staff(auth.uid()));
 
 -- Orders & Payments Policies
+DROP POLICY IF EXISTS "Users Read Own Orders" ON public.orders;
+DROP POLICY IF EXISTS "Staff Manage Orders" ON public.orders;
 CREATE POLICY "Users Read Own Orders" ON public.orders FOR SELECT USING (customer_id = auth.uid() OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Orders" ON public.orders FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Users Read Own Order Items" ON public.order_items;
+DROP POLICY IF EXISTS "Staff Manage Order Items" ON public.order_items;
 CREATE POLICY "Users Read Own Order Items" ON public.order_items FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.orders WHERE id = order_items.order_id AND (customer_id = auth.uid() OR public.is_staff(auth.uid())))
 );
 CREATE POLICY "Staff Manage Order Items" ON public.order_items FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Users Read Own Payments" ON public.payments;
+DROP POLICY IF EXISTS "Staff Manage Payments" ON public.payments;
 CREATE POLICY "Users Read Own Payments" ON public.payments FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.orders WHERE id = payments.order_id AND (customer_id = auth.uid() OR public.is_staff(auth.uid())))
 );
 CREATE POLICY "Staff Manage Payments" ON public.payments FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Staff Manage Payment Events" ON public.payment_events;
+DROP POLICY IF EXISTS "Staff Manage Inventory" ON public.inventory;
+DROP POLICY IF EXISTS "Staff Manage Inventory Logs" ON public.inventory_transactions;
 CREATE POLICY "Staff Manage Payment Events" ON public.payment_events FOR ALL USING (public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Inventory" ON public.inventory FOR ALL USING (public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Inventory Logs" ON public.inventory_transactions FOR ALL USING (public.is_staff(auth.uid()));
 
 -- Cart & Wishlist Policies
+DROP POLICY IF EXISTS "User Manage Own Cart" ON public.cart;
+DROP POLICY IF EXISTS "User Manage Own Cart Items" ON public.cart_items;
 CREATE POLICY "User Manage Own Cart" ON public.cart FOR ALL USING (user_id = auth.uid() OR session_token IS NOT NULL);
 CREATE POLICY "User Manage Own Cart Items" ON public.cart_items FOR ALL USING (
     EXISTS (SELECT 1 FROM public.cart WHERE id = cart_items.cart_id AND (user_id = auth.uid() OR session_token IS NOT NULL))
 );
 
+DROP POLICY IF EXISTS "User Manage Own Wishlist" ON public.wishlists;
+DROP POLICY IF EXISTS "User Manage Own Wishlist Items" ON public.wishlist_items;
 CREATE POLICY "User Manage Own Wishlist" ON public.wishlists FOR ALL USING (user_id = auth.uid());
 CREATE POLICY "User Manage Own Wishlist Items" ON public.wishlist_items FOR ALL USING (
     EXISTS (SELECT 1 FROM public.wishlists WHERE id = wishlist_items.wishlist_id AND user_id = auth.uid())
 );
 
 -- Reviews Policies
+DROP POLICY IF EXISTS "Public Read Approved Reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Users Create Reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Staff Manage Reviews" ON public.reviews;
 CREATE POLICY "Public Read Approved Reviews" ON public.reviews FOR SELECT USING (status = 'Approved' OR public.is_staff(auth.uid()));
 CREATE POLICY "Users Create Reviews" ON public.reviews FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 CREATE POLICY "Staff Manage Reviews" ON public.reviews FOR ALL USING (public.is_staff(auth.uid()));
 
 -- CMS & Settings Policies
+DROP POLICY IF EXISTS "Public Read CMS Sections" ON public.homepage_sections;
+DROP POLICY IF EXISTS "Staff Manage CMS Sections" ON public.homepage_sections;
 CREATE POLICY "Public Read CMS Sections" ON public.homepage_sections FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage CMS Sections" ON public.homepage_sections FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Banners" ON public.banners;
+DROP POLICY IF EXISTS "Staff Manage Banners" ON public.banners;
 CREATE POLICY "Public Read Banners" ON public.banners FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
 CREATE POLICY "Staff Manage Banners" ON public.banners FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read Settings" ON public.site_settings;
+DROP POLICY IF EXISTS "Staff Manage Settings" ON public.site_settings;
 CREATE POLICY "Public Read Settings" ON public.site_settings FOR SELECT USING (true);
 CREATE POLICY "Staff Manage Settings" ON public.site_settings FOR ALL USING (public.is_staff(auth.uid()));
 
+DROP POLICY IF EXISTS "Public Read SEO Settings" ON public.seo_settings;
+DROP POLICY IF EXISTS "Staff Manage SEO Settings" ON public.seo_settings;
 CREATE POLICY "Public Read SEO Settings" ON public.seo_settings FOR SELECT USING (true);
 CREATE POLICY "Staff Manage SEO Settings" ON public.seo_settings FOR ALL USING (public.is_staff(auth.uid()));
 
@@ -1244,10 +1289,14 @@ INSERT INTO storage.buckets (id, name, public) VALUES
 ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
 
 -- Storage Policies for Public Buckets
+DROP POLICY IF EXISTS "Public Storage Read Access" ON storage.objects;
+DROP POLICY IF EXISTS "Staff Storage All Access" ON storage.objects;
 CREATE POLICY "Public Storage Read Access" ON storage.objects FOR SELECT USING (bucket_id IN ('products', 'categories', 'collections', 'homepage', 'banners', 'reviews', 'avatars'));
 CREATE POLICY "Staff Storage All Access" ON storage.objects FOR ALL USING (public.is_staff(auth.uid()));
 
 -- Strict Private Storage Policies for 'payment-proofs' Bucket
+DROP POLICY IF EXISTS "Customer Upload Payment Proof" ON storage.objects;
+DROP POLICY IF EXISTS "Customer & Staff Read Payment Proof" ON storage.objects;
 CREATE POLICY "Customer Upload Payment Proof" ON storage.objects FOR INSERT WITH CHECK (
     bucket_id = 'payment-proofs' AND auth.role() = 'authenticated'
 );
