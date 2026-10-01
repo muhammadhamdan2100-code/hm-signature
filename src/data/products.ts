@@ -13,6 +13,7 @@ export interface ProductVariant {
   sku: string;
   stock: number;
   active: boolean;
+  auto?: boolean; // true = price derived from the 50ml base price
 }
 
 export interface Product {
@@ -45,15 +46,24 @@ export function roundCleanPrice(amount: number): number {
   return Math.round(amount / 50) * 50;
 }
 
+// Proportional volume pricing: size price = (50ml base / 50) × size in ml
+export function autoPriceFor(basePrice50ml: number, size: string): number {
+  const ml = parseInt(size, 10);
+  if (!Number.isFinite(ml) || ml <= 0 || !Number.isFinite(basePrice50ml) || basePrice50ml <= 0) {
+    return basePrice50ml;
+  }
+  return Math.round((basePrice50ml / 50) * ml);
+}
+
 export function generateDefaultVariants(
   basePrice: number,
   baseSku: string = "HM-PRD",
   baseStock: number = 30
 ): ProductVariant[] {
-  const p10 = roundCleanPrice(basePrice * 0.3);
-  const p30 = roundCleanPrice(basePrice * 0.7);
+  const p10 = autoPriceFor(basePrice, "10ml");
+  const p30 = autoPriceFor(basePrice, "30ml");
   const p50 = basePrice;
-  const p100 = roundCleanPrice(basePrice * 1.7);
+  const p100 = autoPriceFor(basePrice, "100ml");
 
   return [
     {
@@ -63,6 +73,7 @@ export function generateDefaultVariants(
       sku: `${baseSku}-10ML`,
       stock: Math.max(10, Math.floor(baseStock * 0.8)),
       active: true,
+      auto: true,
     },
     {
       id: "v-30ml",
@@ -71,6 +82,7 @@ export function generateDefaultVariants(
       sku: `${baseSku}-30ML`,
       stock: Math.max(15, Math.floor(baseStock * 0.9)),
       active: true,
+      auto: true,
     },
     {
       id: "v-50ml",
@@ -79,6 +91,7 @@ export function generateDefaultVariants(
       sku: `${baseSku}-50ML`,
       stock: baseStock,
       active: true,
+      auto: true,
     },
     {
       id: "v-100ml",
@@ -87,6 +100,7 @@ export function generateDefaultVariants(
       sku: `${baseSku}-100ML`,
       stock: Math.max(10, Math.floor(baseStock * 1.1)),
       active: true,
+      auto: true,
     },
   ];
 }

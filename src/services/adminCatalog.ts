@@ -51,9 +51,9 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
       .select(`
         *,
         categories (id, name, slug),
-        collections (id, name, slug),
+        collections!products_collection_id_fkey (id, name, slug),
         product_images (id, image_url, alt_text, display_order, is_primary),
-        product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active),
+        product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active, is_auto_price),
         product_fragrance_notes (note_type, fragrance_notes (id, name))
       `)
       .order("created_at", { ascending: false });
@@ -74,6 +74,7 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
           sku: v.sku,
           stock: Number(v.stock ?? 0),
           active: v.active !== false,
+          auto: v.is_auto_price !== false,
         }));
 
       const topNotes: string[] = [];
@@ -320,6 +321,7 @@ export async function saveProductToDB(
           sale_price: v.salePrice || null,
           stock: v.stock,
           active: v.active !== false,
+          is_auto_price: v.auto !== false,
           updated_at: new Date().toISOString(),
         };
 

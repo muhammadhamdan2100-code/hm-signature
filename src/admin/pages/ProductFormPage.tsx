@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useAdminData, type AdminProduct } from "../context/AdminDataContext";
-import { type ProductVariant, generateDefaultVariants, roundCleanPrice } from "../../data/products";
+import { type ProductVariant, generateDefaultVariants, autoPriceFor } from "../../data/products";
 import { ImageUploader } from "../components/ImageUploader";
 import { GoogleSeoPreview } from "../components/GoogleSeoPreview";
 import { Breadcrumb } from "../components/Breadcrumb";
-import { ArrowLeft, Save, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Unlock, RotateCcw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 export const ProductFormPage: React.FC = () => {
@@ -49,6 +49,7 @@ export const ProductFormPage: React.FC = () => {
 
   // Bottle Sizes / ML Variants State
   const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [pricingError, setPricingError] = useState<string>("");
 
   // Populate data if editing
   useEffect(() => {
@@ -105,11 +106,28 @@ export const ProductFormPage: React.FC = () => {
     }
   };
 
-  // Update base price & sync 50ml variant price
+  // Update base price & recalculate all automatic variant prices
   const handlePriceChange = (newPrice: number) => {
     setPrice(newPrice);
     setVariants((prev) =>
-      prev.map((v) => (v.size.toLowerCase() === "50ml" ? { ...v, price: newPrice } : v))
+      prev.map((v) => {
+        const is50 = v.size.toLowerCase() === "50ml";
+        if (is50) return { ...v, price: newPrice };
+        if (v.auto !== false) return { ...v, price: autoPriceFor(newPrice, v.size) };
+        return v; // manual override preserved
+      })
+    );
+  };
+
+  const isAutoRow = (v: ProductVariant) => v.size.toLowerCase() !== "50ml" && v.auto !== false;
+
+  const handleOverrideVariant = (index: number) => {
+    setVariants((prev) => prev.map((v, i) => (i === index ? { ...v, auto: false } : v)));
+  };
+
+  const handleResetAutoVariant = (index: number) => {
+    setVariants((prev) =>
+      prev.map((v, i) => (i === index ? { ...v, auto: true, price: autoPriceFor(price, v.size) } : v))
     );
   };
 
@@ -119,31 +137,35 @@ export const ProductFormPage: React.FC = () => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
 
-      // If updating 50ml price, sync base product price
-      if (field === "price" && updated[index].size.toLowerCase() === "50ml") {
-        setPrice(Number(value));
+      if (field === "price") {
+        if (updated[index].size.toLowerCase() === "50ml") {
+          // Editing the 50ml row IS the base price — sync and recalc autos
+          const base = Number(value);
+          setPrice(base);
+          for (let i = 0; i < updated.length; i++) {
+            const v = updated[i];
+            if (v.size.toLowerCase() !== "50ml" && v.auto !== false) {
+              updated[i] = { ...v, price: autoPriceFor(base, v.size) };
+            }
+          }
+        } else {
+          // Editing any other size price = manual override
+          updated[index] = { ...updated[index], auto: false };
+        }
       }
       return updated;
     });
   };
 
   const handleAddVariant = (presetSize: string = "100ml") => {
-    const defaultPrice =
-      presetSize.toLowerCase() === "10ml"
-        ? roundCleanPrice(price * 0.3)
-        : presetSize.toLowerCase() === "30ml"
-        ? roundCleanPrice(price * 0.7)
-        : presetSize.toLowerCase() === "50ml"
-        ? price
-        : roundCleanPrice(price * 1.7);
-
     const newV: ProductVariant = {
       id: "v-" + Date.now() + Math.random().toString(36).substring(2, 5),
       size: presetSize,
-      price: defaultPrice,
+      price: autoPriceFor(price, presetSize),
       sku: `${sku || "HM-PRD"}-${presetSize.toUpperCase()}`,
       stock: stock || 30,
       active: true,
+      auto: true,
     };
     setVariants((prev) => [...prev, newV]);
   };
@@ -154,6 +176,20 @@ export const ProductFormPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!Number.isFinite(price) || price <= 0) {
+      setPricingError("50ml base price is required and must be greater than 0.");
+      return;
+    }
+    const badVariant = variants.find(
+      (v) => !Number.isFinite(Number(v.price)) || Number(v.price) <= 0 ||
+        (v.salePrice !== undefined && (!Number.isFinite(Number(v.salePrice)) || Number(v.salePrice) <= 0 || Number(v.salePrice) >= Number(v.price)))
+    );
+    if (badVariant) {
+      setPricingError(`Invalid price for ${badVariant.size} — prices must be numbers greater than 0 (sale price must be below the price).`);
+      return;
+    }
+    setPricingError("");
 
     const parseNotes = (str: string) =>
       str.split(",").map((s) => s.trim()).filter(Boolean);
@@ -178,7 +214,10 @@ export const ProductFormPage: React.FC = () => {
       description,
       fullDescription: fullDescription || description,
       images,
-      photos,
+      photos: Array.from(new Set([
+        ...photos,
+        ...images.filter((s) => /^https?:\/\//.test(s)),
+      ])),
       featured,
       bestseller,
       newArrival,
@@ -352,8 +391,14 @@ export const ProductFormPage: React.FC = () => {
                 </h3>
                 <p className="text-xs text-muted font-light">
                   Manage variant prices, sale prices, SKUs, stock limits, and active availability for each size.
+                  Non-50ml sizes price automatically from the 50ml base (proportional per ml) unless manually overridden.
                 </p>
               </div>
+              {pricingError && (
+                <div className="mt-2 px-3 py-2 rounded border border-rose-800/60 bg-rose-950/50 text-rose-300 text-xs font-mono">
+                  {pricingError}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => handleAddVariant("100ml")}
@@ -414,15 +459,60 @@ export const ProductFormPage: React.FC = () => {
                           className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-gold font-mono font-bold focus:outline-none focus:border-gold"
                         />
                       </td>
-                      {/* Price */}
-                      <td className="py-2.5 px-3 w-32">
-                        <input
-                          type="number"
-                          required
-                          value={v.price}
-                          onChange={(e) => handleUpdateVariant(idx, "price", Number(e.target.value))}
-                          className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
-                        />
+                      {/* Price — 50ml row is the base price; others are AUTO (calculated) or MANUAL (override) */}
+                      <td className="py-2.5 px-3 w-44">
+                        {v.size.toLowerCase() === "50ml" ? (
+                          <div className="space-y-0.5">
+                            <input
+                              type="number"
+                              required
+                              min={1}
+                              value={v.price}
+                              onChange={(e) => handleUpdateVariant(idx, "price", Number(e.target.value))}
+                              className="w-full bg-navy border border-gold/40 rounded px-2 py-1 text-xs text-gold font-mono font-bold focus:outline-none focus:border-gold"
+                            />
+                            <span className="text-[9px] font-mono tracking-widest text-gold/70">50ML BASE PRICE</span>
+                          </div>
+                        ) : isAutoRow(v) ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              readOnly
+                              value={autoPriceFor(price, v.size)}
+                              className="w-full bg-navy/50 border border-gold/15 rounded px-2 py-1 text-xs text-muted font-mono cursor-default"
+                              title="Automatically calculated from the 50ml base price"
+                            />
+                            <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-gold/10 text-gold border border-gold/25 shrink-0">AUTO</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOverrideVariant(idx)}
+                              title="Override this size's price manually"
+                              className="p-1 text-muted hover:text-gold transition-colors shrink-0"
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              required
+                              min={1}
+                              value={v.price}
+                              onChange={(e) => handleUpdateVariant(idx, "price", Number(e.target.value))}
+                              className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                            />
+                            <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/50 shrink-0">MANUAL</span>
+                            <button
+                              type="button"
+                              onClick={() => handleResetAutoVariant(idx)}
+                              title="Reset to automatic pricing"
+                              className="p-1 text-muted hover:text-gold transition-colors shrink-0"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       {/* Sale Price */}
                       <td className="py-2.5 px-3 w-32">
