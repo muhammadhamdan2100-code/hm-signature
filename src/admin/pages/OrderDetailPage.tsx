@@ -529,5 +529,6 @@ export const OrderDetailPage: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
   );
 };
