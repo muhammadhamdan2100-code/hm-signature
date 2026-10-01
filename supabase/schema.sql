@@ -982,6 +982,70 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Server-Side Function: Atomic Inventory Stock Adjustment
+CREATE OR REPLACE FUNCTION public.adjust_inventory_stock(
+    p_variant_id UUID,
+    p_quantity_change INT,
+    p_transaction_type TEXT DEFAULT 'adjustment',
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_staff_id UUID := auth.uid();
+    v_old_stock INT;
+    v_new_stock INT;
+    v_variant RECORD;
+BEGIN
+    -- Security Check: Only authorized staff can adjust inventory stock
+    IF NOT public.is_staff(v_staff_id) THEN
+        RAISE EXCEPTION 'Access Denied: Only authorized staff members can adjust inventory stock.';
+    END IF;
+
+    -- Validate transaction type
+    IF p_transaction_type NOT IN ('sale', 'restock', 'adjustment', 'return', 'cancellation_release') THEN
+        RAISE EXCEPTION 'Invalid transaction type: %', p_transaction_type;
+    END IF;
+
+    -- Lock variant row for update to guarantee atomic update
+    SELECT * INTO v_variant
+    FROM public.product_variants
+    WHERE id = p_variant_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Product variant % not found.', p_variant_id;
+    END IF;
+
+    v_old_stock := v_variant.stock;
+    v_new_stock := v_old_stock + p_quantity_change;
+
+    IF v_new_stock < 0 THEN
+        RAISE EXCEPTION 'Cannot adjust stock below 0. Current stock: %, Change: %', v_old_stock, p_quantity_change;
+    END IF;
+
+    -- Update variant stock
+    UPDATE public.product_variants
+    SET stock = v_new_stock,
+        updated_at = NOW()
+    WHERE id = p_variant_id;
+
+    -- Insert audit log
+    INSERT INTO public.inventory_transactions (
+        variant_id, transaction_type, quantity_change, previous_stock, new_stock, created_by, notes
+    ) VALUES (
+        p_variant_id, p_transaction_type, p_quantity_change, v_old_stock, v_new_stock, v_staff_id, COALESCE(p_notes, 'Manual inventory adjustment')
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'variant_id', p_variant_id,
+        'previous_stock', v_old_stock,
+        'new_stock', v_new_stock,
+        'quantity_change', p_quantity_change
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
 -- ====================================================================
 -- 12. ROW LEVEL SECURITY (RLS) POLICIES & STORAGE BUCKETS
 -- ====================================================================
@@ -1022,10 +1086,85 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.seo_settings ENABLE ROW LEVEL SECURITY;
 
--- Profile Policies
+-- Catalog Policies (Public Read, Staff Write)
+CREATE POLICY "Public Read Active Categories" ON public.categories FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Categories" ON public.categories FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Active Collections" ON public.collections FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Collections" ON public.collections FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Active Products" ON public.products FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Products" ON public.products FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Product Images" ON public.product_images FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Product Images" ON public.product_images FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Active Variants" ON public.product_variants FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Product Variants" ON public.product_variants FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Collection Products" ON public.collection_products FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Collection Products" ON public.collection_products FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Notes" ON public.fragrance_notes FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Notes" ON public.fragrance_notes FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Product Notes" ON public.product_fragrance_notes FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Product Notes" ON public.product_fragrance_notes FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Profile & Customer Policies
 CREATE POLICY "Users Read Own Profile" ON public.profiles FOR SELECT USING (auth.uid() = id OR public.is_staff(auth.uid()));
 CREATE POLICY "Users Update Own Profile" ON public.profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 CREATE POLICY "Staff Manage Profiles" ON public.profiles FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Users Read Own Customer Record" ON public.customers FOR SELECT USING (profile_id = auth.uid() OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Customers" ON public.customers FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Orders & Payments Policies
+CREATE POLICY "Users Read Own Orders" ON public.orders FOR SELECT USING (customer_id = auth.uid() OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Orders" ON public.orders FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Users Read Own Order Items" ON public.order_items FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.orders WHERE id = order_items.order_id AND (customer_id = auth.uid() OR public.is_staff(auth.uid())))
+);
+CREATE POLICY "Staff Manage Order Items" ON public.order_items FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Users Read Own Payments" ON public.payments FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.orders WHERE id = payments.order_id AND (customer_id = auth.uid() OR public.is_staff(auth.uid())))
+);
+CREATE POLICY "Staff Manage Payments" ON public.payments FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Staff Manage Payment Events" ON public.payment_events FOR ALL USING (public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Inventory" ON public.inventory FOR ALL USING (public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Inventory Logs" ON public.inventory_transactions FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Cart & Wishlist Policies
+CREATE POLICY "User Manage Own Cart" ON public.cart FOR ALL USING (user_id = auth.uid() OR session_token IS NOT NULL);
+CREATE POLICY "User Manage Own Cart Items" ON public.cart_items FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.cart WHERE id = cart_items.cart_id AND (user_id = auth.uid() OR session_token IS NOT NULL))
+);
+
+CREATE POLICY "User Manage Own Wishlist" ON public.wishlists FOR ALL USING (user_id = auth.uid());
+CREATE POLICY "User Manage Own Wishlist Items" ON public.wishlist_items FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.wishlists WHERE id = wishlist_items.wishlist_id AND user_id = auth.uid())
+);
+
+-- Reviews Policies
+CREATE POLICY "Public Read Approved Reviews" ON public.reviews FOR SELECT USING (status = 'Approved' OR public.is_staff(auth.uid()));
+CREATE POLICY "Users Create Reviews" ON public.reviews FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "Staff Manage Reviews" ON public.reviews FOR ALL USING (public.is_staff(auth.uid()));
+
+-- CMS & Settings Policies
+CREATE POLICY "Public Read CMS Sections" ON public.homepage_sections FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage CMS Sections" ON public.homepage_sections FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Banners" ON public.banners FOR SELECT USING (active = true OR public.is_staff(auth.uid()));
+CREATE POLICY "Staff Manage Banners" ON public.banners FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read Settings" ON public.site_settings FOR SELECT USING (true);
+CREATE POLICY "Staff Manage Settings" ON public.site_settings FOR ALL USING (public.is_staff(auth.uid()));
+
+CREATE POLICY "Public Read SEO Settings" ON public.seo_settings FOR SELECT USING (true);
+CREATE POLICY "Staff Manage SEO Settings" ON public.seo_settings FOR ALL USING (public.is_staff(auth.uid()));
 
 -- Storage Buckets Configuration
 INSERT INTO storage.buckets (id, name, public) VALUES
@@ -1038,3 +1177,18 @@ INSERT INTO storage.buckets (id, name, public) VALUES
 ('avatars', 'avatars', true),
 ('payment-proofs', 'payment-proofs', false)
 ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+
+-- Storage Policies for Public Buckets
+CREATE POLICY "Public Storage Read Access" ON storage.objects FOR SELECT USING (bucket_id IN ('products', 'categories', 'collections', 'homepage', 'banners', 'reviews', 'avatars'));
+CREATE POLICY "Staff Storage All Access" ON storage.objects FOR ALL USING (public.is_staff(auth.uid()));
+
+-- Strict Private Storage Policies for 'payment-proofs' Bucket
+CREATE POLICY "Customer Upload Payment Proof" ON storage.objects FOR INSERT WITH CHECK (
+    bucket_id = 'payment-proofs' AND auth.role() = 'authenticated'
+);
+
+CREATE POLICY "Customer & Staff Read Payment Proof" ON storage.objects FOR SELECT USING (
+    bucket_id = 'payment-proofs' AND (
+        auth.uid() = owner OR public.is_staff(auth.uid())
+    )
+);

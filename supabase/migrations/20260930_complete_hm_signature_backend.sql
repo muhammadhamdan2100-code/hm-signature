@@ -1043,6 +1043,70 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Server-Side Function: Atomic Inventory Stock Adjustment
+CREATE OR REPLACE FUNCTION public.adjust_inventory_stock(
+    p_variant_id UUID,
+    p_quantity_change INT,
+    p_transaction_type TEXT DEFAULT 'adjustment',
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_staff_id UUID := auth.uid();
+    v_old_stock INT;
+    v_new_stock INT;
+    v_variant RECORD;
+BEGIN
+    -- Security Check: Only authorized staff can adjust inventory stock
+    IF NOT public.is_staff(v_staff_id) THEN
+        RAISE EXCEPTION 'Access Denied: Only authorized staff members can adjust inventory stock.';
+    END IF;
+
+    -- Validate transaction type
+    IF p_transaction_type NOT IN ('sale', 'restock', 'adjustment', 'return', 'cancellation_release') THEN
+        RAISE EXCEPTION 'Invalid transaction type: %', p_transaction_type;
+    END IF;
+
+    -- Lock variant row for update to guarantee atomic update
+    SELECT * INTO v_variant
+    FROM public.product_variants
+    WHERE id = p_variant_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Product variant % not found.', p_variant_id;
+    END IF;
+
+    v_old_stock := v_variant.stock;
+    v_new_stock := v_old_stock + p_quantity_change;
+
+    IF v_new_stock < 0 THEN
+        RAISE EXCEPTION 'Cannot adjust stock below 0. Current stock: %, Change: %', v_old_stock, p_quantity_change;
+    END IF;
+
+    -- Update variant stock
+    UPDATE public.product_variants
+    SET stock = v_new_stock,
+        updated_at = NOW()
+    WHERE id = p_variant_id;
+
+    -- Insert audit log
+    INSERT INTO public.inventory_transactions (
+        variant_id, transaction_type, quantity_change, previous_stock, new_stock, created_by, notes
+    ) VALUES (
+        p_variant_id, p_transaction_type, p_quantity_change, v_old_stock, v_new_stock, v_staff_id, COALESCE(p_notes, 'Manual inventory adjustment')
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'variant_id', p_variant_id,
+        'previous_stock', v_old_stock,
+        'new_stock', v_new_stock,
+        'quantity_change', p_quantity_change
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
 -- ====================================================================
 -- 12. ROW LEVEL SECURITY (RLS) POLICIES
 -- ====================================================================

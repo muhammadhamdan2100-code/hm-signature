@@ -1,8 +1,22 @@
-import React, { createContext, useContext, useState, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { products as initialProductsData, type ProductVariant, generateDefaultVariants } from "../../data/products";
 import { type StaffMember, type StaffStatus, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
 import { INITIAL_STAFF_MEMBERS } from "../../services/staff";
 import { isSupabaseConfigured, dbService } from "../../lib/supabase";
+import {
+  fetchAdminProductsFromDB,
+  fetchAdminCategoriesFromDB,
+  fetchAdminCollectionsFromDB,
+  fetchAdminInventoryLogsFromDB,
+  saveProductToDB,
+  toggleProductStatusInDB,
+  deleteProductSafeFromDB,
+  saveCategoryToDB,
+  deleteCategorySafeFromDB,
+  saveCollectionToDB,
+  deleteCollectionSafeFromDB,
+  adjustStockAtomicDB,
+} from "../../services/adminCatalog";
 
 export type { StaffMember, ProductVariant };
 export { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin };
@@ -1244,88 +1258,208 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Products
-  const addProduct = (prodData: Omit<AdminProduct, "id" | "createdAt">) => {
-    const newProd: AdminProduct = {
-      ...prodData,
-      id: "prod-" + Date.now(),
-      createdAt: new Date().toISOString().split("T")[0],
+  // Initial Supabase Catalog & Inventory Hydration
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    let isMounted = true;
+    async function loadCatalogData() {
+      try {
+        const [dbProds, dbCats, dbCols, dbLogs] = await Promise.all([
+          fetchAdminProductsFromDB(),
+          fetchAdminCategoriesFromDB(),
+          fetchAdminCollectionsFromDB(),
+          fetchAdminInventoryLogsFromDB(),
+        ]);
+
+        if (isMounted) {
+          if (dbProds.length > 0) setProducts(dbProds);
+          if (dbCats.length > 0) setCategories(dbCats);
+          if (dbCols.length > 0) setCollections(dbCols);
+          if (dbLogs.length > 0) setInventoryLogs(dbLogs);
+        }
+      } catch (err) {
+        console.error("Failed loading initial Supabase admin data:", err);
+      }
+    }
+
+    loadCatalogData();
+    return () => {
+      isMounted = false;
     };
-    setProducts((prev) => [newProd, ...prev]);
-    showToast("success", `Product "${newProd.name}" added successfully.`);
+  }, []);
+
+  // Products
+  const addProduct = async (prodData: Omit<AdminProduct, "id" | "createdAt">) => {
+    const success = await saveProductToDB(prodData);
+    if (success && isSupabaseConfigured()) {
+      const refreshed = await fetchAdminProductsFromDB();
+      if (refreshed.length > 0) setProducts(refreshed);
+    } else {
+      const newProd: AdminProduct = {
+        ...prodData,
+        id: "prod-" + Date.now(),
+        createdAt: new Date().toISOString().split("T")[0],
+      };
+      setProducts((prev) => [newProd, ...prev]);
+    }
+    showToast("success", `Product "${prodData.name}" saved.`);
   };
 
-  const updateProduct = (id: string, updates: Partial<AdminProduct>) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
-    );
+  const updateProduct = async (id: string, updates: Partial<AdminProduct>) => {
+    const existing = products.find((p) => p.id === id);
+    if (existing) {
+      const merged = { ...existing, ...updates };
+      await saveProductToDB(merged);
+    }
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminProductsFromDB();
+      if (refreshed.length > 0) setProducts(refreshed);
+    } else {
+      setProducts((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
+      );
+    }
     showToast("success", "Product updated successfully.");
   };
 
-  const deleteProduct = (id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-    showToast("info", "Product removed.");
+  const deleteProduct = async (id: string) => {
+    await deleteProductSafeFromDB(id);
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminProductsFromDB();
+      setProducts(refreshed);
+    } else {
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    }
+    showToast("info", "Product updated / archived.");
   };
 
-  const bulkDeleteProducts = (ids: string[]) => {
-    setProducts((prev) => prev.filter((p) => !ids.includes(p.id)));
-    showToast("info", `${ids.length} products deleted.`);
+  const bulkDeleteProducts = async (ids: string[]) => {
+    for (const id of ids) {
+      await deleteProductSafeFromDB(id);
+    }
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminProductsFromDB();
+      setProducts(refreshed);
+    } else {
+      setProducts((prev) => prev.filter((p) => !ids.includes(p.id)));
+    }
+    showToast("info", `${ids.length} products processed.`);
   };
 
-  const bulkToggleProductStatus = (ids: string[], active: boolean) => {
-    setProducts((prev) =>
-      prev.map((p) => (ids.includes(p.id) ? { ...p, active } : p))
-    );
+  const bulkToggleProductStatus = async (ids: string[], active: boolean) => {
+    for (const id of ids) {
+      await toggleProductStatusInDB(id, active);
+    }
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminProductsFromDB();
+      setProducts(refreshed);
+    } else {
+      setProducts((prev) =>
+        prev.map((p) => (ids.includes(p.id) ? { ...p, active } : p))
+      );
+    }
     showToast("success", `Status updated for ${ids.length} products.`);
   };
 
-  const duplicateProduct = (id: string) => {
+  const duplicateProduct = async (id: string) => {
     const target = products.find((p) => p.id === id);
     if (!target) return;
-    const duplicated: AdminProduct = {
+    const duplicatedData: Omit<AdminProduct, "id" | "createdAt"> = {
       ...target,
-      id: "prod-" + Date.now(),
       name: `${target.name} (Copy)`,
       sku: `${target.sku}-COPY`,
       slug: `${target.slug}-copy-${Date.now().toString().slice(-4)}`,
-      createdAt: new Date().toISOString().split("T")[0],
     };
-    setProducts((prev) => [duplicated, ...prev]);
+    await saveProductToDB(duplicatedData);
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminProductsFromDB();
+      if (refreshed.length > 0) setProducts(refreshed);
+    } else {
+      const duplicated: AdminProduct = {
+        ...duplicatedData,
+        id: "prod-" + Date.now(),
+        createdAt: new Date().toISOString().split("T")[0],
+      };
+      setProducts((prev) => [duplicated, ...prev]);
+    }
     showToast("success", `Duplicated product "${target.name}".`);
   };
 
   // Categories
-  const addCategory = (cat: Omit<Category, "id" | "productCount">) => {
-    const newCat: Category = { ...cat, id: "cat-" + Date.now(), productCount: 0 };
-    setCategories((prev) => [...prev, newCat]);
-    showToast("success", `Category "${newCat.name}" created.`);
+  const addCategory = async (cat: Omit<Category, "id" | "productCount">) => {
+    await saveCategoryToDB(cat);
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminCategoriesFromDB();
+      if (refreshed.length > 0) setCategories(refreshed);
+    } else {
+      const newCat: Category = { ...cat, id: "cat-" + Date.now(), productCount: 0 };
+      setCategories((prev) => [...prev, newCat]);
+    }
+    showToast("success", `Category "${cat.name}" created.`);
   };
 
-  const updateCategory = (id: string, updates: Partial<Category>) => {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+  const updateCategory = async (id: string, updates: Partial<Category>) => {
+    const existing = categories.find((c) => c.id === id);
+    if (existing) {
+      await saveCategoryToDB({ ...existing, ...updates });
+    }
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminCategoriesFromDB();
+      if (refreshed.length > 0) setCategories(refreshed);
+    } else {
+      setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    }
     showToast("success", "Category updated.");
   };
 
-  const deleteCategory = (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    showToast("info", "Category deleted.");
+  const deleteCategory = async (id: string) => {
+    await deleteCategorySafeFromDB(id);
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminCategoriesFromDB();
+      setCategories(refreshed);
+    } else {
+      setCategories((prev) => prev.filter((c) => c.id !== id));
+    }
+    showToast("info", "Category processed.");
   };
 
   // Collections
-  const addCollection = (col: Omit<Collection, "id">) => {
-    const newCol: Collection = { ...col, id: "col-" + Date.now() };
-    setCollections((prev) => [...prev, newCol]);
-    showToast("success", `Collection "${newCol.name}" created.`);
+  const addCollection = async (col: Omit<Collection, "id">) => {
+    await saveCollectionToDB(col);
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminCollectionsFromDB();
+      if (refreshed.length > 0) setCollections(refreshed);
+    } else {
+      const newCol: Collection = { ...col, id: "col-" + Date.now() };
+      setCollections((prev) => [...prev, newCol]);
+    }
+    showToast("success", `Collection "${col.name}" created.`);
   };
 
-  const updateCollection = (id: string, updates: Partial<Collection>) => {
-    setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+  const updateCollection = async (id: string, updates: Partial<Collection>) => {
+    const existing = collections.find((c) => c.id === id);
+    if (existing) {
+      await saveCollectionToDB({ ...existing, ...updates });
+    }
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminCollectionsFromDB();
+      if (refreshed.length > 0) setCollections(refreshed);
+    } else {
+      setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    }
     showToast("success", "Collection updated.");
   };
 
-  const deleteCollection = (id: string) => {
-    setCollections((prev) => prev.filter((c) => c.id !== id));
-    showToast("info", "Collection deleted.");
+  const deleteCollection = async (id: string) => {
+    await deleteCollectionSafeFromDB(id);
+    if (isSupabaseConfigured()) {
+      const refreshed = await fetchAdminCollectionsFromDB();
+      setCollections(refreshed);
+    } else {
+      setCollections((prev) => prev.filter((c) => c.id !== id));
+    }
+    showToast("info", "Collection processed.");
   };
 
   // Orders
@@ -1492,30 +1626,45 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Inventory
-  const adjustStock = (productId: string, change: number, reason: string) => {
+  const adjustStock = async (productId: string, change: number, reason: string) => {
     const prod = products.find((p) => p.id === productId);
     if (!prod) return;
-    const oldStock = prod.stock;
-    const newStock = Math.max(0, oldStock + change);
 
-    setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p))
-    );
+    if (isSupabaseConfigured()) {
+      const res = await adjustStockAtomicDB(productId, change, reason);
+      if (!res.success) {
+        showToast("error", res.error || "Failed to adjust inventory stock.");
+        return;
+      }
+      const [refreshedProds, refreshedLogs] = await Promise.all([
+        fetchAdminProductsFromDB(),
+        fetchAdminInventoryLogsFromDB(),
+      ]);
+      if (refreshedProds.length > 0) setProducts(refreshedProds);
+      if (refreshedLogs.length > 0) setInventoryLogs(refreshedLogs);
+    } else {
+      const oldStock = prod.stock;
+      const newStock = Math.max(0, oldStock + change);
 
-    const newLog: InventoryLog = {
-      id: "inv-" + Date.now(),
-      productId,
-      productName: prod.name,
-      sku: prod.sku,
-      previousStock: oldStock,
-      newStock,
-      change,
-      reason,
-      adjustedBy: "Admin User",
-      date: new Date().toISOString().replace("T", " ").slice(0, 16),
-    };
+      setProducts((prev) =>
+        prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p))
+      );
 
-    setInventoryLogs((prev) => [newLog, ...prev]);
+      const newLog: InventoryLog = {
+        id: "inv-" + Date.now(),
+        productId,
+        productName: prod.name,
+        sku: prod.sku,
+        previousStock: oldStock,
+        newStock,
+        change,
+        reason,
+        adjustedBy: "Admin User",
+        date: new Date().toISOString().replace("T", " ").slice(0, 16),
+      };
+
+      setInventoryLogs((prev) => [newLog, ...prev]);
+    }
     showToast("success", `Stock for "${prod.name}" adjusted by ${change > 0 ? "+" : ""}${change}.`);
   };
 

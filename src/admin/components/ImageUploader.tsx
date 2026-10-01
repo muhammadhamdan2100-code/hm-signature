@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { UploadCloud, Star, Trash2, Plus, Image as ImageIcon, Check } from "lucide-react";
+import { UploadCloud, Star, Trash2, Plus, Image as ImageIcon, Check, Loader2 } from "lucide-react";
+import { uploadProductImageToStorage } from "../../services/adminCatalog";
 
 interface ImageUploaderProps {
   images: string[];
@@ -18,6 +19,8 @@ const PRESET_TEXTURES = [
 export const ImageUploader: React.FC<ImageUploaderProps> = ({ images, onChange }) => {
   const [customUrl, setCustomUrl] = useState("");
   const [isAddingUrl, setIsAddingUrl] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleSetPrimary = (index: number) => {
     if (index === 0) return;
@@ -45,19 +48,62 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ images, onChange }
     setIsAddingUrl(false);
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    const newUrls: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const publicUrl = await uploadProductImageToStorage(file);
+      if (publicUrl) {
+        newUrls.push(publicUrl);
+      }
+    }
+
+    if (newUrls.length > 0) {
+      onChange([...images, ...newUrls]);
+    } else {
+      setUploadError("Failed to upload image to Supabase Storage. Check network or permissions.");
+    }
+    setIsUploading(false);
+    e.target.value = "";
+  };
+
   return (
     <div className="space-y-4">
       {/* Upload Zone & Quick Textures */}
       <div className="p-6 rounded-lg border-2 border-dashed border-gold/30 bg-navy/40 hover:border-gold/60 transition-colors flex flex-col items-center justify-center text-center">
-        <div className="p-3 rounded-full bg-navy border border-gold/20 text-gold mb-3">
-          <UploadCloud className="w-6 h-6" />
-        </div>
-        <p className="text-xs font-sans font-medium text-ivory tracking-wide">
-          Drag and drop product photography or choose luxury textures
-        </p>
-        <p className="text-[11px] font-sans text-muted mt-1">
-          Supports PNG, JPG, WebP up to 10MB per image. High resolution recommended.
-        </p>
+        <label className="cursor-pointer flex flex-col items-center">
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileUpload}
+            disabled={isUploading}
+            className="hidden"
+          />
+          <div className="p-3 rounded-full bg-navy border border-gold/20 text-gold mb-3 hover:bg-navy2 transition-colors">
+            {isUploading ? (
+              <Loader2 className="w-6 h-6 animate-spin text-gold" />
+            ) : (
+              <UploadCloud className="w-6 h-6" />
+            )}
+          </div>
+          <p className="text-xs font-sans font-medium text-ivory tracking-wide">
+            {isUploading ? "Uploading photography to Atelier Storage..." : "Click or drag & drop product photography to upload"}
+          </p>
+          <p className="text-[11px] font-sans text-muted mt-1">
+            Supports PNG, JPG, WebP up to 10MB per image. High resolution recommended.
+          </p>
+        </label>
+
+        {uploadError && (
+          <p className="text-xs text-rose-400 mt-2 font-mono">{uploadError}</p>
+        )}
 
         {/* Quick Texture Selectors */}
         <div className="mt-4 flex flex-wrap justify-center gap-2">
