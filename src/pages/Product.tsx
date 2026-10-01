@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Star, Minus, Plus, Heart, Truck } from "lucide-react";
-import { getProductBySlug, products, generateDefaultVariants } from "../data/products";
+import {
+  getProductBySlug as getStaticProductBySlug,
+  products as staticProducts,
+  generateDefaultVariants,
+  type Product,
+} from "../data/products";
+import { getCatalogProductBySlug, getCatalogProducts } from "../services/catalog";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import TexturePanel from "../components/TexturePanel";
@@ -17,12 +23,59 @@ const tabs = ["DESCRIPTION", "INGREDIENTS", "HOW TO WEAR", "SHIPPING & RETURNS",
 export default function ProductPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const product = getProductBySlug(slug || "");
+  const [product, setProduct] = useState<Product | null>(() => getStaticProductBySlug(slug || "") || null);
+  const [allProducts, setAllProducts] = useState<Product[]>(staticProducts);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
   const { addToCart } = useCart();
   const { toggleWishlist, isWishlisted } = useWishlist();
   const [activeImage, setActiveImage] = useState(0);
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState<(typeof tabs)[number]>("DESCRIPTION");
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    setActiveImage(0);
+    setQty(1);
+    setIsLoading(true);
+
+    let mounted = true;
+    Promise.all([
+      getCatalogProductBySlug(slug || ""),
+      getCatalogProducts(),
+    ])
+      .then(([foundProduct, catalogList]) => {
+        if (mounted) {
+          if (foundProduct) {
+            setProduct(foundProduct);
+            try {
+              const raw = localStorage.getItem("hm-signature-recent");
+              const recent: string[] = raw ? JSON.parse(raw) : [];
+              const updated = [
+                foundProduct.id,
+                ...recent.filter((id) => id !== foundProduct.id),
+              ].slice(0, 6);
+              localStorage.setItem("hm-signature-recent", JSON.stringify(updated));
+            } catch (e) {
+              // fallback
+            }
+          } else {
+            setProduct(null);
+          }
+
+          if (catalogList && catalogList.length > 0) {
+            setAllProducts(catalogList);
+          }
+        }
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [slug]);
 
   const availableVariants = product?.variants && product.variants.length > 0
     ? product.variants.filter((v) => v.active !== false)
@@ -37,37 +90,34 @@ export default function ProductPage() {
       const has50 = availableVariants.find((v) => v.size.toLowerCase() === "50ml");
       setSelectedSize(has50 ? has50.size : availableVariants[0].size);
     }
-  }, [slug]);
+  }, [slug, availableVariants.length]);
 
   const selectedVariant = availableVariants.find((v) => v.size.toLowerCase() === selectedSize.toLowerCase()) || availableVariants[0];
   const currentPrice = selectedVariant ? selectedVariant.price : product?.price || 0;
   const currentStock = selectedVariant ? selectedVariant.stock : product?.stock || 0;
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-    setActiveImage(0);
-    setQty(1);
-    if (product) {
-      const raw = localStorage.getItem("hm-signature-recent");
-      const recent: string[] = raw ? JSON.parse(raw) : [];
-      const updated = [product.id, ...recent.filter((id) => id !== product.id)].slice(0, 6);
-      localStorage.setItem("hm-signature-recent", JSON.stringify(updated));
-    }
-  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (isLoading && !product) {
+    return (
+      <div className="pt-40 pb-32 flex flex-col items-center justify-center min-h-[50vh] bg-navy">
+        <div className="w-10 h-10 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-xs font-mono uppercase tracking-[2px] text-gold">Loading Atelier Creation...</p>
+      </div>
+    );
+  }
 
   if (!product) {
     return (
-      <div className="pt-40 pb-32 text-center">
-        <p className="text-muted mb-6">Fragrance not found.</p>
-        <button onClick={() => navigate("/collections")} className="btn-gold">
+      <div className="pt-40 pb-32 text-center bg-navy min-h-[60vh] flex flex-col items-center justify-center">
+        <p className="text-muted mb-6 font-serif text-lg">Fragrance not found.</p>
+        <button onClick={() => navigate("/collections")} className="btn-gold text-xs">
           BACK TO COLLECTIONS
         </button>
       </div>
     );
   }
 
-  const related = products.filter((p) => p.id !== product.id && p.category === product.category).slice(0, 3);
-  const relatedFallback = related.length > 0 ? related : products.filter((p) => p.id !== product.id).slice(0, 3);
+  const related = allProducts.filter((p) => p.id !== product.id && p.category === product.category).slice(0, 3);
+  const relatedFallback = related.length > 0 ? related : allProducts.filter((p) => p.id !== product.id).slice(0, 3);
   const wishlisted = isWishlisted(product.id);
 
   return (

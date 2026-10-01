@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { SlidersHorizontal, X } from "lucide-react";
@@ -6,7 +6,7 @@ import { products as fallbackProducts } from "../data/products";
 import type { Product } from "../data/products";
 import ProductCard from "../components/ProductCard";
 import { formatPKR } from "../utils/currency";
-import { useAdminData } from "../admin/context/AdminDataContext";
+import { getCatalogProducts } from "../services/catalog";
 
 interface Props {
   title: string;
@@ -17,7 +17,8 @@ interface Props {
 }
 
 export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTexture = "texture-navy" }: Props) {
-  const { products: adminProducts } = useAdminData();
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(fallbackProducts);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q")?.toLowerCase() || "";
   const [category, setCategory] = useState<string>("All");
@@ -25,38 +26,24 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
   const [sort, setSort] = useState("featured");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Synchronize storefront products with AdminDataContext state
-  const catalogProducts: Product[] = useMemo(() => {
-    if (adminProducts && adminProducts.length > 0) {
-      return adminProducts
-        .filter((p) => p.active)
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          slug: p.slug,
-          price: p.price,
-          category: p.category,
-          gender: p.gender,
-          size: p.size,
-          concentration: p.concentration,
-          topNotes: p.topNotes,
-          heartNotes: p.heartNotes,
-          baseNotes: p.baseNotes,
-          description: p.description,
-          images: p.images,
-          photos: p.photos,
-          featured: p.featured,
-          bestseller: p.bestseller,
-          stock: p.stock,
-          ingredients: "Organic Sugar Cane Alcohol, Parfum, Water, Benzyl Salicylate",
-          rating: 4.9,
-          reviewCount: 24,
-          reviews: [],
-          texture: p.images?.[0] || "texture-velvet",
-        }));
-    }
-    return fallbackProducts;
-  }, [adminProducts]);
+  useEffect(() => {
+    let mounted = true;
+    getCatalogProducts()
+      .then((prods) => {
+        if (mounted && prods && prods.length > 0) {
+          setCatalogProducts(prods);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load catalog products:", err);
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const categories = useMemo(() => {
     return Array.from(new Set(catalogProducts.map((p) => p.category)));
@@ -196,7 +183,12 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
             </motion.div>
           )}
 
-          {filtered.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center py-20 flex flex-col items-center justify-center">
+              <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin mb-3" />
+              <span className="text-xs font-mono text-gold uppercase tracking-[2px]">Loading Atelier Catalog...</span>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-muted text-sm font-sans mb-4">No fragrances match your selected criteria.</p>
               <button

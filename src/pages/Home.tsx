@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import Hero from "../components/Hero";
@@ -9,11 +9,27 @@ import JournalSection from "../components/JournalSection";
 import Reviews from "../components/Reviews";
 import Newsletter from "../components/Newsletter";
 import ProductCard from "../components/ProductCard";
-import { products } from "../data/products";
+import { products as fallbackProducts, type Product } from "../data/products";
+import { getCatalogProducts } from "../services/catalog";
 
 export default function Home() {
-  const featured = products.filter((p) => p.featured);
+  const [featuredList, setFeaturedList] = useState<Product[]>(
+    () => fallbackProducts.filter((p) => p.featured)
+  );
   const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    let mounted = true;
+    getCatalogProducts().then((prods) => {
+      if (mounted && prods && prods.length > 0) {
+        const feat = prods.filter((p) => p.featured);
+        setFeaturedList(feat.length > 0 ? feat : prods.slice(0, 3));
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const section = searchParams.get("section");
@@ -45,7 +61,7 @@ export default function Home() {
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {featured.map((p) => (
+            {featuredList.map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}
           </div>

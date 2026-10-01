@@ -1,11 +1,28 @@
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { products } from "../data/products";
+import { products as fallbackProducts, type Product } from "../data/products";
+import { getCatalogProducts } from "../services/catalog";
 import Bottle from "./Bottle";
 import Pedestal from "./Pedestal";
 
 export default function FeaturedProduct() {
-  const featured = products.find((p) => p.bestseller) || products[0];
+  const [featured, setFeatured] = useState<Product>(
+    () => fallbackProducts.find((p) => p.bestseller) || fallbackProducts[0]
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    getCatalogProducts().then((prods) => {
+      if (mounted && prods && prods.length > 0) {
+        const best = prods.find((p) => p.bestseller) || prods[0];
+        setFeatured(best);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <section

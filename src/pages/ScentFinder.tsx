@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { products } from "../data/products";
-import type { Product } from "../data/products";
+import { products as fallbackProducts, type Product } from "../data/products";
+import { getCatalogProducts } from "../services/catalog";
 import TexturePanel from "../components/TexturePanel";
 import Bottle from "../components/Bottle";
 
@@ -49,16 +49,33 @@ const questions = [
   },
 ];
 
-const tagToProduct: Record<string, Product> = {
-  oud: products.find((p) => p.slug === "mystic-oud")!,
-  woods: products.find((p) => p.slug === "un-kimmy")!,
-  floral: products.find((p) => p.slug === "harm-land")!,
-};
-
 export default function ScentFinder() {
+  const [catalogList, setCatalogList] = useState<Product[]>(fallbackProducts);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [result, setResult] = useState<Product | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getCatalogProducts().then((prods) => {
+      if (mounted && prods && prods.length > 0) {
+        setCatalogList(prods);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const getProductByTag = (tag: string): Product => {
+    if (tag === "oud") {
+      return catalogList.find((p) => p.slug.includes("oud") || p.category.toLowerCase().includes("oriental")) || catalogList[0];
+    }
+    if (tag === "woods") {
+      return catalogList.find((p) => p.slug.includes("kimmy") || p.gender === "men" || p.category.toLowerCase().includes("woods")) || catalogList[1] || catalogList[0];
+    }
+    return catalogList.find((p) => p.slug.includes("harm") || p.gender === "women" || p.category.toLowerCase().includes("amber")) || catalogList[2] || catalogList[0];
+  };
 
   const choose = (tag: string) => {
     const next = [...answers, tag];
@@ -69,7 +86,7 @@ export default function ScentFinder() {
       const counts: Record<string, number> = {};
       next.forEach((t) => (counts[t] = (counts[t] || 0) + 1));
       const winner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-      setResult(tagToProduct[winner]);
+      setResult(getProductByTag(winner));
     }
   };
 

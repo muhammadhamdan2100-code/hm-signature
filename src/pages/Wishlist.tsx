@@ -1,11 +1,27 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWishlist } from "../context/WishlistContext";
-import { products } from "../data/products";
+import { products as fallbackProducts, type Product } from "../data/products";
+import { getCatalogProducts } from "../services/catalog";
 import ProductCard from "../components/ProductCard";
 
 export default function Wishlist() {
   const { wishlist } = useWishlist();
-  const items = products.filter((p) => wishlist.includes(p.id));
+  const [allProducts, setAllProducts] = useState<Product[]>(fallbackProducts);
+
+  useEffect(() => {
+    let mounted = true;
+    getCatalogProducts().then((prods) => {
+      if (mounted && prods && prods.length > 0) {
+        setAllProducts(prods);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const items = allProducts.filter((p) => wishlist.includes(p.id));
 
   return (
     <div className="pt-24 bg-navy min-h-screen">
