@@ -1,0 +1,31 @@
+-- ====================================================================
+-- HM SIGNATURE: UNIFIED AUTHENTICATION & ROW LEVEL SECURITY (RLS)
+-- Migration File: 20260929000002_unify_auth_and_rls.sql (tombstone)
+-- ====================================================================
+--
+-- STATUS: NO-OP — intentionally contains no executable SQL.
+--
+-- This migration was renamed from 20260929_unify_auth_and_rls.sql to
+-- resolve a duplicate version collision with 20260929_staff_auth_and_rls.sql
+-- (version 20260929), which is the migration recorded in the remote
+-- supabase_migrations.schema_migrations history.
+--
+-- Its content was verified to be fully superseded and MUST NOT be executed:
+--
+--   * profiles table, get_user_role(), is_staff(), is_super_admin(),
+--     handle_new_user(), on_auth_user_created trigger, RLS enablement,
+--     and all catalog/orders policies: already present remotely via
+--     20260929_staff_auth_and_rls.sql.
+--
+--   * Executing this file as-is would have DEGRADED remote security: its
+--     is_staff() / is_super_admin() replacements omit the profiles.status
+--     = 'active' check enforced by the applied staff migration, and its
+--     profiles UPDATE policy omits the status guard, allowing a suspended
+--     account to reactivate itself.
+--
+--   * Its only objects not present remotely (has_role() and the lowercase-
+--     named reviews policies) are unused: has_role() has zero references in
+--     src/ or server/, and reviews are fully covered (with idempotent
+--     DROP/CREATE) by 20260930_complete_hm_signature_backend.sql.
+--
+-- No database objects were created, altered, or dropped by this migration.
