@@ -7,6 +7,7 @@ import { useAdminData, type PaymentMethod } from "../admin/context/AdminDataCont
 import ProductVisual from "../components/ProductVisual";
 import { formatPKR } from "../utils/currency";
 import { sendTransactionalEmail } from "../services/emailService";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
 const steps = ["CONTACT", "SHIPPING", "PAYMENT", "CONFIRMATION"] as const;
 type Step = (typeof steps)[number];
@@ -30,6 +31,10 @@ export default function Checkout() {
     copiedField: "",
   });
 
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
+
   const [orderNumber] = useState(() => `HM-${Math.floor(100000 + Math.random() * 900000)}`);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -41,13 +46,81 @@ export default function Checkout() {
     setTimeout(() => update("copiedField", ""), 2500);
   };
 
+  const handleProofFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setProofError(null);
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setProofError("Please select a valid image file (PNG, JPG, WebP).");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setProofError("Payment screenshot file size must be less than 10MB.");
+      return;
+    }
+
+    setPaymentProofFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPaymentProofPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeProofFile = () => {
+    setPaymentProofFile(null);
+    setPaymentProofPreview(null);
+    setProofError(null);
+  };
+
   const handleSubmitOrder = async () => {
     setIsProcessing(true);
+    setProofError(null);
 
     try {
       const isCod = selectedMethod === "Cash on Delivery";
 
+      // Validate transaction ID and screenshot for manual payment methods
+      if (!isCod) {
+        if (!form.paymentReference.trim()) {
+          setProofError("Transaction ID / Reference ID is required for digital payments.");
+          setIsProcessing(false);
+          return;
+        }
+
+        if (!paymentProofFile) {
+          setProofError("Please upload a payment screenshot / proof of transfer.");
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      const generatedOrderId = `ord-${Date.now()}`;
+      let uploadedProofPath = "";
+
+      // Upload payment proof screenshot to private 'payment-proofs' bucket if applicable
+      if (!isCod && paymentProofFile) {
+        const fileExt = paymentProofFile.name.split(".").pop()?.toLowerCase() || "png";
+        const filePath = `proofs/${generatedOrderId}/proof-${Date.now()}.${fileExt}`;
+
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from("payment-proofs")
+          .upload(filePath, paymentProofFile, { upsert: true });
+
+        if (uploadErr) {
+          console.error("Payment proof upload failed:", uploadErr.message);
+          setProofError("Failed to upload payment proof. Please try again.");
+          setIsProcessing(false);
+          return;
+        }
+
+        uploadedProofPath = uploadData.path;
+      }
+
       const newOrder = {
+        id: generatedOrderId,
         orderNumber,
         customerName: form.name,
         customerEmail: form.email,
@@ -59,9 +132,11 @@ export default function Checkout() {
         shippingFee: shipping,
         shippingCost: shipping,
         status: "Pending" as const,
-        paymentStatus: (isCod ? "Pending" : "Pending") as any,
+        paymentStatus: (isCod ? "Pending" : "Verification Pending") as any,
         paymentMethod: selectedMethod,
         paymentReference: form.paymentReference || (isCod ? "COD-PENDING" : `REF-${Math.floor(100000 + Math.random() * 900000)}`),
+        paymentProofUrl: uploadedProofPath,
+        paymentProofNote: isCod ? "Cash on Delivery" : "Payment screenshot uploaded by customer",
         shippingStatus: "Processing" as const,
         courier: "DHL Express Luxury",
         trackingNumber: `DHL-HM-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -94,6 +169,66 @@ export default function Checkout() {
           image: i.product.images?.[0] || "texture-velvet",
         })),
       };
+
+      // Execute place_order RPC on Supabase if connected
+      if (isSupabaseConfigured()) {
+        try {
+          const authUser = (await supabase.auth.getUser()).data.user;
+          const rpcItems = items.map((i) => {
+            const variantId = i.product.variants?.find(
+              (v) => v.size.toLowerCase() === (i.selectedSize || "50ml").toLowerCase()
+            )?.id;
+            return {
+              variant_id: (variantId && !variantId.startsWith("v-")) ? variantId : null,
+              quantity: i.quantity,
+            };
+          }).filter((item) => item.variant_id !== null);
+
+          if (rpcItems.length > 0) {
+            const { data: rpcRes, error: rpcErr } = await supabase.rpc("place_order", {
+              p_customer_id: authUser?.id || null,
+              p_customer_name: form.name,
+              p_customer_email: form.email,
+              p_customer_phone: form.phone,
+              p_shipping_address: {
+                street: form.address,
+                city: form.city,
+                state: "Punjab",
+                zip: form.postalCode,
+                country: form.country,
+              },
+              p_payment_method: selectedMethod,
+              p_coupon_code: promoCode || null,
+              p_items: rpcItems,
+            });
+
+            if (!rpcErr && rpcRes && rpcRes.order_id) {
+              const realDbOrderId = rpcRes.order_id;
+              const realOrderNumber = rpcRes.order_number;
+
+              // Update proof path and reference id in database
+              if (uploadedProofPath || form.paymentReference) {
+                await supabase.from("payments").update({
+                  reference_id: form.paymentReference || (isCod ? "COD-PENDING" : "PROOF-ATTACHED"),
+                  proof_file_path: uploadedProofPath || null,
+                  proof_note: isCod ? "Cash on Delivery" : "Payment screenshot uploaded by customer",
+                  status: isCod ? "Pending" : "Verification Pending",
+                }).eq("order_id", realDbOrderId);
+
+                await supabase.from("orders").update({
+                  payment_proof_url: uploadedProofPath || null,
+                  payment_status: isCod ? "Pending" : "Verification Pending",
+                }).eq("id", realDbOrderId);
+              }
+
+              newOrder.id = realDbOrderId;
+              newOrder.orderNumber = realOrderNumber;
+            }
+          }
+        } catch (rpcEx) {
+          console.warn("place_order RPC call skipped or fell back:", rpcEx);
+        }
+      }
 
       addOrder(newOrder);
 
@@ -373,6 +508,57 @@ export default function Checkout() {
                             placeholder="e.g. TRX-MEEZAN-88231"
                             required
                           />
+                        </div>
+                      )}
+
+                      {/* Payment Screenshot Upload Field for Digital Transfer Methods */}
+                      {selectedMethod !== "Cash on Delivery" && (
+                        <div className="space-y-2 pt-2 border-t border-gold/15">
+                          <span className="text-[10px] tracking-widest text-gold uppercase block font-mono">
+                            Upload Payment Screenshot / Transfer Receipt <span className="text-gold">*</span>
+                          </span>
+
+                          {!paymentProofPreview ? (
+                            <label className="border-2 border-dashed border-gold/30 hover:border-gold/60 bg-navy p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors">
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                onChange={handleProofFileChange}
+                                className="hidden"
+                              />
+                              <span className="text-xs text-ivory font-medium">Click to select screenshot image</span>
+                              <span className="text-[10px] text-muted mt-1">Supports PNG, JPG, WebP up to 10MB</span>
+                            </label>
+                          ) : (
+                            <div className="bg-navy p-3 rounded border border-gold/30 flex items-center justify-between">
+                              <div className="flex items-center space-x-3 overflow-hidden">
+                                <img
+                                  src={paymentProofPreview}
+                                  alt="Payment Screenshot Preview"
+                                  className="w-12 h-12 object-cover rounded border border-gold/20 shrink-0"
+                                />
+                                <div className="min-w-0">
+                                  <span className="text-xs font-serif font-bold text-ivory block truncate">
+                                    {paymentProofFile?.name}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-emerald-400 block">
+                                    ✓ Screenshot attached ({(paymentProofFile!.size / 1024).toFixed(1)} KB)
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={removeProofFile}
+                                className="px-2 py-1 text-[10px] font-mono uppercase bg-rose-950/60 text-rose-300 border border-rose-800/40 rounded hover:bg-rose-900"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
+
+                          {proofError && (
+                            <p className="text-[11px] text-rose-400 font-mono mt-1">{proofError}</p>
+                          )}
                         </div>
                       )}
 

@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAdminData, type Order } from "../context/AdminDataContext";
 import { OrderStatusTimeline } from "../components/OrderStatusTimeline";
 import { StatusBadge } from "../components/StatusBadge";
 import { Breadcrumb } from "../components/Breadcrumb";
+import { isSupabaseConfigured, supabase } from "../../lib/supabase";
 import {
   ArrowLeft,
   User,
@@ -12,21 +13,68 @@ import {
   Package,
   Printer,
   Send,
+  Eye,
+  CheckCircle,
+  XCircle,
+  X,
+  FileImage,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 export const OrderDetailPage: React.FC = () => {
-  const { orders, updateOrderStatus, updateOrderShipping } = useAdminData();
+  const { orders, updateOrderStatus, updateOrderShipping, payments, verifyPayment, rejectPayment } = useAdminData();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
   const order = orders.find((o) => o.id === id || o.orderNumber === id);
+  const paymentRecord = payments.find((p) => p.orderId === order?.id || p.orderNumber === order?.orderNumber);
 
   const [courier, setCourier] = useState(order?.courier || "DHL Express Luxury");
   const [trackingNumber, setTrackingNumber] = useState(order?.trackingNumber || "");
   const [shippingStatus, setShippingStatus] = useState<Order["shippingStatus"]>(
     order?.shippingStatus || "Processing"
   );
+
+  const [signedProofUrl, setSignedProofUrl] = useState<string | null>(null);
+  const [showScreenshotModal, setShowScreenshotModal] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSignedUrl() {
+      if (!order?.paymentProofUrl) {
+        setSignedProofUrl(null);
+        return;
+      }
+
+      if (
+        order.paymentProofUrl.startsWith("http://") ||
+        order.paymentProofUrl.startsWith("https://") ||
+        order.paymentProofUrl.startsWith("data:")
+      ) {
+        setSignedProofUrl(order.paymentProofUrl);
+        return;
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.storage
+            .from("payment-proofs")
+            .createSignedUrl(order.paymentProofUrl, 3600);
+
+          if (!error && data?.signedUrl && isMounted) {
+            setSignedProofUrl(data.signedUrl);
+          }
+        } catch (e) {
+          console.error("Failed to generate signed URL for payment proof:", e);
+        }
+      }
+    }
+
+    fetchSignedUrl();
+    return () => {
+      isMounted = false;
+    };
+  }, [order?.paymentProofUrl]);
 
   if (!order) {
     return (
@@ -45,6 +93,20 @@ export const OrderDetailPage: React.FC = () => {
   const handleSaveShipping = (e: React.FormEvent) => {
     e.preventDefault();
     updateOrderShipping(order.id, courier, trackingNumber, shippingStatus);
+  };
+
+  const handleVerify = () => {
+    if (paymentRecord) {
+      verifyPayment(paymentRecord.id, "Verified by concierge staff in order detail");
+    } else {
+      updateOrderStatus(order.id, "Confirmed", "Payment manually verified by staff");
+    }
+  };
+
+  const handleReject = () => {
+    if (paymentRecord) {
+      rejectPayment(paymentRecord.id, "Payment receipt unreadable or invalid transaction ID");
+    }
   };
 
   return (
@@ -302,29 +364,170 @@ export const OrderDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Payment Info */}
-          <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-3 shadow-xl">
+          {/* Payment Info & Manual Payment Proof Verification Card */}
+          <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
             <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
               <CreditCard className="w-4 h-4 text-gold" />
               <h3 className="font-serif text-base font-bold text-ivory">
-                Payment Info
+                Payment Verification
               </h3>
             </div>
 
-            <div className="space-y-2 text-xs font-sans">
+            <div className="space-y-3 text-xs font-sans">
               <div className="flex justify-between items-center">
                 <span className="text-muted">Payment Method:</span>
-                <span className="text-ivory font-medium">{order.paymentMethod}</span>
+                <span className="text-ivory font-medium font-serif">{order.paymentMethod}</span>
               </div>
 
               <div className="flex justify-between items-center">
                 <span className="text-muted">Payment Status:</span>
                 <StatusBadge status={order.paymentStatus} />
               </div>
+
+              <div className="pt-2 border-t border-gold/15">
+                <span className="text-[10px] text-muted uppercase tracking-wider block mb-1">
+                  Transaction / Reference ID
+                </span>
+                <span className="font-mono text-xs text-gold bg-navy px-2.5 py-1.5 rounded border border-gold/20 block truncate">
+                  {order.paymentReference || "N/A"}
+                </span>
+              </div>
+
+              {order.paymentProofNote && (
+                <div>
+                  <span className="text-[10px] text-muted uppercase tracking-wider block mb-0.5">
+                    Transfer Note
+                  </span>
+                  <p className="text-xs text-ivory/80 italic font-light">
+                    "{order.paymentProofNote}"
+                  </p>
+                </div>
+              )}
+
+              {/* Private Payment Proof Screenshot Rendering */}
+              {order.paymentMethod !== "Cash on Delivery" && (
+                <div className="pt-2 border-t border-gold/15 space-y-2">
+                  <span className="text-[10px] text-gold uppercase tracking-wider block font-semibold flex items-center space-x-1">
+                    <FileImage className="w-3.5 h-3.5" />
+                    <span>Payment Screenshot / Proof</span>
+                  </span>
+
+                  {signedProofUrl ? (
+                    <div className="space-y-2">
+                      <div
+                        onClick={() => setShowScreenshotModal(true)}
+                        className="relative group rounded overflow-hidden border border-gold/30 bg-navy cursor-pointer hover:border-gold transition-colors aspect-video flex items-center justify-center"
+                      >
+                        <img
+                          src={signedProofUrl}
+                          alt="Payment Transfer Proof Screenshot"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-navy/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1.5 text-gold text-xs font-bold font-mono">
+                          <Eye className="w-4 h-4" />
+                          <span>Inspect Screenshot</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowScreenshotModal(true)}
+                        className="w-full py-1.5 bg-navy border border-gold/30 hover:border-gold text-gold text-[11px] font-mono rounded flex items-center justify-center space-x-1.5 transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View Full Screenshot</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-navy rounded border border-gold/10 text-center">
+                      <span className="text-[11px] text-muted italic font-mono block">
+                        {order.paymentProofUrl
+                          ? "Loading signed screenshot URL..."
+                          : "No screenshot attached for this transaction."}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Staff Verification Controls */}
+              {order.paymentMethod !== "Cash on Delivery" &&
+                (order.paymentStatus === "Pending" ||
+                  order.paymentStatus === "Verification Pending" ||
+                  order.paymentStatus === ("Pending Verification" as any)) && (
+                  <div className="pt-3 border-t border-gold/20 flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={handleVerify}
+                      className="flex-1 py-2 bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/50 rounded text-xs uppercase font-bold font-mono flex items-center justify-center space-x-1.5 transition-colors"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Verify Payment</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleReject}
+                      className="flex-1 py-2 bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/50 rounded text-xs uppercase font-bold font-mono flex items-center justify-center space-x-1.5 transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject</span>
+                    </button>
+                  </div>
+                )}
             </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Screenshot Inspection Modal */}
+      {showScreenshotModal && signedProofUrl && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-navy2 border border-gold/30 rounded-lg max-w-3xl w-full p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-gold/15 pb-3">
+              <div>
+                <h3 className="font-serif text-lg font-bold text-ivory">
+                  Payment Transfer Screenshot Proof
+                </h3>
+                <span className="text-xs font-mono text-gold">
+                  Order #{order.orderNumber} • Reference: {order.paymentReference || "N/A"}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowScreenshotModal(false)}
+                className="p-1.5 rounded text-muted hover:text-ivory hover:bg-navy border border-gold/20 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto rounded border border-gold/20 bg-navy flex items-center justify-center p-2">
+              <img
+                src={signedProofUrl}
+                alt="Full Payment Screenshot"
+                className="max-w-full max-h-full object-contain rounded"
+              />
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <a
+                href={signedProofUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-mono text-gold hover:underline flex items-center space-x-1"
+              >
+                <span>Open image in new tab</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setShowScreenshotModal(false)}
+                className="px-4 py-2 bg-gold text-navy font-bold rounded text-xs uppercase"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
   );
 };
