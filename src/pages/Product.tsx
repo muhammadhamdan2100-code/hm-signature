@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Star, Minus, Plus, Heart, Truck } from "lucide-react";
@@ -10,13 +10,16 @@ import {
 } from "../data/products";
 import { getCatalogProductBySlug, getCatalogProducts, getProductReviews, submitProductReview } from "../services/catalog";
 import { useSeoMeta } from "../hooks/useSeoMeta";
+import { useRecentlyViewed } from "../hooks/useRecentlyViewed";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
+import { fetchShippingConfig, DEFAULT_SHIPPING_CONFIG } from "../services/storeConfig";
 import TexturePanel from "../components/TexturePanel";
 import Bottle from "../components/Bottle";
 import Pedestal from "../components/Pedestal";
 import ProductVisual from "../components/ProductVisual";
 import { formatPKR } from "../utils/currency";
+import { effectiveVariantPrice } from "../data/products";
 import ProductCard from "../components/ProductCard";
 
 const tabs = ["DESCRIPTION", "INGREDIENTS", "HOW TO WEAR", "SHIPPING & RETURNS", "REVIEWS"] as const;
@@ -28,8 +31,9 @@ export default function ProductPage() {
   const [allProducts, setAllProducts] = useState<Product[]>(staticProducts);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const { addToCart } = useCart();
+  const { addToCart, freeShippingThreshold } = useCart();
   const { toggleWishlist, isWishlisted } = useWishlist();
+  const { recentIds, pushRecent } = useRecentlyViewed();
   const [activeImage, setActiveImage] = useState(0);
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState<(typeof tabs)[number]>("DESCRIPTION");
@@ -41,6 +45,25 @@ export default function ProductPage() {
   const [reviewComment, setReviewComment] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewMessage, setReviewMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Delivery window comes from the store's shipping configuration — the same
+  // settings read that already supplies freeShippingThreshold via the cart
+  // context. Fetched once; falls back to the documented defaults.
+  const [estimatedDays, setEstimatedDays] = useState<string>(DEFAULT_SHIPPING_CONFIG.estimatedDays);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchShippingConfig()
+      .then((config) => {
+        if (mounted) setEstimatedDays(config.estimatedDays);
+      })
+      .catch(() => {
+        if (mounted) setEstimatedDays(DEFAULT_SHIPPING_CONFIG.estimatedDays);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const isUuidId = !!product && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id);
 
@@ -73,17 +96,8 @@ export default function ProductPage() {
         if (mounted) {
           if (foundProduct) {
             setProduct(foundProduct);
-            try {
-              const raw = localStorage.getItem("hm-signature-recent");
-              const recent: string[] = raw ? JSON.parse(raw) : [];
-              const updated = [
-                foundProduct.id,
-                ...recent.filter((id) => id !== foundProduct.id),
-              ].slice(0, 6);
-              localStorage.setItem("hm-signature-recent", JSON.stringify(updated));
-            } catch (e) {
-              // fallback
-            }
+            // LIFO, deduped, capped at 8 — handled inside the hook.
+            pushRecent(foundProduct.id);
           } else {
             setProduct(null);
           }
@@ -118,8 +132,57 @@ export default function ProductPage() {
   }, [slug, availableVariants.length]);
 
   const selectedVariant = availableVariants.find((v) => v.size.toLowerCase() === selectedSize.toLowerCase()) || availableVariants[0];
-  const currentPrice = selectedVariant ? selectedVariant.price : product?.price || 0;
+  const currentPrice = selectedVariant ? effectiveVariantPrice(selectedVariant) : product?.price || 0;
   const currentStock = selectedVariant ? selectedVariant.stock : product?.stock || 0;
+  const lowStockThreshold = selectedVariant?.lowStockThreshold;
+  const isLowStock = currentStock > 0 && lowStockThreshold != null && currentStock <= lowStockThreshold;
+
+  // "Similar fragrances" ranked only by real catalogue attributes:
+  // shared family (3), same gender (2), same category (1), +1 per shared note.
+  const similar = useMemo(() => {
+    if (!product) return [] as Product[];
+    const notesOf = (p: Product) =>
+      new Set(
+        [...p.topNotes, ...p.heartNotes, ...p.baseNotes]
+          .map((n) => n.trim().toLowerCase())
+          .filter(Boolean)
+      );
+    const selfNotes = notesOf(product);
+    const selfFamily = product.fragranceFamily || product.category;
+    return allProducts
+      .filter((p) => p.id !== product.id)
+      .map((p) => {
+        const otherNotes = notesOf(p);
+        let sharedNotes = 0;
+        selfNotes.forEach((n) => {
+          if (otherNotes.has(n)) sharedNotes += 1;
+        });
+        const score =
+          ((p.fragranceFamily || p.category) === selfFamily ? 3 : 0) +
+          (p.gender === product.gender ? 2 : 0) +
+          (p.category === product.category ? 1 : 0) +
+          sharedNotes;
+        return { p, score };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || b.p.rating - a.p.rating)
+      .slice(0, 3)
+      .map((x) => x.p);
+  }, [allProducts, product]);
+
+  const recentProducts = useMemo(() => {
+    if (!product) return [] as Product[];
+    return recentIds
+      .filter((id) => id !== product.id)
+      .map((id) => allProducts.find((p) => p.id === id))
+      .filter((p): p is Product => Boolean(p));
+  }, [recentIds, allProducts, product]);
+
+  const declaredNoteTiers = [
+    { label: "TOP NOTES", notes: product?.topNotes ?? [] },
+    { label: "HEART NOTES", notes: product?.heartNotes ?? [] },
+    { label: "BASE NOTES", notes: product?.baseNotes ?? [] },
+  ].filter((t) => t.notes.length > 0);
 
   if (isLoading && !product) {
     return (
@@ -141,8 +204,6 @@ export default function ProductPage() {
     );
   }
 
-  const related = allProducts.filter((p) => p.id !== product.id && p.category === product.category).slice(0, 3);
-  const relatedFallback = related.length > 0 ? related : allProducts.filter((p) => p.id !== product.id).slice(0, 3);
   const wishlisted = isWishlisted(product.id);
 
   return (
@@ -154,7 +215,7 @@ export default function ProductPage() {
 
         <div className="grid lg:grid-cols-2 gap-14">
           {/* Gallery */}
-          <div>
+          <div className="min-w-0">
             <motion.div key={activeImage} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
               {product.photos ? (
                 <ProductVisual product={product} photoIndex={activeImage} className="aspect-square border border-gold/25" />
@@ -167,12 +228,16 @@ export default function ProductPage() {
                 </TexturePanel>
               )}
             </motion.div>
-            <div className="flex gap-3 mt-4">
+            <div className="flex gap-3 mt-4 overflow-x-auto scrollbar-none" role="group" aria-label="Product image thumbnails">
               {(product.photos || product.images).map((_, i) => (
                 <button
                   key={i}
                   onClick={() => setActiveImage(i)}
-                  className={`w-20 h-20 shrink-0 border ${activeImage === i ? "border-gold" : "border-gold/20"}`}
+                  aria-label={`View image ${i + 1} of ${(product.photos || product.images).length}`}
+                  aria-pressed={activeImage === i}
+                  className={`w-20 h-20 shrink-0 border min-h-[44px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
+                    activeImage === i ? "border-gold" : "border-gold/20"
+                  }`}
                 >
                   {product.photos ? (
                     <ProductVisual product={product} photoIndex={i} className="w-full h-full" />
@@ -187,37 +252,52 @@ export default function ProductPage() {
           </div>
 
           {/* Details */}
-          <div>
+          <div className="min-w-0">
             <div className="eyebrow mb-3">{product.category}</div>
-            <h1 className="font-serif text-4xl lg:text-5xl mb-4">{product.name}</h1>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="flex gap-1">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} size={14} fill={i < Math.round(product.rating) ? "#E0C27A" : "none"} color="#E0C27A" />
-                ))}
-              </div>
-              <span className="text-xs text-muted">{product.rating} ({product.reviewCount} reviews)</span>
+            <h1 className="font-serif text-4xl lg:text-5xl mb-4 break-words">{product.name}</h1>
+            <div className="flex items-center gap-3 mb-6" role="status">
+              {product.reviewCount > 0 ? (
+                <>
+                  <div className="flex gap-1" aria-hidden="true">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} size={14} fill={i < Math.round(product.rating) ? "#E0C27A" : "none"} color="#E0C27A" />
+                    ))}
+                  </div>
+                  <span className="text-xs text-muted">
+                    {product.rating.toFixed(1)} ({product.reviewCount} {product.reviewCount === 1 ? "review" : "reviews"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs text-muted italic">Not yet rated by clients</span>
+              )}
             </div>
-            <div className="text-3xl text-goldLight font-serif mb-6">{formatPKR(currentPrice)}</div>
+            <div className="text-3xl text-goldLight font-serif mb-6">
+              {currentPrice > 0 ? formatPKR(currentPrice) : "Price on request"}
+            </div>
             <p className="text-muted leading-[1.9] mb-8 max-w-md">{product.description}</p>
 
-            {/* Bottle Size Selector (10ml, 30ml, 50ml, 100ml) */}
+            {/* Bottle Size Selector with per-size availability */}
             <div className="mb-8 space-y-3 font-sans">
               <div className="flex items-center justify-between text-xs tracking-widest text-muted uppercase">
-                <span>SELECT BOTTLE SIZE:</span>
+                <span id="size-selector-label">SELECT BOTTLE SIZE:</span>
                 <span className="text-gold font-bold font-mono text-sm">{selectedSize}</span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div role="group" aria-labelledby="size-selector-label" className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {availableVariants.map((v) => {
                   const isSelected = v.size.toLowerCase() === selectedSize.toLowerCase();
                   const isOutOfStock = v.stock <= 0;
+                  const isLow =
+                    !isOutOfStock && v.lowStockThreshold != null && v.stock <= v.lowStockThreshold;
+                  const availability = isOutOfStock ? "Sold out" : isLow ? `${v.stock} left` : "In stock";
                   return (
                     <button
                       key={v.size}
                       type="button"
                       disabled={isOutOfStock}
+                      aria-pressed={isSelected}
+                      aria-label={`${v.size}, ${v.price > 0 ? formatPKR(effectiveVariantPrice(v)) : "price on request"}, ${availability}`}
                       onClick={() => setSelectedSize(v.size)}
-                      className={`py-3 px-2 rounded-lg border text-center transition-all flex flex-col items-center justify-center space-y-1 ${
+                      className={`min-h-[44px] py-3 px-2 rounded-lg border text-center transition-all flex flex-col items-center justify-center space-y-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
                         isSelected
                           ? "bg-navy2 border-gold text-gold font-bold shadow-lg ring-1 ring-gold/40"
                           : isOutOfStock
@@ -226,26 +306,75 @@ export default function ProductPage() {
                       }`}
                     >
                       <span className="text-xs font-mono font-bold tracking-wider">{v.size}</span>
-                      <span className="text-[10px] font-mono text-goldLight">{formatPKR(v.price)}</span>
+                      <span className="text-[10px] font-mono text-goldLight">{formatPKR(effectiveVariantPrice(v))}</span>
+                      <span
+                        className={`text-[9px] font-mono tracking-wide ${
+                          isOutOfStock ? "text-rose-400/70" : isLow ? "text-gold" : "text-emerald-400/80"
+                        }`}
+                      >
+                        {availability}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
-              <div>
-                <div className="text-[11px] text-muted tracking-widest mb-1">CONCENTRATION</div>
-                <div>{product.concentration}</div>
-              </div>
+            {/* Specification panel — only fields the catalogue declares */}
+            <div className="grid grid-cols-2 gap-4 mb-8 text-sm border-t border-gold/10 pt-6">
+              {(product.fragranceFamily || product.category) && (
+                <div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">FRAGRANCE FAMILY</div>
+                  <div>{product.fragranceFamily || product.category}</div>
+                </div>
+              )}
+              {product.intensity && (
+                <div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">INTENSITY</div>
+                  <div>{product.intensity}</div>
+                </div>
+              )}
+              {(product.occasions?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">OCCASION</div>
+                  <div>{product.occasions!.join(" · ")}</div>
+                </div>
+              )}
+              {(product.seasons?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">SEASON</div>
+                  <div>{product.seasons!.join(" · ")}</div>
+                </div>
+              )}
+              {product.concentration && (
+                <div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">CONCENTRATION</div>
+                  <div>{product.concentration}</div>
+                </div>
+              )}
+              {product.scentProfile && (
+                <div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">SCENT PROFILE</div>
+                  <div>{product.scentProfile}</div>
+                </div>
+              )}
               <div>
                 <div className="text-[11px] text-muted tracking-widest mb-1">SELECTED SIZE</div>
                 <div className="text-gold font-bold font-mono">{selectedSize}</div>
               </div>
               <div>
                 <div className="text-[11px] text-muted tracking-widest mb-1">AVAILABILITY</div>
-                <div className={currentStock > 0 ? "text-emerald-400 font-medium" : "text-rose-400 font-medium"}>
-                  {currentStock > 0 ? `IN STOCK (${currentStock} available)` : "OUT OF STOCK"}
+                <div
+                  role="status"
+                  className={`font-medium ${
+                    currentStock <= 0 ? "text-rose-400" : isLowStock ? "text-gold" : "text-emerald-400"
+                  }`}
+                >
+                  {currentStock <= 0
+                    ? "OUT OF STOCK"
+                    : isLowStock
+                    ? `ONLY ${currentStock} LEFT`
+                    : `IN STOCK (${currentStock} available)`}
                 </div>
               </div>
               <div>
@@ -255,19 +384,29 @@ export default function ProductPage() {
             </div>
 
             <div className="flex items-center gap-4 mb-6">
-              <div className="flex items-center border border-gold/30">
-                <button className="px-4 py-3 hover:text-gold" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Decrease">
+              <div className="flex items-center border border-gold/30 rounded" role="group" aria-label="Quantity">
+                <button
+                  className="w-11 h-11 flex items-center justify-center hover:text-gold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  aria-label="Decrease quantity"
+                  disabled={qty <= 1}
+                >
                   <Minus size={14} />
                 </button>
-                <span className="px-5 text-sm">{qty}</span>
-                <button className="px-4 py-3 hover:text-gold" onClick={() => setQty((q) => q + 1)} aria-label="Increase">
+                <span className="px-5 text-sm" aria-live="polite">{qty}</span>
+                <button
+                  className="w-11 h-11 flex items-center justify-center hover:text-gold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+                  onClick={() => setQty((q) => q + 1)}
+                  aria-label="Increase quantity"
+                >
                   <Plus size={14} />
                 </button>
               </div>
               <button
                 onClick={() => toggleWishlist(product.id)}
-                className="w-12 h-12 border border-gold/30 flex items-center justify-center hover:border-gold shrink-0"
-                aria-label="Wishlist"
+                aria-pressed={wishlisted}
+                aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                className="w-12 h-12 border border-gold/30 flex items-center justify-center hover:border-gold shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               >
                 <Heart size={16} fill={wishlisted ? "#C8A96B" : "none"} color={wishlisted ? "#C8A96B" : "#F6F1E7"} />
               </button>
@@ -279,7 +418,7 @@ export default function ProductPage() {
                 disabled={currentStock <= 0}
                 className="flex-1 btn-gold-fill text-center disabled:opacity-40"
               >
-                ADD TO CART ({selectedSize})
+                ADD TO BAG ({selectedSize})
               </button>
               <button
                 disabled={currentStock <= 0}
@@ -294,39 +433,49 @@ export default function ProductPage() {
             </div>
 
             <div className="flex items-center gap-3 text-xs text-muted border-t border-gold/15 pt-6">
-              <Truck size={16} className="text-gold" />
-              Free shipping on orders over Rs 6,000 · Ships in 2–4 business days
+              <Truck size={16} className="text-gold" aria-hidden="true" />
+              Free shipping on orders over {formatPKR(freeShippingThreshold)} · Ships in {estimatedDays.toLowerCase()}
             </div>
 
-            {/* Fragrance notes */}
+            {/* Fragrance pyramid — only tiers the catalogue actually declares */}
             <div className="mt-10 border-t border-gold/15 pt-8">
-              <h3 className="text-xs tracking-[2px] text-goldLight mb-6">FRAGRANCE NOTES</h3>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-2">TOP NOTES</div>
-                  {product.topNotes.map((n) => <div key={n} className="mb-1">{n}</div>)}
+              <h3 className="text-xs tracking-[2px] text-goldLight mb-6">FRAGRANCE PYRAMID</h3>
+              {declaredNoteTiers.length === 0 ? (
+                <p className="text-sm text-muted italic">
+                  The full note pyramid for this fragrance hasn't been listed yet. Once our perfumers
+                  publish it, it will appear here.
+                </p>
+              ) : (
+                <div
+                  className="grid gap-4 text-sm"
+                  style={{ gridTemplateColumns: `repeat(${declaredNoteTiers.length}, minmax(0, 1fr))` }}
+                >
+                  {declaredNoteTiers.map((tier) => (
+                    <div key={tier.label}>
+                      <div className="text-[11px] text-muted tracking-widest mb-2">{tier.label}</div>
+                      {tier.notes.map((n) => (
+                        <div key={n} className="mb-1">{n}</div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-2">HEART NOTES</div>
-                  {product.heartNotes.map((n) => <div key={n} className="mb-1">{n}</div>)}
-                </div>
-                <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-2">BASE NOTES</div>
-                  {product.baseNotes.map((n) => <div key={n} className="mb-1">{n}</div>)}
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="mt-20 border-t border-gold/15 pt-10">
-          <div className="flex flex-wrap gap-6 mb-8 border-b border-gold/15 pb-4">
+          <div className="flex flex-wrap gap-2 sm:gap-6 mb-8 border-b border-gold/15 pb-4" role="tablist" aria-label="Fragrance details">
             {tabs.map((t) => (
               <button
                 key={t}
+                role="tab"
+                aria-selected={tab === t}
                 onClick={() => setTab(t)}
-                className={`text-xs tracking-[1.5px] pb-2 transition-colors ${tab === t ? "text-gold border-b border-gold" : "text-muted hover:text-ivory"}`}
+                className={`text-xs tracking-[1.5px] px-2 sm:px-0 py-2 min-h-[44px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
+                  tab === t ? "text-gold border-b border-gold" : "text-muted hover:text-ivory"
+                }`}
               >
                 {t}
               </button>
@@ -338,14 +487,15 @@ export default function ProductPage() {
             {tab === "HOW TO WEAR" && (
               <p>
                 Apply to pulse points — wrists, neck and behind the ears — after showering, when skin is
-                warm and hydrated. As an extrait de parfum, {product.name} is highly concentrated: 2–3
-                sprays are enough to last well into the evening.
+                warm. {product.name} is an extrait de parfum, so it is highly concentrated: start with 2–3
+                sprays and add only if you want more presence.
               </p>
             )}
             {tab === "SHIPPING & RETURNS" && (
               <p>
-                Free standard shipping on all orders over Rs 6,000. Orders ship within 2–4 business days.
-                Unopened items may be returned within 30 days of delivery for a full refund.
+                Free standard shipping on all orders over {formatPKR(freeShippingThreshold)}. Orders typically ship
+                within {estimatedDays.toLowerCase()}. Unopened items may be returned within 30 days of delivery for a
+                full refund.
               </p>
             )}
             {tab === "REVIEWS" && (
@@ -453,15 +603,46 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* Related */}
-        <div className="mt-24">
-          <h3 className="font-serif text-3xl mb-10">You May Also Love</h3>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {relatedFallback.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
+        {/* Similar fragrances — ranked by shared family, notes and gender */}
+        {similar.length > 0 && (
+          <div className="mt-24">
+            <h3 className="font-serif text-3xl mb-10">Similar Fragrances</h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              {similar.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Recently viewed — LIFO from localStorage, excluding this fragrance */}
+        {recentProducts.length > 0 && (
+          <div className="mt-24">
+            <div className="flex items-center justify-between mb-10">
+              <h3 className="font-serif text-3xl">Recently Viewed</h3>
+              <Link to="/collections" className="link-underline whitespace-nowrap">
+                ALL FRAGRANCES →
+              </Link>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              {recentProducts.slice(0, 3).map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* When nothing shares a family, note or gender, offer a breadth pick */}
+        {similar.length === 0 && recentProducts.length === 0 && allProducts.length > 1 && (
+          <div className="mt-24">
+            <h3 className="font-serif text-3xl mb-10">You May Also Love</h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              {allProducts.filter((p) => p.id !== product.id).slice(0, 3).map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

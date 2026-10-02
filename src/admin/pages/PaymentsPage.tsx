@@ -1,5 +1,10 @@
 import React, { useState } from "react";
-import { useAdminData, type PaymentMethod, type PaymentRecord } from "../context/AdminDataContext";
+import {
+  useAdminData,
+  type PaymentMethod,
+  type PaymentRecord,
+  type PaymentStatus,
+} from "../context/AdminDataContext";
 import { DataTable, type Column } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatCard } from "../components/StatCard";
@@ -16,6 +21,11 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
+
+// "Verification Pending" is a real status written by submit_payment_proof once a
+// customer attaches evidence, so it needs the same staff actions as "Pending".
+const AWAITING_STAFF_STATUSES: PaymentStatus[] = ["Pending", "Verification Pending"];
+const isAwaitingStaffAction = (status: PaymentStatus) => AWAITING_STAFF_STATUSES.includes(status);
 
 export const PaymentsPage: React.FC = () => {
   const { payments, refunds, verifyPayment, rejectPayment, markCodCollected, createRefund } = useAdminData();
@@ -93,12 +103,18 @@ export const PaymentsPage: React.FC = () => {
     .filter((p) => p.status === "Verified" || p.status === "Paid")
     .reduce((acc, p) => acc + p.amount, 0);
 
+  // Every digital payment that still needs a staff decision, counted explicitly
+  // by status so "Verification Pending" rows are never hidden from the totals.
+  const digitalAwaitingVerificationCount = payments.filter(
+    (p) => p.method !== "Cash on Delivery" && p.status === "Verification Pending"
+  ).length;
+
   const pendingVerificationCount = payments.filter(
-    (p) => p.status === "Pending" && p.method !== "Cash on Delivery"
+    (p) => p.method !== "Cash on Delivery" && isAwaitingStaffAction(p.status)
   ).length;
 
   const codPendingCount = payments.filter(
-    (p) => p.method === "Cash on Delivery" && p.status === "Pending"
+    (p) => p.method === "Cash on Delivery" && isAwaitingStaffAction(p.status)
   ).length;
 
   const getMethodIcon = (method: PaymentMethod) => {
@@ -198,7 +214,7 @@ export const PaymentsPage: React.FC = () => {
       header: "Actions",
       accessor: (p) => (
         <div className="flex items-center space-x-2 justify-end">
-          {p.status === "Pending" && p.method === "Cash on Delivery" && (
+          {isAwaitingStaffAction(p.status) && p.method === "Cash on Delivery" && (
             <button
               onClick={() => markCodCollected(p.id)}
               className="px-2 py-1 bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/40 rounded text-[10px] uppercase font-bold transition-colors"
@@ -207,7 +223,7 @@ export const PaymentsPage: React.FC = () => {
             </button>
           )}
 
-          {p.status === "Pending" && p.method !== "Cash on Delivery" && (
+          {isAwaitingStaffAction(p.status) && p.method !== "Cash on Delivery" && (
             <>
               <button
                 onClick={() => verifyPayment(p.id)}
@@ -284,7 +300,7 @@ export const PaymentsPage: React.FC = () => {
         <StatCard
           title="Digital Pending Verification"
           value={pendingVerificationCount}
-          subtitle="JazzCash, Raast & Bank Proofs"
+          subtitle={`Verification Pending ${digitalAwaitingVerificationCount} · Awaiting proof ${pendingVerificationCount - digitalAwaitingVerificationCount}`}
           icon={Clock}
         />
         <StatCard

@@ -110,52 +110,11 @@ app.post("/api/create-checkout-session", async (req, res) => {
 });
 
 // 2. TRANSACTIONAL EMAIL SENDER ENDPOINT
-// Sends via SMTP only when provider credentials are configured server-side.
-// Never exposes credentials; returns 501 (configured:false) when unavailable
-// so the client can degrade gracefully instead of faking delivery.
-let mailTransport = null;
-async function getMailer() {
-  if (mailTransport) return mailTransport;
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    return null;
-  }
-  const nodemailer = await import("nodemailer");
-  mailTransport = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: String(process.env.SMTP_SECURE) === "true",
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  return mailTransport;
-}
-
-app.post("/api/send-email", async (req, res) => {
-  try {
-    const { to, subject, html } = req.body || {};
-
-    if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(to)) || !subject) {
-      return res.status(400).json({ error: "Invalid email request." });
-    }
-
-    const mailer = await getMailer();
-    if (!mailer) {
-      console.log(`📧 [SMTP not configured] Would send "${subject}" to ${to}`);
-      return res.status(501).json({ success: false, configured: false });
-    }
-
-    await mailer.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: String(to),
-      subject: String(subject),
-      html: String(html || ""),
-    });
-
-    res.json({ success: true, configured: true });
-  } catch (error) {
-    console.error("Email Error:", error.message);
-    res.status(500).json({ error: "Email delivery failed." });
-  }
-});
+// Shares the single hardened implementation with the Vercel function (session
+// check, template allowlist, recipient allowlist, per-IP rate limit; 501 when
+// SMTP is unset) so dev and production behaviour cannot diverge.
+const emailHandler = (await import("../api/send-email.js")).default;
+app.post("/api/send-email", emailHandler);
 
 // 3. SECURE SERVER-SIDE STAFF CREATION ENDPOINT (Never exposes service_role key to client)
 // Requires a valid Supabase JWT from an active manager/super-admin caller.
@@ -255,9 +214,38 @@ app.post("/api/admin/create-staff", async (req, res) => {
   }
 });
 
+// 4. AI CONCIERGE (dev proxy for the Vercel function of the same name)
+// The provider key stays server-side; data access uses the caller's own
+// access token so Supabase row-level security governs what is visible.
+app.post("/api/ai-chat", async (req, res) => {
+  try {
+    const { runConcierge, runInsights } = await import("./aiCore.js");
+    const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "anonymous";
+    const accessToken = String(req.headers.authorization || "").startsWith("Bearer ")
+      ? String(req.headers.authorization).slice(7)
+      : null;
+    const body = req.body || {};
+    const result = body.mode === "insights"
+      ? await runInsights({ accessToken, ip })
+      : await runConcierge({ messages: body.messages, accessToken, ip });
+    res.status(result.status).json(result.body);
+  } catch (error) {
+    console.error("AI concierge error:", error?.message);
+    res.status(500).json({ error: "The concierge is unavailable right now. Please try again shortly." });
+  }
+});
+
 // Healthcheck
 app.get("/api/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    capabilities: {
+      email: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
+      concierge: Boolean(process.env.AI_PROVIDER_API_KEY || process.env.OPENAI_API_KEY),
+      stripe: stripeConfigured,
+    },
+  });
 });
 
 app.listen(PORT, () => {

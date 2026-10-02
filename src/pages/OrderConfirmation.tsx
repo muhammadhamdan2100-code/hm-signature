@@ -53,10 +53,11 @@ export default function OrderConfirmation() {
           <div className="w-20 h-20 rounded-full border border-gold bg-gold/10 mx-auto flex items-center justify-center shadow-xl">
             <Check className="w-10 h-10 text-gold" />
           </div>
-          <div className="text-[10px] font-mono tracking-[4px] text-gold uppercase">ORDER CONFIRMED</div>
-          <h1 className="font-serif text-3xl sm:text-4xl font-bold tracking-tight">Thank You For Your Acquisition</h1>
+          <div className="text-[10px] font-mono tracking-[4px] text-gold uppercase">ORDER RECEIVED</div>
+          <h1 className="font-serif text-3xl sm:text-4xl font-bold tracking-tight">Thank you for your order</h1>
           <p className="text-muted text-xs sm:text-sm max-w-lg mx-auto font-light leading-relaxed">
-            Your HM Signature order has been registered in our atelier repository and is being prepared with artisan care.
+            Your HM Signature order has been received and is awaiting payment confirmation. Preparation begins once
+            we have confirmed your payment.
           </p>
         </motion.div>
 
@@ -68,8 +69,10 @@ export default function OrderConfirmation() {
               <h2 className="font-mono text-xl font-bold text-ivory">{order.orderNumber}</h2>
             </div>
             <div className="text-left sm:text-right">
-              <span className="text-[10px] text-gold font-mono uppercase tracking-[2px] block">TRACKING ID</span>
-              <span className="font-mono text-sm font-bold text-goldLight">{order.trackingNumber || "HMS-TRK-PENDING"}</span>
+              <span className="text-[10px] text-gold font-mono uppercase tracking-[2px] block">Tracking Reference</span>
+              <span className={`font-mono text-sm font-bold ${order.trackingNumber ? "text-goldLight" : "text-muted"}`}>
+                {order.trackingNumber ? order.trackingNumber : "Assigned once dispatched"}
+              </span>
             </div>
           </div>
 
@@ -108,7 +111,7 @@ export default function OrderConfirmation() {
                       <p className="text-[10px] text-muted font-mono">{item.size ? `${item.size} • ` : ''}{item.sku} • Qty {item.quantity}</p>
                     </div>
                   </div>
-                  <span className="font-mono font-bold text-gold">Rs. {(item.price * item.quantity).toLocaleString()}</span>
+                  <span className="font-mono font-bold text-gold">{formatPKR(item.price * item.quantity)}</span>
                 </div>
               ))}
             </div>
@@ -148,7 +151,7 @@ export default function OrderConfirmation() {
             className="w-full sm:w-auto px-6 py-3 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors flex items-center justify-center space-x-2 shadow-lg"
           >
             <Truck className="w-4 h-4" />
-            <span>Track Order Timeline</span>
+            <span>Track this order</span>
           </button>
           <Link
             to="/account/orders"

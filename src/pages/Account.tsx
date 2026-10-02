@@ -1,7 +1,15 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { useAdminData, type Order, type OrderStatus, type PaymentMethod, type PaymentStatus } from "../admin/context/AdminDataContext";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { submitPaymentProofRpc } from "../services/checkoutOps";
+import type { Order, OrderStatus, PaymentMethod, PaymentStatus } from "../admin/context/AdminDataContext";
+import {
+  cancelSelfOrderInDB,
+  fetchCustomerOrdersFromDB,
+  type CustomerOrderView,
+} from "../services/customerOrders";
+import { saveCustomerOrderNotes } from "../services/tracking";
 import {
   Package,
   LogOut,
@@ -85,60 +93,166 @@ function getPaymentStatusBadge(status: PaymentStatus | string) {
   }
 }
 
+// Payment proof files are uploaded to the private 'payment-proofs' bucket and
+// then attached to the order through the submit_payment_proof RPC — the same
+// path Checkout.tsx uses. Customers have no UPDATE policy on payments, so a
+// direct table write here would be dropped silently by RLS while the UI still
+// reported success.
+const PROOF_BUCKET = "payment-proofs";
+const PROOF_MAX_BYTES = 10 * 1024 * 1024;
+const PROOF_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const REVIEWED_PAYMENT_STATUSES: PaymentStatus[] = ["Paid", "Verified", "Refunded", "Rejected"];
+
+const proofExtension = (type: string) =>
+  type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
+
+// submit_payment_proof rejects any evidence path outside ^proofs/[A-Za-z0-9._/-]+$,
+// so the uploaded name is reduced to that character set before it is stored.
+const sanitizeProofFileName = (value: string, ext: string): string => {
+  const stem = value
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/, "")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/\.{2,}/g, ".")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[.-]+/, "")
+    .replace(/[.-]+$/, "")
+    .slice(0, 48);
+  return `${stem || "receipt"}.${ext}`;
+};
+
 // Payment Proof Upload Card Component
-const PaymentProofUploadSection: React.FC<{ order: Order }> = ({ order }) => {
-  const { uploadPaymentProof } = useAdminData();
+const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => void }> = ({
+  order,
+  onSubmitted,
+}) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(order.paymentProofUrl || null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [storedProofUrl, setStoredProofUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const isManualMethod = ["JazzCash", "Raast", "Bank Transfer"].includes(order.paymentMethod);
+  const isReviewed = REVIEWED_PAYMENT_STATUSES.includes(order.paymentStatus);
+  const storedPath = order.paymentProofUrl || "";
+  const storedPathIsDirectUrl = /^(https?:|data:)/.test(storedPath);
+  // Rows created by the RPC store a bucket-relative path; the bucket is private,
+  // so it has to be exchanged for a signed URL before it can be displayed.
+  const proofImage = localPreviewUrl || (storedPathIsDirectUrl ? storedPath : storedProofUrl);
 
-  if (!isManualMethod) return null;
+  useEffect(() => {
+    if (!storedPath || storedPathIsDirectUrl || !isSupabaseConfigured()) return;
+    let cancelled = false;
+    supabase.storage
+      .from(PROOF_BUCKET)
+      .createSignedUrl(storedPath, 3600)
+      .then(({ data, error }) => {
+        if (!cancelled) setStoredProofUrl(error ? null : data?.signedUrl || null);
+      })
+      .catch(() => {
+        if (!cancelled) setStoredProofUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storedPath, storedPathIsDirectUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    };
+  }, [localPreviewUrl]);
+
+  if (!isManualMethod || isReviewed) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setErrorMsg(null);
     const file = e.target.files?.[0];
+    // Allow the same file to be picked again after a remove or a submit.
+    e.currentTarget.value = "";
     if (!file) return;
 
     // Validate image format
-    const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-    if (!validTypes.includes(file.type)) {
+    if (!PROOF_IMAGE_TYPES.includes(file.type)) {
       setErrorMsg("Please select a valid image file (.jpg, .png, or .webp).");
       return;
     }
 
     // Validate size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > PROOF_MAX_BYTES) {
       setErrorMsg("File size must be less than 10MB.");
       return;
     }
 
     setSelectedFile(file);
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    setLocalPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleRemoveFile = () => {
     setSelectedFile(null);
-    setPreviewUrl(order.paymentProofUrl || null);
+    setLocalPreviewUrl(null);
     setErrorMsg(null);
   };
 
   const handleSubmitProof = async () => {
-    if (!previewUrl) return;
+    if (!selectedFile) {
+      setErrorMsg("Select a receipt screenshot first.");
+      return;
+    }
+    if (!isSupabaseConfigured()) {
+      setErrorMsg("Payment proof upload is unavailable right now. Please contact the concierge.");
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const fileName = sanitizeProofFileName(selectedFile.name, proofExtension(selectedFile.type));
 
     try {
-      // Simulate/Trigger upload handler
-      uploadPaymentProof(order.id, previewUrl, `Uploaded payment screenshot: ${selectedFile?.name || "receipt.png"}`);
-      setSuccessMsg(true);
-      setTimeout(() => setSuccessMsg(false), 5000);
+      // The object is namespaced by the signed-in uid so the storage policy
+      // (auth.uid() = owner) keeps the screenshot private to this customer.
+      const { data: userData } = await supabase.auth.getUser();
+      const authorId = userData.user?.id;
+      if (!authorId) {
+        throw new Error("Your session has expired. Please sign in again to submit your payment proof.");
+      }
+
+      const proofPath = `proofs/${authorId}/${Date.now()}-${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from(PROOF_BUCKET)
+        .upload(proofPath, selectedFile, { upsert: false, contentType: selectedFile.type });
+
+      if (uploadError) {
+        throw new Error(
+          `Your payment screenshot could not be uploaded (${uploadError.message}). Please try again.`
+        );
+      }
+
+      const submitted = await submitPaymentProofRpc(order.id, {
+        proofPath,
+        note: `Payment receipt uploaded: ${fileName}`,
+      });
+
+      if (!submitted.success) {
+        throw new Error(
+          submitted.error ||
+            "The screenshot was uploaded but could not be attached to your order. Please try again."
+        );
+      }
+
+      setSelectedFile(null);
+      setLocalPreviewUrl(null);
+      setSuccessMsg(
+        `Payment proof submitted${
+          submitted.paymentStatus ? ` (${submitted.paymentStatus})` : ""
+        }! Our finance team is reviewing your transaction.`
+      );
+      onSubmitted();
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to upload payment proof.");
+      setErrorMsg(err?.message || "Failed to upload payment proof.");
     } finally {
       setIsSubmitting(false);
     }
@@ -166,7 +280,9 @@ const PaymentProofUploadSection: React.FC<{ order: Order }> = ({ order }) => {
       {(successMsg || order.paymentStatus === "Verification Pending") && (
         <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-lg text-amber-200 text-xs flex items-center space-x-2">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>Payment proof submitted! Our finance team is reviewing your transaction.</span>
+          <span>
+            {successMsg || "Payment proof submitted! Our finance team is reviewing your transaction."}
+          </span>
         </div>
       )}
 
@@ -179,10 +295,10 @@ const PaymentProofUploadSection: React.FC<{ order: Order }> = ({ order }) => {
       )}
 
       {/* Image Preview or Drop Area */}
-      {previewUrl ? (
+      {proofImage ? (
         <div className="relative rounded-lg border border-gold/30 bg-navy2 p-3 flex items-center space-x-4">
           <div className="w-16 h-16 rounded border border-gold/20 overflow-hidden bg-black shrink-0 relative group">
-            <img src={previewUrl} alt="Payment Receipt" className="w-full h-full object-cover" />
+            <img src={proofImage} alt="Payment Receipt" className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0 space-y-1">
             <p className="text-ivory font-medium text-xs truncate">
@@ -193,30 +309,45 @@ const PaymentProofUploadSection: React.FC<{ order: Order }> = ({ order }) => {
             </p>
           </div>
           <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={handleRemoveFile}
-              className="p-1.5 rounded bg-navy text-muted hover:text-rose-400 transition-colors border border-gold/20"
-              title="Remove or Replace Proof"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            {selectedFile && (
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleSubmitProof}
-                className="px-3 py-1.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow flex items-center space-x-1"
+            {selectedFile ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleRemoveFile}
+                  className="p-1.5 rounded bg-navy text-muted hover:text-rose-400 transition-colors border border-gold/20"
+                  title="Remove the selected screenshot"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleSubmitProof}
+                  className="px-3 py-1.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow flex items-center space-x-1"
+                >
+                  {isSubmitting ? (
+                    <div className="w-3.5 h-3.5 border-2 border-navy border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Submit Proof</span>
+                    </>
+                  )}
+                </button>
+              </>
+            ) : (
+              <label
+                className="px-3 py-1.5 border border-gold/30 hover:border-gold text-ivory font-bold text-[10px] uppercase tracking-wider rounded cursor-pointer transition-colors"
+                title="Attach a new payment screenshot"
               >
-                {isSubmitting ? (
-                  <div className="w-3.5 h-3.5 border-2 border-navy border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Submit Proof</span>
-                  </>
-                )}
-              </button>
+                Replace Proof
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </label>
             )}
           </div>
         </div>
@@ -237,24 +368,146 @@ const PaymentProofUploadSection: React.FC<{ order: Order }> = ({ order }) => {
   );
 };
 
+const OrderNotesAndActions: React.FC<{
+  order: CustomerOrderView;
+  busy: boolean;
+  onSaveNotes: (value: string) => void;
+  onCancel: () => void;
+}> = ({ order, busy, onSaveNotes, onCancel }) => {
+  const [notes, setNotes] = useState(order.customerNotes || "");
+  const [editing, setEditing] = useState(false);
+
+  const notesEditable = order.canCancel;
+  const dirty = notes !== (order.customerNotes || "");
+
+  return (
+    <div className="pt-2 space-y-3 border-t border-gold/15">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="text-[11px] text-muted font-light">
+          <span className="text-[10px] font-mono uppercase text-gold font-semibold block">DELIVERY NOTES</span>
+          {order.customerNotes && !editing ? (
+            <p className="text-ivory mt-1 leading-relaxed">{order.customerNotes}</p>
+          ) : notesEditable ? (
+            <p className="mt-1">Add delivery instructions while the order is still being prepared.</p>
+          ) : (
+            <p className="mt-1">Notes can no longer be edited on this order.</p>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0">
+          <Link
+            to={`/track-order?id=${encodeURIComponent(order.trackingNumber || order.orderNumber)}`}
+            className="px-4 py-2 border border-gold/30 text-ivory hover:border-gold rounded text-[11px] uppercase font-bold tracking-wider transition-colors"
+          >
+            Track
+          </Link>
+          {notesEditable && (
+            <button
+              type="button"
+              disabled={busy || (!editing && !dirty)}
+              onClick={() => (editing ? onSaveNotes(notes) : setEditing(true))}
+              className="px-4 py-2 bg-gold hover:bg-goldLight disabled:opacity-40 disabled:hover:bg-gold text-navy rounded text-[11px] uppercase font-bold tracking-wider transition-colors"
+            >
+              {editing ? "Save Note" : "Add Note"}
+            </button>
+          )}
+          {order.canCancel && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onCancel}
+              className="px-4 py-2 border border-rose-500/40 text-rose-300 hover:bg-rose-950/40 disabled:opacity-40 rounded text-[11px] uppercase font-bold tracking-wider transition-colors"
+            >
+              {busy ? "Working…" : "Cancel Order"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          maxLength={500}
+          aria-label="Delivery notes for this order"
+          placeholder="e.g. Please call on arrival, the gate code is 4412."
+          className="w-full bg-navy border border-gold/30 rounded-lg px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+        />
+      )}
+    </div>
+  );
+};
+
 export default function Account() {
   const { user, logout } = useAuth();
-  const { orders, refunds } = useAdminData();
   const navigate = useNavigate();
+  const [clientOrders, setClientOrders] = useState<CustomerOrderView[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setOrdersLoading(true);
+    setOrdersError(null);
+    fetchCustomerOrdersFromDB()
+      .then((rows) => {
+        if (mounted) setClientOrders(rows);
+      })
+      .catch((e: any) => {
+        if (mounted) setOrdersError(e?.message || "We could not load your orders.");
+      })
+      .finally(() => {
+        if (mounted) setOrdersLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [reloadToken, user?.id]);
 
   if (!user) {
     return <Navigate to="/login?next=/account" replace />;
   }
 
-  // Filter orders for logged-in user
-  const clientOrders = orders.filter(
-    (o) =>
-      o.customerEmail.toLowerCase() === user.email.toLowerCase() ||
-      o.customerName.toLowerCase() === user.fullName.toLowerCase() ||
-      user.role !== "customer"
-  );
-
   const customerName = user.fullName || "Valued Patron";
+
+  const refreshOrders = () => setReloadToken((t) => t + 1);
+
+  const handleSelfCancel = async (order: CustomerOrderView) => {
+    const reason = window.prompt(
+      `Cancel order ${order.orderNumber}? Please tell us briefly why (optional).`,
+      ""
+    );
+    if (reason === null) return;
+    setBusyOrderId(order.id);
+    setActionMessage(null);
+    const res = await cancelSelfOrderInDB(order.id, reason || undefined);
+    setBusyOrderId(null);
+    if (res.success) {
+      setActionMessage({
+        tone: "ok",
+        text: `Order ${order.orderNumber} was cancelled. Any reserved stock has been returned to the atelier.`,
+      });
+      refreshOrders();
+    } else {
+      setActionMessage({ tone: "err", text: res.error || "This order could not be cancelled." });
+    }
+  };
+
+  const handleSaveNotes = async (order: CustomerOrderView, value: string) => {
+    setBusyOrderId(order.id);
+    const res = await saveCustomerOrderNotes(order.id, value);
+    setBusyOrderId(null);
+    setActionMessage(
+      res.success
+        ? { tone: "ok", text: "Your note was added to this order." }
+        : { tone: "err", text: res.error || "Your note could not be saved." }
+    );
+    if (res.success) refreshOrders();
+  };
 
   return (
     <div className="pt-28 pb-20 bg-navy min-h-screen text-ivory select-none font-sans">
@@ -322,8 +575,44 @@ export default function Account() {
             </Link>
           </div>
 
-          {/* Empty State */}
-          {clientOrders.length === 0 ? (
+          {actionMessage && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`px-4 py-3 rounded-lg border text-xs font-sans ${
+                actionMessage.tone === "ok"
+                  ? "bg-emerald-950/40 border-emerald-700/50 text-emerald-200"
+                  : "bg-rose-950/40 border-rose-600/50 text-rose-200"
+              }`}
+            >
+              {actionMessage.text}
+            </div>
+          )}
+
+          {/* Loading / Error / Empty states */}
+          {ordersLoading ? (
+            <div className="space-y-4" role="status" aria-live="polite">
+              <span className="sr-only">Loading your orders</span>
+              {[0, 1].map((i) => (
+                <div key={i} className="bg-navy2/70 border border-gold/15 rounded-2xl p-6 animate-pulse space-y-4">
+                  <div className="h-4 w-40 bg-navy/80 rounded" />
+                  <div className="h-3 w-64 bg-navy/70 rounded" />
+                  <div className="h-20 w-full bg-navy/60 rounded" />
+                </div>
+              ))}
+            </div>
+          ) : ordersError ? (
+            <div className="bg-rose-950/40 border border-rose-500/40 rounded-2xl p-8 text-center space-y-4">
+              <p className="text-sm font-serif text-ivory">We could not load your orders.</p>
+              <p className="text-xs text-rose-200/80 font-light">{ordersError}</p>
+              <button
+                onClick={refreshOrders}
+                className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : clientOrders.length === 0 ? (
             <div className="bg-navy2/80 border border-gold/20 rounded-2xl p-12 text-center space-y-4 max-w-xl mx-auto shadow-xl">
               <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/30 text-gold mx-auto flex items-center justify-center">
                 <Package className="w-8 h-8 text-gold" />
@@ -349,11 +638,9 @@ export default function Account() {
                 const isSpecialState = order.status === "Cancelled" || order.status === "Returned";
                 const pmBadge = getPaymentMethodBadge(order.paymentMethod);
                 const psBadge = getPaymentStatusBadge(order.paymentStatus);
-                const orderRefunds = refunds.filter((r) => r.orderId === order.id);
-                const refundedTotal = orderRefunds
-                  .filter((r) => r.status === "processed" || r.status === "pending")
-                  .reduce((acc, r) => acc + r.amount, 0);
+                const refundedTotal = order.refundedTotal;
                 const PMIcon = pmBadge.icon;
+                const timeline = order.timeline || [];
 
                 return (
                   <div
@@ -521,40 +808,109 @@ export default function Account() {
                           DELIVERY DESTINATION
                         </span>
                         <p className="text-ivory font-medium">
-                          {order.shippingAddress?.street || "Boutique Residence"}
+                          {order.shippingAddress?.street || "Address provided at checkout"}
                         </p>
                         <p className="text-muted">
-                          {order.shippingAddress?.city || "Lahore"}, {order.shippingAddress?.zip || "54600"}, Pakistan
+                          {[order.shippingAddress?.city, order.shippingAddress?.zip, order.shippingAddress?.country]
+                            .filter(Boolean)
+                            .join(", ") || "Pakistan"}
                         </p>
+                        {order.estimatedDelivery && (
+                          <p className="text-[11px] text-ivory pt-1">
+                            Estimated delivery:{" "}
+                            <span className="font-mono text-gold">{String(order.estimatedDelivery).slice(0, 10)}</span>
+                          </p>
+                        )}
                       </div>
 
                       {/* Tracking Information */}
                       <div className="p-4 rounded-xl bg-navy/60 border border-gold/15 space-y-1 text-xs">
                         <span className="text-[10px] font-mono uppercase text-gold font-semibold block">
-                          COURIER & TRACKING DETAILS
+                          COURIER &amp; TRACKING DETAILS
                         </span>
-                        {order.courier || order.trackingNumber ? (
+                        {order.trackingNumber || order.courier ? (
                           <div className="space-y-1">
                             <p className="text-ivory font-medium flex items-center justify-between">
-                              <span>Courier: {order.courier || "DHL Express Luxury"}</span>
+                              <span>Courier: {order.courier || "To be advised"}</span>
                               <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase">
-                                {order.shippingStatus}
+                                {order.shipmentStatus || order.shippingStatus}
                               </span>
                             </p>
                             <p className="text-gold font-mono font-bold">
-                              Tracking ID: {order.trackingNumber || "DHL-9823410"}
+                              Tracking ID: {order.trackingNumber || "Awaiting issue"}
                             </p>
+                            {order.trackingUrl && (
+                              <a
+                                href={order.trackingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center space-x-1.5 text-[11px] text-ivory underline decoration-gold/50 underline-offset-2 hover:text-gold"
+                              >
+                                <span>Open courier tracking</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
                           </div>
                         ) : (
                           <p className="text-muted italic text-[11px] leading-relaxed">
-                            Tracking information will be available once your order has been dispatched.
+                            Tracking will appear here once your order has been dispatched.
                           </p>
                         )}
                       </div>
                     </div>
 
+                    {/* Order Timeline (real events, oldest first) */}
+                    {timeline.length > 0 && (
+                      <div className="space-y-3 pt-1">
+                        <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
+                          ORDER TIMELINE
+                        </span>
+                        <ol className="relative border-l border-gold/20 ml-1.5 space-y-4">
+                          {[...timeline]
+                            .slice()
+                            .reverse()
+                            .map((event, i) => (
+                              <li key={`${event.date}-${i}`} className="ml-5">
+                                <span
+                                  className={`absolute -left-[7px] w-3.5 h-3.5 rounded-full border ${
+                                    i === 0 ? "bg-gold border-gold" : "bg-navy border-gold/40"
+                                  }`}
+                                />
+                                <p className="text-xs font-serif font-bold text-ivory">{event.status}</p>
+                                {event.note && <p className="text-[11px] text-muted font-light leading-relaxed">{event.note}</p>}
+                                <p className="text-[10px] text-muted/70 font-mono">{event.date}</p>
+                              </li>
+                            ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    {order.refundRecords.length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
+                          REFUND RECORDS
+                        </span>
+                        <ul className="space-y-1 text-[11px] text-muted font-mono">
+                          {order.refundRecords.map((r) => (
+                            <li key={`${r.reference || "refund"}-${r.date}`}>
+                              {formatPKR(r.amount)} — {r.status}
+                              {r.reference ? ` · ref ${r.reference}` : ""} · {r.date}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Customer notes + cancellation request */}
+                    <OrderNotesAndActions
+                      order={order}
+                      busy={busyOrderId === order.id}
+                      onSaveNotes={(value) => handleSaveNotes(order, value)}
+                      onCancel={() => handleSelfCancel(order)}
+                    />
+
                     {/* Payment Proof Upload Component (For manual payment methods) */}
-                    <PaymentProofUploadSection order={order} />
+                    <PaymentProofUploadSection order={order} onSubmitted={refreshOrders} />
                   </div>
                 );
               })}

@@ -6,15 +6,42 @@ import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import ProductVisual from "./ProductVisual";
 import { formatPKR } from "../utils/currency";
+import { effectiveVariantPrice } from "../data/products";
 
 export default function ProductCard({ product, onQuickView }: { product: Product; onQuickView?: (p: Product) => void }) {
   const { addToCart } = useCart();
   const { toggleWishlist, isWishlisted } = useWishlist();
   const wishlisted = isWishlisted(product.id);
 
-  const minPrice = product.variants && product.variants.length > 0
-    ? Math.min(...product.variants.map((v) => v.price))
-    : Math.round((product.price * 0.3) / 50) * 50;
+  const variants = (product.variants || []).filter((v) => v.active !== false);
+  const prices = variants.length > 0 ? variants.map(effectiveVariantPrice) : [product.price];
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const sizeRange =
+    variants.length > 0
+      ? variants.map((v) => v.size).join(" · ")
+      : product.size;
+
+  const inStockVariants = variants.filter((v) => v.stock > 0);
+  const soldOut = variants.length > 0 ? inStockVariants.length === 0 : product.stock <= 0;
+
+  // "Only N left" when a declared low-stock threshold is reached.
+  const lowStockVariant = inStockVariants
+    .filter((v) => v.lowStockThreshold != null && v.stock <= v.lowStockThreshold)
+    .sort((a, b) => a.stock - b.stock)[0];
+
+  // Default add-to-cart target: prefer an in-stock 50ml, else first in-stock size.
+  const defaultVariant =
+    inStockVariants.find((v) => v.size.toLowerCase() === "50ml") || inStockVariants[0];
+
+  const handleAdd = () => {
+    if (soldOut) return;
+    if (defaultVariant) {
+      addToCart(product, defaultVariant.size, 1, effectiveVariantPrice(defaultVariant), defaultVariant.sku);
+    } else {
+      addToCart(product);
+    }
+  };
 
   return (
     <motion.div
@@ -26,24 +53,54 @@ export default function ProductCard({ product, onQuickView }: { product: Product
     >
       <Link to={`/product/${product.slug}`} className="block">
         <motion.div whileHover={{ scale: 1.06 }} transition={{ duration: 0.6, ease: [0.22, 0.61, 0.36, 1] }}>
-          <ProductVisual product={product} className="aspect-[3/4] flex items-center justify-center" bottleSize="w-20" />
+          <ProductVisual
+            product={product}
+            className={`aspect-[3/4] flex items-center justify-center ${soldOut ? "opacity-55" : ""}`}
+            bottleSize="w-20"
+          />
         </motion.div>
-        <div className="absolute inset-0 bg-navy/0 group-hover:bg-navy/40 transition-colors duration-300 flex items-center justify-center pointer-events-none">
-          <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-[11px] tracking-[2px] text-goldLight">
-            VIEW DETAILS →
-          </span>
-        </div>
+        {!soldOut && (
+          <div className="absolute inset-0 bg-navy/0 group-hover:bg-navy/40 transition-colors duration-300 flex items-center justify-center pointer-events-none">
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-[11px] tracking-[2px] text-goldLight">
+              VIEW DETAILS →
+            </span>
+          </div>
+        )}
       </Link>
+
+      {/* Status badges */}
+      <div className="absolute top-4 left-4 flex flex-col gap-2 items-start pointer-events-none">
+        {soldOut ? (
+          <span className="text-[9px] tracking-[1.5px] font-mono uppercase bg-navy/80 border border-gold/30 text-muted px-2 py-1">
+            Sold Out
+          </span>
+        ) : (
+          product.newArrival && (
+            <span className="text-[9px] tracking-[1.5px] font-mono uppercase bg-navy/80 border border-gold/40 text-goldLight px-2 py-1">
+              New
+            </span>
+          )
+        )}
+        {lowStockVariant && !soldOut && (
+          <span
+            role="status"
+            className="text-[9px] tracking-[1.5px] font-mono uppercase bg-navy/80 border border-gold/50 text-gold px-2 py-1"
+          >
+            Only {lowStockVariant.stock} left ({lowStockVariant.size})
+          </span>
+        )}
+      </div>
 
       <button
         onClick={(e) => {
           e.preventDefault();
           toggleWishlist(product.id);
         }}
-        className="absolute top-4 right-4 w-8 h-8 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40"
-        aria-label="Wishlist"
+        aria-pressed={wishlisted}
+        aria-label={wishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+        className="absolute top-4 right-4 w-11 h-11 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
       >
-        <Heart size={14} fill={wishlisted ? "#C8A96B" : "none"} color={wishlisted ? "#C8A96B" : "#F6F1E7"} />
+        <Heart size={15} fill={wishlisted ? "#C8A96B" : "none"} color={wishlisted ? "#C8A96B" : "#F6F1E7"} />
       </button>
 
       {onQuickView && (
@@ -52,36 +109,51 @@ export default function ProductCard({ product, onQuickView }: { product: Product
             e.preventDefault();
             onQuickView(product);
           }}
-          className="absolute top-4 left-4 w-8 h-8 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 opacity-0 group-hover:opacity-100"
-          aria-label="Quick view"
+          aria-label={`Quick view ${product.name}`}
+          className="absolute top-16 right-4 w-11 h-11 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
         >
           <Eye size={14} />
         </button>
       )}
 
       <div className="p-5">
-        <div className="flex items-center justify-between text-[10px] tracking-[1.5px] text-muted mb-1 font-sans">
-          <span>{product.category}</span>
-          <span className="text-gold/70 font-mono text-[9px]">10ml · 30ml · 50ml · 100ml</span>
+        <div className="flex items-center justify-between gap-3 text-[10px] tracking-[1.5px] text-muted mb-1 font-sans">
+          <span className="truncate">{product.category}</span>
+          <span className="text-gold/70 font-mono text-[9px] shrink-0">{sizeRange}</span>
         </div>
-        <div className="flex items-center justify-between">
-          <Link to={`/product/${product.slug}`}>
-            <h3 className="font-serif text-xl">{product.name}</h3>
+        <div className="flex items-center justify-between gap-3">
+          <Link to={`/product/${product.slug}`} className="min-w-0">
+            <h3 className="font-serif text-xl truncate">{product.name}</h3>
           </Link>
-          <div className="flex flex-col text-right">
-            <span className="text-goldLight text-sm font-mono font-bold">{formatPKR(product.price)}</span>
-            <span className="text-[9px] text-muted font-mono">From {formatPKR(minPrice)}</span>
+          <div className="flex flex-col text-right shrink-0">
+            {minPrice !== maxPrice ? (
+              <span className="text-goldLight text-sm font-mono font-bold">
+                {formatPKR(minPrice)} – {formatPKR(maxPrice)}
+              </span>
+            ) : (
+              <span className="text-goldLight text-sm font-mono font-bold">
+                {minPrice > 0 ? formatPKR(minPrice) : "Price on request"}
+              </span>
+            )}
+            <span className="text-[9px] text-muted font-mono">
+              {minPrice !== maxPrice ? "By bottle size" : product.concentration}
+            </span>
           </div>
         </div>
         <div className="flex gap-2 mt-4">
-          <Link to={`/product/${product.slug}`} className="flex-1 text-center text-[11px] tracking-[1.5px] border border-gold/30 py-2.5 hover:border-gold transition-colors">
+          <Link
+            to={`/product/${product.slug}`}
+            className="flex-1 min-h-[44px] inline-flex items-center justify-center text-center text-[11px] tracking-[1.5px] border border-gold/30 hover:border-gold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+          >
             VIEW DETAILS
           </Link>
           <button
-            onClick={() => addToCart(product)}
-            className="flex-1 text-[11px] tracking-[1.5px] bg-gold text-navy py-2.5 hover:bg-goldLight transition-colors"
+            onClick={handleAdd}
+            disabled={soldOut}
+            aria-label={soldOut ? `${product.name} is sold out` : `Add ${product.name} to cart`}
+            className="flex-1 min-h-[44px] inline-flex items-center justify-center text-[11px] tracking-[1.5px] bg-gold text-navy hover:bg-goldLight transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gold/20 disabled:text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-goldLight focus-visible:ring-offset-1 focus-visible:ring-offset-navy"
           >
-            ADD TO CART
+            {soldOut ? "SOLD OUT" : "ADD TO CART"}
           </button>
         </div>
       </div>

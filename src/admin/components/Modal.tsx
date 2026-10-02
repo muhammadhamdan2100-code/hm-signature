@@ -1,4 +1,4 @@
-import React, { type ReactNode } from "react";
+import React, { useEffect, useId, useRef, type ReactNode } from "react";
 import { X, AlertTriangle } from "lucide-react";
 
 interface ModalProps {
@@ -10,6 +10,15 @@ interface ModalProps {
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl";
 }
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
@@ -18,6 +27,73 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = "lg",
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const subtitleId = useId();
+
+  // Move focus into the dialog on open, restore it to the trigger on close.
+  useEffect(() => {
+    if (!isOpen) return;
+    const activeElement = document.activeElement;
+    returnFocusRef.current =
+      activeElement instanceof HTMLElement ? activeElement : null;
+    panelRef.current?.focus();
+
+    return () => {
+      const trigger = returnFocusRef.current;
+      returnFocusRef.current = null;
+      if (trigger && trigger.isConnected) trigger.focus();
+    };
+  }, [isOpen]);
+
+  // Escape closes, Tab stays inside the dialog.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const focusables = Array.from(
+        panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+      if (focusables.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const current = document.activeElement as HTMLElement | null;
+
+      if (!current || !panel.contains(current)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && current === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && current === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const maxWidthClass = {
@@ -34,26 +110,44 @@ export const Modal: React.FC<ModalProps> = ({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-navy/80 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
+        aria-hidden="true"
       />
 
-      <div className="flex min-h-full items-center justify-center p-4 text-center">
+      <div
+        className="flex min-h-full items-center justify-center p-4 text-center"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
         <div
-          className={`w-full ${maxWidthClass} transform overflow-hidden rounded-lg bg-navy2/95 backdrop-blur-xl border border-gold/30 text-left align-middle shadow-2xl transition-all my-8`}
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={subtitle ? subtitleId : undefined}
+          tabIndex={-1}
+          className={`w-full ${maxWidthClass} transform overflow-hidden rounded-lg bg-navy2/95 backdrop-blur-xl border border-gold/30 text-left align-middle shadow-2xl transition-all my-8 focus:outline-none`}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-gold/20 px-6 py-4 bg-navy/40">
             <div>
-              <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
+              <h3
+                id={titleId}
+                className="font-serif text-lg font-bold text-ivory tracking-wide"
+              >
                 {title}
               </h3>
               {subtitle && (
-                <p className="text-xs font-sans text-muted mt-0.5">{subtitle}</p>
+                <p id={subtitleId} className="text-xs font-sans text-muted mt-0.5">
+                  {subtitle}
+                </p>
               )}
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="text-muted hover:text-gold transition-colors p-1 rounded-md hover:bg-navy/60"
+              aria-label={`Close ${title}`}
+              className="text-muted hover:text-gold transition-colors p-1 rounded-md hover:bg-navy/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
             >
               <X className="w-5 h-5" />
             </button>
@@ -111,7 +205,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="px-4 py-2 rounded text-xs font-sans tracking-wider uppercase text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 transition-colors"
+          className="px-4 py-2 rounded text-xs font-sans tracking-wider uppercase text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
         >
           {cancelText}
         </button>
@@ -121,7 +215,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onConfirm();
             onClose();
           }}
-          className={`px-4 py-2 rounded text-xs font-sans tracking-wider uppercase transition-colors ${
+          className={`px-4 py-2 rounded text-xs font-sans tracking-wider uppercase transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
             isDanger
               ? "bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-500/40"
               : "bg-gold hover:bg-goldLight text-navy font-semibold"

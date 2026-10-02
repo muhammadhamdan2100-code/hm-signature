@@ -7,15 +7,15 @@ import { useWishlist } from "../context/WishlistContext";
 import { useAuth } from "../context/AuthContext";
 
 const navLinks = [
-  { label: "COLLECTIONS", to: "/collections" },
-  { label: "MEN", to: "/men" },
-  { label: "WOMEN", to: "/women" },
-  { label: "BESTSELLERS", to: "/bestsellers" },
-  { label: "SCENT FINDER", to: "/scent-finder" },
-  { label: "ABOUT US", to: "/?section=about" },
-  { label: "JOURNAL", to: "/journal" },
-  { label: "CONTACT", to: "/contact" },
-  { label: "PARENT COMPANY", to: "/parent-company" },
+  { label: "Collections", to: "/collections" },
+  { label: "Men", to: "/men" },
+  { label: "Women", to: "/women" },
+  { label: "Bestsellers", to: "/bestsellers" },
+  { label: "Scent Finder", to: "/scent-finder" },
+  { label: "Contact", to: "/contact" },
+  { label: "About Us", to: "/?section=about", secondary: true },
+  { label: "Journal", to: "/journal", secondary: true },
+  { label: "Parent Company", to: "/parent-company", secondary: true },
 ];
 
 export default function Navbar() {
@@ -87,20 +87,26 @@ export default function Navbar() {
             <img src="/logo.png" alt="HM Signature" className={`transition-all duration-300 ${scrolled ? "h-9" : "h-11"}`} />
           </Link>
 
-          <div className="hidden lg:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-5 xl:gap-6 2xl:gap-8">
             {navLinks.map((l) => (
-              <Link key={l.label} to={l.to} className="relative text-[11px] tracking-[2px] group py-1">
+              <Link
+                key={l.label}
+                to={l.to}
+                className={`relative text-[11px] tracking-[2px] uppercase group py-1${
+                  (l as any).secondary ? " hidden xl:inline-block" : ""
+                }`}
+              >
                 {l.label}
                 <span className="absolute left-0 -bottom-0.5 h-px w-0 bg-gold transition-all duration-300 group-hover:w-full" />
               </Link>
             ))}
           </div>
 
-          <div className="flex items-center gap-5">
-            <button aria-label="Search" className="hidden sm:block hover:text-goldLight transition-colors" onClick={() => setSearchOpen((s) => !s)}>
+          <div className="flex items-center gap-3 lg:gap-4 xl:gap-5">
+            <button aria-label="Search" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={() => setSearchOpen((s) => !s)}>
               <Search size={18} strokeWidth={1.3} />
             </button>
-            <Link to="/wishlist" aria-label="Wishlist" className="hidden sm:block relative hover:text-goldLight transition-colors">
+            <Link to="/wishlist" aria-label="Wishlist" className="hidden sm:inline-flex items-center justify-center relative min-h-11 min-w-11 hover:text-goldLight transition-colors">
               <Heart size={18} strokeWidth={1.3} />
               {wishlist.length > 0 && (
                 <span className="absolute -top-2 -right-2 bg-gold text-navy text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-medium">
@@ -112,7 +118,7 @@ export default function Navbar() {
               to="/parent-company"
               aria-label="Parent Company"
               title="Xeltrio Technologies — Parent Company"
-              className="hidden sm:block hover:text-goldLight transition-colors"
+              className="hidden sm:block xl:hidden hover:text-goldLight transition-colors"
             >
               <Building2 size={18} strokeWidth={1.3} />
             </Link>
@@ -122,7 +128,7 @@ export default function Navbar() {
               <button
                 aria-label="Account"
                 onClick={handleUserClick}
-                className="hover:text-goldLight transition-colors flex items-center space-x-1 py-1"
+                className="hover:text-goldLight transition-colors flex items-center justify-center space-x-1 min-h-11 px-1"
                 title={user ? `Logged in as ${user.fullName}` : "Account Sign In"}
               >
                 <User size={18} strokeWidth={1.3} className={user ? "text-gold" : ""} />
@@ -198,7 +204,7 @@ export default function Navbar() {
               </AnimatePresence>
             </div>
 
-            <button aria-label="Bag" className="relative hover:text-goldLight transition-colors" onClick={openCart}>
+            <button aria-label="Bag" className="relative inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={openCart}>
               <ShoppingBag size={18} strokeWidth={1.3} />
               {itemCount > 0 && (
                 <span className="absolute -top-2 -right-2 bg-gold text-navy text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-medium">
@@ -206,7 +212,7 @@ export default function Navbar() {
                 </span>
               )}
             </button>
-            <button className="lg:hidden" aria-label="Menu" onClick={() => setMenuOpen(true)}>
+            <button className="lg:hidden inline-flex items-center justify-center min-h-11 min-w-11" aria-label="Menu" onClick={() => setMenuOpen(true)}>
               <Menu size={22} strokeWidth={1.3} />
             </button>
           </div>
@@ -253,7 +259,7 @@ export default function Navbar() {
               {navLinks.map((l, i) => (
                 <motion.div key={l.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 * i }}>
                   <Link to={l.to} onClick={() => setMenuOpen(false)} className="font-serif text-3xl tracking-wide">
-                    {l.label.charAt(0) + l.label.slice(1).toLowerCase()}
+                    {l.label}
                   </Link>
                 </motion.div>
               ))}

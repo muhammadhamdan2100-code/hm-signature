@@ -1,13 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Banknote, Smartphone, Building2, Truck, Copy, CreditCard } from "lucide-react";
+import { Check, Banknote, Smartphone, Building2, Truck, Copy, CreditCard, AlertTriangle } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAdminData, type PaymentMethod } from "../admin/context/AdminDataContext";
 import ProductVisual from "../components/ProductVisual";
 import { formatPKR } from "../utils/currency";
 import { sendTransactionalEmail } from "../services/emailService";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
+import {
+  fetchPaymentMethodsConfig,
+  fetchShippingConfig,
+  type PaymentMethodConfig,
+  type ShippingConfig,
+  DEFAULT_SHIPPING_CONFIG,
+} from "../services/storeConfig";
+import { placeOrderRpc, setOrderGiftOptionsRpc, submitPaymentProofRpc } from "../services/checkoutOps";
+import { saveCustomerOrderNotes } from "../services/tracking";
 
 const steps = ["CONTACT", "SHIPPING", "PAYMENT", "CONFIRMATION"] as const;
 type Step = (typeof steps)[number];
@@ -35,8 +44,39 @@ export default function Checkout() {
   const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
 
-  const [orderNumber] = useState(() => `HM-${Math.floor(100000 + Math.random() * 900000)}`);
+  const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>([]);
+  const [shippingConfig, setShippingConfig] = useState<ShippingConfig>(DEFAULT_SHIPPING_CONFIG);
+  const [isGiftWrap, setIsGiftWrap] = useState(false);
+  const [giftMessage, setGiftMessage] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [placedOrderNumber, setPlacedOrderNumber] = useState<string>("");
+  const [placedTotal, setPlacedTotal] = useState<number>(0);
+
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchPaymentMethodsConfig()
+      .then((methods) => {
+        if (!mounted) return;
+        const enabled = methods.filter((m) => m.enabled !== false);
+        setPaymentConfigs(enabled);
+        if (enabled.length > 0 && !enabled.some((m) => m.id === selectedMethod)) {
+          setSelectedMethod(enabled[0].id as PaymentMethod);
+        }
+      })
+      .catch(() => setPaymentConfigs([]));
+    fetchShippingConfig().then((c) => {
+      if (mounted) setShippingConfig(c);
+    });
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activeMethodConfig = paymentConfigs.find((m) => m.id === selectedMethod);
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -78,68 +118,142 @@ export default function Checkout() {
   const handleSubmitOrder = async () => {
     setIsProcessing(true);
     setProofError(null);
+    setOrderError(null);
 
     try {
-      const isCod = selectedMethod === "Cash on Delivery";
+      const cfg = activeMethodConfig;
+      const requiresReference = Boolean(cfg?.requiresReference);
+      const requiresProof = Boolean(cfg?.requiresProof);
 
-      // Validate transaction ID and screenshot for manual payment methods
-      if (!isCod) {
-        if (!form.paymentReference.trim()) {
-          setProofError("Transaction ID / Reference ID is required for digital payments.");
-          setIsProcessing(false);
-          return;
-        }
-
-        if (!paymentProofFile) {
-          setProofError("Please upload a payment screenshot / proof of transfer.");
-          setIsProcessing(false);
-          return;
-        }
+      if (requiresReference && !form.paymentReference.trim()) {
+        setProofError(`Enter your ${cfg?.referenceLabel || "transaction reference"} so we can match your payment.`);
+        setIsProcessing(false);
+        return;
+      }
+      if (requiresProof && !paymentProofFile) {
+        setProofError("Attach a screenshot of your payment confirmation.");
+        setIsProcessing(false);
+        return;
       }
 
-      const generatedOrderId = `ord-${Date.now()}`;
+      // Every line must resolve to a real catalogue size before we ask the
+      // database to price and reserve it.
+      const rpcItems = items
+        .map((i) => {
+          const wanted = (i.selectedSize || i.product.size || "50ml").toLowerCase();
+          const variant = i.product.variants?.find((v) => v.size.toLowerCase() === wanted && !v.id.startsWith("v-"));
+          return variant ? { variant_id: variant.id, quantity: i.quantity } : null;
+        });
+
+      if (rpcItems.some((r) => r === null)) {
+        setOrderError("One of the selected sizes is no longer available. Please review your bag.");
+        setIsProcessing(false);
+        return;
+      }
+
+      const authUser = (await supabase.auth.getUser()).data.user;
+
+      // Payment proof goes to the private bucket first; the database row is
+      // written by submit_payment_proof so RLS cannot silently drop it. The
+      // storage policy and the RPC both require a signed-in owner folder, so a
+      // guest cannot attach evidence from this page.
       let uploadedProofPath = "";
-
-      // Upload payment proof screenshot to private 'payment-proofs' bucket if applicable
-      if (!isCod && paymentProofFile) {
-        const fileExt = paymentProofFile.name.split(".").pop()?.toLowerCase() || "png";
-        const filePath = `proofs/${generatedOrderId}/proof-${Date.now()}.${fileExt}`;
-
-        const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from("payment-proofs")
-          .upload(filePath, paymentProofFile, { upsert: true });
-
-        if (uploadErr) {
-          console.error("Payment proof upload failed:", uploadErr.message);
-          setProofError("Failed to upload payment proof. Please try again.");
+      if (requiresProof && paymentProofFile) {
+        if (!authUser) {
+          setProofError("Please sign in to attach a payment screenshot, or send the reference with your order.");
           setIsProcessing(false);
           return;
         }
+        const fileExt = paymentProofFile.name.split(".").pop()?.toLowerCase() || "png";
+        const filePath = `proofs/${authUser.id}/${Date.now()}-proof-${Math.random().toString(36).slice(2, 7)}.${fileExt}`;
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from("payment-proofs")
+          .upload(filePath, paymentProofFile, { upsert: false });
 
+        if (uploadErr || !uploadData) {
+          setProofError(`Your payment screenshot could not be uploaded (${uploadErr?.message || "storage unavailable"}). Please try again.`);
+          setIsProcessing(false);
+          return;
+        }
         uploadedProofPath = uploadData.path;
       }
 
-      const newOrder = {
-        id: generatedOrderId,
-        orderNumber,
+      const placed = await placeOrderRpc({
+        customerId: authUser?.id || null,
         customerName: form.name,
         customerEmail: form.email,
         customerPhone: form.phone,
-        total: total,
-        subtotal: subtotal,
-        discount: promoDiscountAmount,
-        discountAmount: promoDiscountAmount,
-        shippingFee: shipping,
-        shippingCost: shipping,
-        status: "Pending" as const,
-        paymentStatus: (isCod ? "Pending" : "Verification Pending") as any,
+        shippingAddress: {
+          street: form.address,
+          city: form.city,
+          state: "Punjab",
+          zip: form.postalCode,
+          country: form.country,
+        },
         paymentMethod: selectedMethod,
-        paymentReference: form.paymentReference || (isCod ? "COD-PENDING" : `REF-${Math.floor(100000 + Math.random() * 900000)}`),
-        paymentProofUrl: uploadedProofPath,
-        paymentProofNote: isCod ? "Cash on Delivery" : "Payment screenshot uploaded by customer",
-        shippingStatus: "Processing" as const,
-        courier: "DHL Express Luxury",
-        trackingNumber: `DHL-HM-${Math.floor(10000 + Math.random() * 90000)}`,
+        couponCode: promoCode,
+        items: rpcItems as { variant_id: string; quantity: number }[],
+      });
+
+      if (!placed.success || !placed.orderId) {
+        // Nothing was reserved and nothing was written: keep the bag intact.
+        setOrderError(placed.error || "Your order could not be registered. Please try again.");
+        setIsProcessing(false);
+        return;
+      }
+
+      setPlacedOrderNumber(placed.orderNumber || "");
+      setPlacedTotal(placed.total ?? total);
+
+      if (uploadedProofPath || form.paymentReference) {
+        const proof = await submitPaymentProofRpc(placed.orderId, {
+          reference: form.paymentReference,
+          proofPath: uploadedProofPath,
+          note: cfg?.instructionHeading,
+        });
+        if (!proof.success) {
+          setOrderError(
+            `${placed.orderNumber} was registered, but your payment evidence was not attached (${proof.error}). Please send it to the concierge.`
+          );
+        }
+      }
+
+      if (authUser && (isGiftWrap || giftMessage.trim())) {
+        const gift = await setOrderGiftOptionsRpc(placed.orderId, isGiftWrap, giftMessage);
+        if (!gift.success) {
+          setOrderError(
+            `${placed.orderNumber} was registered, but the gift presentation was not saved (${gift.error}). Please tell the concierge so it can be added before dispatch.`
+          );
+        }
+      }
+
+      if (authUser && deliveryNotes.trim()) {
+        const notes = await saveCustomerOrderNotes(placed.orderId, deliveryNotes.trim());
+        if (!notes.success) {
+          setOrderError(
+            `${placed.orderNumber} was registered, but your delivery note was not saved (${notes.error}).`
+          );
+        }
+      }
+
+      await addOrder({
+        id: placed.orderId,
+        orderNumber: placed.orderNumber || "",
+        customerName: form.name,
+        customerEmail: form.email,
+        customerPhone: form.phone,
+        total: placed.total ?? total,
+        subtotal: placed.subtotal ?? subtotal,
+        discount: placed.discount ?? promoDiscountAmount,
+        discountAmount: placed.discount ?? promoDiscountAmount,
+        shippingFee: placed.shipping ?? shipping,
+        shippingCost: placed.shipping ?? shipping,
+        status: "Pending",
+        paymentStatus: requiresProof || requiresReference ? "Verification Pending" : "Pending",
+        paymentMethod: selectedMethod,
+        paymentReference: form.paymentReference || undefined,
+        paymentProofUrl: uploadedProofPath || undefined,
+        shippingStatus: "Unfulfilled",
         createdAt: new Date().toISOString().split("T")[0],
         shippingAddress: {
           street: form.address,
@@ -155,92 +269,26 @@ export default function Checkout() {
           zip: form.postalCode,
           country: form.country,
         },
-        timeline: [
-          { status: "Pending" as const, date: new Date().toISOString().replace("T", " ").slice(0, 16), note: `Order placed via ${selectedMethod}` }
-        ],
         items: items.map((i) => ({
           id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           productId: i.product.id,
           name: i.product.name,
-          sku: i.sku || (i.product as any).sku || `HM-${i.product.name.slice(0, 3).toUpperCase()}-100`,
+          sku: i.sku || (i.product as any).sku || "",
           size: i.selectedSize || i.product.size || "50ml",
           price: i.price ?? i.product.price,
           quantity: i.quantity,
-          image: i.product.images?.[0] || "texture-velvet",
+          image: i.product.photos?.[0] || i.product.images?.[0] || "texture-velvet",
         })),
-      };
+      } as any);
 
-      // Execute place_order RPC on Supabase if connected
-      if (isSupabaseConfigured()) {
-        try {
-          const authUser = (await supabase.auth.getUser()).data.user;
-          const rpcItems = items.map((i) => {
-            const variantId = i.product.variants?.find(
-              (v) => v.size.toLowerCase() === (i.selectedSize || "50ml").toLowerCase()
-            )?.id;
-            return {
-              variant_id: (variantId && !variantId.startsWith("v-")) ? variantId : null,
-              quantity: i.quantity,
-            };
-          }).filter((item) => item.variant_id !== null);
-
-          if (rpcItems.length > 0) {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc("place_order", {
-              p_customer_id: authUser?.id || null,
-              p_customer_name: form.name,
-              p_customer_email: form.email,
-              p_customer_phone: form.phone,
-              p_shipping_address: {
-                street: form.address,
-                city: form.city,
-                state: "Punjab",
-                zip: form.postalCode,
-                country: form.country,
-              },
-              p_payment_method: selectedMethod,
-              p_coupon_code: promoCode || null,
-              p_items: rpcItems,
-            });
-
-            if (!rpcErr && rpcRes && rpcRes.order_id) {
-              const realDbOrderId = rpcRes.order_id;
-              const realOrderNumber = rpcRes.order_number;
-
-              // Update proof path and reference id in database
-              if (uploadedProofPath || form.paymentReference) {
-                await supabase.from("payments").update({
-                  reference_id: form.paymentReference || (isCod ? "COD-PENDING" : "PROOF-ATTACHED"),
-                  proof_file_path: uploadedProofPath || null,
-                  proof_note: isCod ? "Cash on Delivery" : "Payment screenshot uploaded by customer",
-                  status: isCod ? "Pending" : "Verification Pending",
-                }).eq("order_id", realDbOrderId);
-
-                await supabase.from("orders").update({
-                  payment_proof_url: uploadedProofPath || null,
-                  payment_status: isCod ? "Pending" : "Verification Pending",
-                }).eq("id", realDbOrderId);
-              }
-
-              newOrder.id = realDbOrderId;
-              newOrder.orderNumber = realOrderNumber;
-            }
-          }
-        } catch (rpcEx) {
-          console.warn("place_order RPC call skipped or fell back:", rpcEx);
-        }
-      }
-
-      addOrder(newOrder);
-
-      // Trigger Transactional Email Confirmation
       await sendTransactionalEmail({
         to: form.email,
-        subject: `HM Signature Order Placed #${orderNumber}`,
+        subject: `HM Signature Order Placed #${placed.orderNumber}`,
         template: "order_confirmation",
         data: {
-          orderNumber,
+          orderNumber: placed.orderNumber || "",
           customerName: form.name,
-          total,
+          total: placed.total ?? total,
           paymentMethod: selectedMethod,
           shippingCity: form.city,
         },
@@ -248,13 +296,14 @@ export default function Checkout() {
 
       clearCart();
       setStep("CONFIRMATION");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Order processing error:", error);
-      setStep("CONFIRMATION");
+      setOrderError(error?.message || "Your order could not be placed. Please try again.");
     } finally {
       setIsProcessing(false);
     }
   };
+
 
   const goNext = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -312,17 +361,22 @@ export default function Checkout() {
             <h1 className="font-serif text-3xl font-bold mb-4">Acquisition Confirmed</h1>
             <p className="text-muted leading-relaxed text-sm mb-2">Thank you, {form.name || "valued client"}.</p>
             <p className="text-muted leading-relaxed text-xs mb-8">
-              Your order <span className="text-gold font-mono font-bold">#{orderNumber}</span> has been placed. A luxury receipt has
-              been dispatched to {form.email || "your email"}.
+              Your order <span className="text-gold font-mono font-bold">#{placedOrderNumber}</span> has been placed. A receipt has
+              been sent to {form.email || "your email"}.
             </p>
 
             <div className="border border-gold/25 p-6 text-left mb-8 bg-navy2 rounded-lg space-y-3 font-sans text-xs">
-              <div className="flex justify-between text-muted"><span>Order Reference:</span><span className="text-gold font-mono font-bold">{orderNumber}</span></div>
-              <div className="flex justify-between text-muted"><span>Total Amount:</span><span className="text-gold font-mono font-bold">{formatPKR(total)}</span></div>
+              <div className="flex justify-between text-muted"><span>Order Reference:</span><span className="text-gold font-mono font-bold">{placedOrderNumber}</span></div>
+              <div className="flex justify-between text-muted"><span>Total Amount:</span><span className="text-gold font-mono font-bold">{formatPKR(placedTotal)}</span></div>
               <div className="flex justify-between text-muted"><span>Selected Payment Method:</span><span className="text-ivory font-semibold">{selectedMethod}</span></div>
-              <div className="flex justify-between text-muted"><span>Payment Status:</span><span className="text-amber-300 font-semibold">{selectedMethod === "Cash on Delivery" ? "Pending Delivery Collection" : "Pending Staff Verification"}</span></div>
-              <div className="flex justify-between text-muted"><span>Courier Dispatch:</span><span className="text-ivory font-semibold">DHL Express / TCS Luxury</span></div>
+              <div className="flex justify-between text-muted"><span>Payment Status:</span><span className="text-amber-300 font-semibold">{Boolean(activeMethodConfig?.requiresReference || activeMethodConfig?.requiresProof) ? "Awaiting verification" : "Awaiting delivery collection"}</span></div>
+              <div className="flex justify-between text-muted"><span>Typical Delivery:</span><span className="text-ivory font-semibold">{shippingConfig.estimatedDays}</span></div>
+              <div className="flex justify-between text-muted"><span>Gift Presentation:</span><span className="text-ivory font-semibold">{isGiftWrap ? "Requested with note card" : "Standard packaging"}</span></div>
             </div>
+
+            <p className="text-[11px] text-muted font-light mb-6 leading-relaxed">
+              You can follow this order from your account, or with the tracking reference on the Track Order page once it is dispatched.
+            </p>
 
             <div className="flex items-center justify-center space-x-4">
               <Link to="/account/orders" className="btn-gold-fill font-sans text-xs">
@@ -366,6 +420,60 @@ export default function Checkout() {
                       <Field label="Postal Code" value={form.postalCode} onChange={(v) => update("postalCode", v)} required />
                     </div>
                     <Field label="Country" value={form.country} onChange={(v) => update("country", v)} required />
+
+                    <div className="space-y-3 pt-2 border-t border-gold/15">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isGiftWrap}
+                          onChange={(e) => setIsGiftWrap(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 accent-[#c9a961] shrink-0"
+                        />
+                        <span className="font-sans">
+                          <span className="block text-xs text-ivory font-medium">Present it as a gift</span>
+                          <span className="block text-[11px] text-muted font-light leading-relaxed">
+                            Hand-tied ribbon with a note card, at no additional charge.
+                          </span>
+                        </span>
+                      </label>
+
+                      {isGiftWrap && (
+                        <div className="space-y-1">
+                          <label htmlFor="gift-message" className="text-[10px] uppercase tracking-widest text-gold font-mono">
+                            Gift message
+                          </label>
+                          <textarea
+                            id="gift-message"
+                            value={giftMessage}
+                            onChange={(e) => setGiftMessage(e.target.value)}
+                            rows={3}
+                            maxLength={500}
+                            placeholder="Written by hand on our presentation card."
+                            className="w-full bg-navy border border-gold/25 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold font-sans"
+                          />
+                          <p className="text-[10px] text-muted font-mono text-right">{giftMessage.length}/500</p>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <label htmlFor="delivery-notes" className="text-[10px] uppercase tracking-widest text-gold font-mono">
+                          Delivery notes (optional)
+                        </label>
+                        <textarea
+                          id="delivery-notes"
+                          value={deliveryNotes}
+                          onChange={(e) => setDeliveryNotes(e.target.value)}
+                          rows={2}
+                          maxLength={500}
+                          placeholder="Gate code, preferred arrival window, who to call on arrival."
+                          className="w-full bg-navy border border-gold/25 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold font-sans"
+                        />
+                      </div>
+
+                      <p className="text-[11px] text-muted font-light">
+                        Typical delivery time: <span className="text-ivory">{shippingConfig.estimatedDays}</span>.
+                      </p>
+                    </div>
                   </>
                 )}
 
@@ -377,31 +485,32 @@ export default function Checkout() {
                     </div>
 
                     {/* Payment Method Selector Grid */}
-                    <div className="grid grid-cols-2 gap-3 font-sans">
-                      {[
-                        { id: "Cash on Delivery", label: "Cash on Delivery", desc: "Pay cash upon courier delivery", icon: Truck },
-                        { id: "JazzCash", label: "JazzCash Mobile Wallet", desc: "Instant mobile wallet transfer", icon: Smartphone },
-                        { id: "Raast", label: "Raast Instant Transfer", desc: "State Bank zero-fee Raast ID", icon: Banknote },
-                        { id: "Bank Transfer", label: "Direct Bank Transfer", desc: "Meezan Bank IBAN transfer", icon: Building2 },
-                        { id: "PayFast", label: "PayFast Card Gateway", desc: "Visa, Mastercard — Coming Soon", icon: CreditCard, disabled: true },
-                      ].map((m) => {
-                        const Icon = m.icon;
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans" role="radiogroup" aria-label="Payment method">
+                      {paymentConfigs.map((m) => {
+                        const Icon =
+                          m.id === "JazzCash" ? Smartphone
+                          : m.id === "Raast" ? Banknote
+                          : m.id === "Bank Transfer" ? Building2
+                          : m.id === "Cash on Delivery" ? Truck
+                          : CreditCard;
                         const isSelected = selectedMethod === m.id;
-                        const isDisabled = (m as any).disabled;
                         return (
-                          <div
+                          <label
                             key={m.id}
-                            onClick={() => {
-                              if (!isDisabled) setSelectedMethod(m.id as PaymentMethod);
-                            }}
-                            className={`p-4 rounded-lg border transition-all space-y-2 ${
-                              isDisabled
-                                ? "bg-navy/30 border-gold/10 opacity-50 cursor-not-allowed"
-                                : isSelected
-                                ? "bg-navy2 border-gold shadow-lg ring-1 ring-gold/40 cursor-pointer"
-                                : "bg-navy/60 border-gold/20 hover:border-gold/40 cursor-pointer"
+                            className={`p-4 rounded-lg border transition-all space-y-2 cursor-pointer ${
+                              isSelected
+                                ? "bg-navy2 border-gold shadow-lg ring-1 ring-gold/40"
+                                : "bg-navy/60 border-gold/20 hover:border-gold/40"
                             }`}
                           >
+                            <input
+                              type="radio"
+                              name="payment_method"
+                              value={m.id}
+                              checked={isSelected}
+                              onChange={() => setSelectedMethod(m.id as PaymentMethod)}
+                              className="sr-only"
+                            />
                             <div className="flex items-center justify-between">
                               <Icon className={`w-5 h-5 ${isSelected ? "text-gold" : "text-muted"}`} />
                               <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? "border-gold bg-gold" : "border-gold/30"}`}>
@@ -410,109 +519,68 @@ export default function Checkout() {
                             </div>
                             <div>
                               <h4 className="font-serif font-bold text-xs text-ivory">{m.label}</h4>
-                              <p className="text-[10px] text-muted leading-tight mt-0.5">{m.desc}</p>
+                              <p className="text-[10px] text-muted leading-tight mt-0.5">{m.description}</p>
                             </div>
-                          </div>
+                          </label>
                         );
                       })}
+                      {paymentConfigs.length === 0 && (
+                        <p className="text-[11px] text-muted font-light sm:col-span-2">
+                          No payment methods are configured yet. Please contact the concierge to complete your order.
+                        </p>
+                      )}
                     </div>
 
                     {/* Payment Method Specific Instructions Box */}
                     <div className="bg-navy2 border border-gold/30 p-5 rounded-lg space-y-4 font-sans text-xs">
-                      {selectedMethod === "Cash on Delivery" && (
-                        <div className="space-y-2">
+                      {activeMethodConfig && (
+                        <div className="space-y-3">
                           <div className="flex items-center space-x-2 text-gold font-bold uppercase text-[11px] font-mono">
                             <Truck className="w-4 h-4" />
-                            <span>CASH ON DELIVERY INSTRUCTIONS</span>
+                            <span>{activeMethodConfig.instructionHeading || `${activeMethodConfig.label} instructions`}</span>
                           </div>
-                          <p className="text-muted leading-relaxed">
-                            Pay the exact order amount of <strong className="text-gold font-mono">{formatPKR(total)}</strong> in cash to the DHL / TCS courier representative upon delivery at your door.
-                          </p>
-                        </div>
-                      )}
 
-                      {selectedMethod === "JazzCash" && (
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-2 text-gold font-bold uppercase text-[11px] font-mono">
-                            <Smartphone className="w-4 h-4" />
-                            <span>JAZZCASH PAYMENT INSTRUCTIONS</span>
-                          </div>
-                          <div className="bg-navy p-3 rounded border border-gold/15 space-y-1 font-mono text-[11px]">
-                            <p className="flex justify-between">
-                              <span className="text-muted">Account Number:</span>
-                              <span className="text-gold font-bold flex items-center gap-1">
-                                0300 8472910
-                                <button type="button" onClick={() => copyToClipboard("03008472910", "jc")} className="hover:text-ivory"><Copy className="w-3 h-3" /></button>
-                              </span>
+                          {activeMethodConfig.id === "Cash on Delivery" ? (
+                            <p className="text-muted leading-relaxed">
+                              Pay the exact order total of <strong className="text-gold font-mono">{formatPKR(total)}</strong> in cash to the courier when your parcel arrives.
                             </p>
-                            <p className="flex justify-between">
-                              <span className="text-muted">Account Title:</span>
-                              <span className="text-ivory font-bold">HM Signature Atelier</span>
-                            </p>
-                          </div>
-                          <Field
-                            label="Transaction Reference / TID (12 Digits)"
-                            value={form.paymentReference}
-                            onChange={(v) => update("paymentReference", v)}
-                            placeholder="e.g. 098234112984"
-                            required
-                          />
-                        </div>
-                      )}
+                          ) : (
+                            <div className="bg-navy p-3 rounded border border-gold/15 space-y-1.5 font-mono text-[11px]">
+                              {activeMethodConfig.details.map((d) => (
+                                <p key={d.label} className="flex justify-between gap-3">
+                                  <span className="text-muted">{d.label}:</span>
+                                  <span className={`text-ivory font-bold flex items-center gap-1 text-right ${d.copyValue ? "text-gold" : ""}`}>
+                                    {d.value}
+                                    {d.copyValue && (
+                                      <button
+                                        type="button"
+                                        aria-label={`Copy ${d.label}`}
+                                        onClick={() => copyToClipboard(d.copyValue || d.value, d.label)}
+                                        className="hover:text-ivory shrink-0"
+                                      >
+                                        <Copy className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </span>
+                                </p>
+                              ))}
+                            </div>
+                          )}
 
-                      {selectedMethod === "Raast" && (
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-2 text-gold font-bold uppercase text-[11px] font-mono">
-                            <Banknote className="w-4 h-4" />
-                            <span>RAAST INSTANT PAYMENT INSTRUCTIONS</span>
-                          </div>
-                          <div className="bg-navy p-3 rounded border border-gold/15 space-y-1 font-mono text-[11px]">
-                            <p className="flex justify-between">
-                              <span className="text-muted">Raast ID (Phone):</span>
-                              <span className="text-gold font-bold flex items-center gap-1">
-                                03008472910
-                                <button type="button" onClick={() => copyToClipboard("03008472910", "raast")} className="hover:text-ivory"><Copy className="w-3 h-3" /></button>
-                              </span>
-                            </p>
-                            <p className="flex justify-between">
-                              <span className="text-muted">IBAN Raast ID:</span>
-                              <span className="text-ivory font-bold">PK36MEZN0001029384756101</span>
-                            </p>
-                          </div>
-                          <Field
-                            label="Raast Transaction Reference ID"
-                            value={form.paymentReference}
-                            onChange={(v) => update("paymentReference", v)}
-                            placeholder="e.g. RAAST-992381"
-                            required
-                          />
-                        </div>
-                      )}
-
-                      {selectedMethod === "Bank Transfer" && (
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-2 text-gold font-bold uppercase text-[11px] font-mono">
-                            <Building2 className="w-4 h-4" />
-                            <span>DIRECT BANK TRANSFER DETAILS</span>
-                          </div>
-                          <div className="bg-navy p-3 rounded border border-gold/15 space-y-1.5 font-mono text-[11px]">
-                            <p className="flex justify-between"><span className="text-muted">Bank Name:</span><span className="text-ivory font-bold">Meezan Bank Ltd.</span></p>
-                            <p className="flex justify-between"><span className="text-muted">Account Title:</span><span className="text-ivory font-bold">HM Signature (Pvt) Ltd</span></p>
-                            <p className="flex justify-between"><span className="text-muted">Account Number:</span><span className="text-gold font-bold">0102 9384 7561 01</span></p>
-                            <p className="flex justify-between"><span className="text-muted">IBAN:</span><span className="text-gold font-bold">PK36 MEZN 0001 0293 8475 6101</span></p>
-                          </div>
-                          <Field
-                            label="Bank Transfer Reference / Deposit Slip No."
-                            value={form.paymentReference}
-                            onChange={(v) => update("paymentReference", v)}
-                            placeholder="e.g. TRX-MEEZAN-88231"
-                            required
-                          />
+                          {activeMethodConfig.requiresReference && (
+                            <Field
+                              label={activeMethodConfig.referenceLabel || "Transaction Reference"}
+                              value={form.paymentReference}
+                              onChange={(v) => update("paymentReference", v)}
+                              placeholder={activeMethodConfig.referencePlaceholder || "Enter the reference from your transfer"}
+                              required
+                            />
+                          )}
                         </div>
                       )}
 
                       {/* Payment Screenshot Upload Field for Digital Transfer Methods */}
-                      {selectedMethod !== "Cash on Delivery" && (
+                      {activeMethodConfig?.requiresProof && (
                         <div className="space-y-2 pt-2 border-t border-gold/15">
                           <span className="text-[10px] tracking-widest text-gold uppercase block font-mono">
                             Upload Payment Screenshot / Transfer Receipt <span className="text-gold">*</span>
@@ -571,6 +639,16 @@ export default function Checkout() {
                   </>
                 )}
 
+                {orderError && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 px-4 py-3 rounded-lg border border-rose-600/50 bg-rose-950/50 text-rose-200 text-xs font-sans"
+                  >
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">{orderError}</span>
+                  </div>
+                )}
+
                 <div className="flex gap-4 pt-4">
                   {step !== "CONTACT" && (
                     <button
@@ -583,8 +661,8 @@ export default function Checkout() {
                   )}
                   <button
                     type="submit"
-                    disabled={isProcessing}
-                    className="btn-gold-fill flex-1 text-center font-sans text-xs font-bold uppercase tracking-wider py-3 shadow-lg"
+                    disabled={isProcessing || paymentConfigs.length === 0}
+                    className="btn-gold-fill flex-1 text-center font-sans text-xs font-bold uppercase tracking-wider py-3 shadow-lg disabled:opacity-50"
                   >
                     {isProcessing ? "PROCESSING ORDER..." : step === "PAYMENT" ? `CONFIRM ${selectedMethod.toUpperCase()} ORDER →` : "CONTINUE →"}
                   </button>

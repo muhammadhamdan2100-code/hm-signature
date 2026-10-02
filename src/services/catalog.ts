@@ -5,6 +5,8 @@ import {
   type Product,
   type ProductVariant,
   generateDefaultVariants,
+  sizeToMl,
+  effectiveVariantPrice,
 } from "../data/products";
 
 export interface CatalogCategory {
@@ -34,23 +36,40 @@ export function mapDBProductToUI(
   variantsMap?: any[],
   imagesMap?: any[],
   notesMap?: any[],
-  categoryName?: string
+  categoryName?: string,
+  reviewStats?: { rating: number; count: number }
 ): Product {
-  const basePrice = Number(dbProduct.base_price || dbProduct.price || 4500);
+  // A price the database did not supply must not be invented. When a row carries
+  // no base price, the cheapest real variant price is used; if the catalogue has
+  // no price at all the product reads as 0 and the UI says "Price on request".
+  const declaredBase = Number(dbProduct.base_price ?? dbProduct.price);
+  const variantPrices = (variantsMap || [])
+    .filter((v: any) => v.active !== false)
+    .map((v: any) => Number(v.sale_price ?? v.price))
+    .filter((n: number) => Number.isFinite(n) && n > 0);
+  const basePrice =
+    Number.isFinite(declaredBase) && declaredBase > 0
+      ? declaredBase
+      : variantPrices.length > 0
+        ? Math.min(...variantPrices)
+        : 0;
 
   // 1. Process variants
   let uiVariants: ProductVariant[] = [];
   if (variantsMap && variantsMap.length > 0) {
     uiVariants = variantsMap
       .filter((v: any) => v.active !== false)
+      .sort((a: any, b: any) => sizeToMl(a.size) - sizeToMl(b.size))
       .map((v: any) => ({
         id: v.id || `v-${v.size}`,
         size: v.size,
         price: Number(v.price),
         salePrice: v.sale_price ? Number(v.sale_price) : undefined,
-        sku: v.sku || `${dbProduct.sku || "HM"}-${v.size.toUpperCase()}`,
-        stock: Number(v.stock ?? 30),
+        sku: v.sku || `${dbProduct.sku || "HM"}-${String(v.size).toUpperCase()}`,
+        stock: Number(v.stock ?? 0),
         active: v.active !== false,
+        auto: v.is_auto_price !== false,
+        lowStockThreshold: Number(v.low_stock_threshold ?? 10),
       }));
   }
 
@@ -62,18 +81,25 @@ export function mapDBProductToUI(
     );
   }
 
-  // 50ml or first active variant price reference
-  const var50 = uiVariants.find((v) => v.size.toLowerCase() === "50ml");
-  const displayPrice = var50 ? var50.price : basePrice;
+  // 50ml or first active variant price reference, on the same sale rule the
+  // checkout uses.
+  const var50 = uiVariants.find((v) => v.size.toLowerCase() === "50ml") || uiVariants[0];
+  const displayPrice = var50 ? effectiveVariantPrice(var50) : basePrice;
 
-  // 2. Process images & photos
+  const variantPhotos = new Map<string, string[]>();
   let photos: string[] = [];
   if (imagesMap && imagesMap.length > 0) {
     const sorted = [...imagesMap].sort(
       (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
     );
-    photos = sorted.map((img: any) => img.image_url).filter(Boolean);
+    photos = sorted.filter((img: any) => !img.variant_id).map((img: any) => img.image_url).filter(Boolean);
+    sorted.filter((img: any) => img.variant_id).forEach((img: any) => {
+      const list = variantPhotos.get(img.variant_id) || [];
+      list.push(img.image_url);
+      variantPhotos.set(img.variant_id, list);
+    });
   }
+  uiVariants = uiVariants.map((v) => ({ ...v, images: variantPhotos.get(v.id) || [] }));
 
   // Texture placeholders as fallback for visual cards
   const texturePlaceholder = dbProduct.texture || "texture-velvet";
@@ -84,7 +110,7 @@ export function mapDBProductToUI(
     "texture-navy",
   ];
 
-  // 3. Process Fragrance Notes
+  // 3. Process Fragrance Notes — only what the catalogue actually declares.
   const topNotes: string[] = [];
   const heartNotes: string[] = [];
   const baseNotes: string[] = [];
@@ -104,12 +130,13 @@ export function mapDBProductToUI(
   const calculatedStock = var50
     ? var50.stock
     : uiVariants.reduce((acc, curr) => acc + (curr.stock || 0), 0) ||
-      Number(dbProduct.stock || 30);
+      Number(dbProduct.stock || 0);
 
   return {
     id: dbProduct.id,
     name: dbProduct.name,
     slug: dbProduct.slug,
+    sku: dbProduct.sku,
     price: displayPrice,
     images: defaultImages,
     photos: photos.length > 0 ? photos : undefined,
@@ -118,11 +145,17 @@ export function mapDBProductToUI(
       dbProduct.categories?.name ||
       dbProduct.category ||
       "Haute Parfumerie",
+    fragranceFamily: dbProduct.fragrance_family || dbProduct.categories?.name || undefined,
     gender: (dbProduct.gender as "men" | "women" | "unisex") || "unisex",
     description: dbProduct.description || "",
-    topNotes: topNotes.length > 0 ? topNotes : ["Bergamot", "Saffron", "Pink Pepper"],
-    heartNotes: heartNotes.length > 0 ? heartNotes : ["Bulgarian Rose", "Oud Wood", "Cedar"],
-    baseNotes: baseNotes.length > 0 ? baseNotes : ["Amber", "Vanilla", "Leather"],
+    shortDescription: dbProduct.short_description || undefined,
+    occasions: Array.isArray(dbProduct.occasions) ? dbProduct.occasions : [],
+    seasons: Array.isArray(dbProduct.seasons) ? dbProduct.seasons : [],
+    intensity: dbProduct.intensity || undefined,
+    scentProfile: dbProduct.scent_profile || undefined,
+    topNotes,
+    heartNotes,
+    baseNotes,
     ingredients:
       dbProduct.ingredients ||
       "Alcohol Denat., Parfum (Fragrance), Aqua, Essential Botanicals.",
@@ -131,15 +164,42 @@ export function mapDBProductToUI(
       dbProduct.concentration ||
       dbProduct.fragrance_type ||
       "Extrait de Parfum",
-    rating: Number(dbProduct.rating || 4.8),
-    reviewCount: Number(dbProduct.review_count || 140),
+    // Ratings come only from approved reviews; never a placeholder number.
+    rating: reviewStats?.rating ?? 0,
+    reviewCount: reviewStats?.count ?? 0,
     reviews: [],
     stock: calculatedStock,
     featured: Boolean(dbProduct.featured),
     bestseller: Boolean(dbProduct.bestseller),
+    newArrival: Boolean(dbProduct.new_arrival),
+    active: dbProduct.active !== false,
+    seoTitle: dbProduct.seo_title || undefined,
+    seoDescription: dbProduct.seo_description || undefined,
     texture: texturePlaceholder,
     variants: uiVariants,
   };
+}
+
+// Approved-review aggregates in one round trip, so cards show real ratings.
+async function fetchApprovedReviewStats(): Promise<Map<string, { rating: number; count: number }>> {
+  const map = new Map<string, { rating: number; count: number }>();
+  const { data } = await supabase
+    .from("reviews")
+    .select("product_id, rating")
+    .eq("status", "Approved");
+
+  (data || []).forEach((r: any) => {
+    const entry = map.get(r.product_id) || { rating: 0, count: 0 };
+    entry.rating += Number(r.rating || 0);
+    entry.count += 1;
+    map.set(r.product_id, entry);
+  });
+
+  map.forEach((v, k) => {
+    v.rating = v.count > 0 ? Math.round((v.rating / v.count) * 10) / 10 : 0;
+    map.set(k, v);
+  });
+  return map;
 }
 
 /**
@@ -157,22 +217,22 @@ export async function getCatalogProducts(): Promise<Product[]> {
         *,
         categories (id, name, slug),
         collections!products_collection_id_fkey (id, name, slug),
-        product_images (id, image_url, alt_text, display_order, is_primary),
-        product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active),
+        product_images (id, image_url, alt_text, display_order, is_primary, variant_id),
+        product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active, is_auto_price),
         product_fragrance_notes (note_type, fragrance_notes (id, name))
       `)
       .eq("active", true)
       .order("created_at", { ascending: false });
 
-    if (error || !dbProducts || dbProducts.length === 0) {
-      if (error) {
-        console.warn(
-          "Supabase products query failed, using static fallback:",
-          error.message
-        );
-      }
+    // A query failure keeps the offline demo catalog; an empty catalogue is
+    // reported honestly instead of being masked with fixture products.
+    if (error || !dbProducts) {
+      console.warn("Supabase products query failed, using static fallback:", error?.message);
       return staticProducts;
     }
+    if (dbProducts.length === 0) return [];
+
+    const reviewStats = await fetchApprovedReviewStats();
 
     return dbProducts.map((p) =>
       mapDBProductToUI(
@@ -180,7 +240,8 @@ export async function getCatalogProducts(): Promise<Product[]> {
         p.product_variants,
         p.product_images,
         p.product_fragrance_notes,
-        p.categories?.name
+        p.categories?.name,
+        reviewStats.get(p.id)
       )
     );
   } catch (err) {
@@ -208,30 +269,28 @@ export async function getCatalogProductBySlug(
         *,
         categories (id, name, slug),
         collections!products_collection_id_fkey (id, name, slug),
-        product_images (id, image_url, alt_text, display_order, is_primary),
-        product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active),
+        product_images (id, image_url, alt_text, display_order, is_primary, variant_id),
+        product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active, is_auto_price),
         product_fragrance_notes (note_type, fragrance_notes (id, name))
       `)
       .eq("slug", slug)
-      .eq("active", true)
       .maybeSingle();
 
-    if (error || !p) {
-      if (error) {
-        console.warn(
-          `Supabase single product query failed for '${slug}', checking fallback:`,
-          error.message
-        );
-      }
+    if (error) {
+      console.warn(`Supabase single product query failed for '${slug}':`, error.message);
       return getStaticProductBySlug(slug) || null;
     }
+    if (!p || p.active === false) return null;
+
+    const stats = await fetchApprovedReviewStats();
 
     return mapDBProductToUI(
       p,
       p.product_variants,
       p.product_images,
       p.product_fragrance_notes,
-      p.categories?.name
+      p.categories?.name,
+      stats.get(p.id)
     );
   } catch (err) {
     console.error(`Error fetching product '${slug}':`, err);

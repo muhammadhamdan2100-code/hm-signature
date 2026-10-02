@@ -10,6 +10,7 @@ import type {
   ReviewItem,
   Coupon,
   ShippingMethod,
+  AbandonedCart,
 } from "../admin/context/AdminDataContext";
 
 const fmtDate = (iso?: string | null) => (iso ? iso.replace("T", " ").slice(0, 16) : new Date().toISOString().replace("T", " ").slice(0, 16));
@@ -85,17 +86,30 @@ export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
 
   const orderIds = data.map((o: any) => o.id);
   let historyRows: any[] = [];
+  let notesRows: any[] = [];
   if (orderIds.length > 0) {
-    const { data: hist } = await supabase
-      .from("order_status_history")
-      .select("order_id, status, note, created_at")
-      .in("order_id", orderIds)
-      .order("created_at", { ascending: true });
-    historyRows = hist || [];
+    const [hist, notes] = await Promise.all([
+      supabase
+        .from("order_status_history")
+        .select("order_id, status, note, created_at")
+        .in("order_id", orderIds)
+        .order("created_at", { ascending: true }),
+      // Internal commentary lives in its own table so a customer reading their own
+      // order through RLS can never receive it. Staff-only policy: a customer call
+      // simply returns no rows.
+      supabase.from("order_internal_notes").select("order_id, notes").in("order_id", orderIds),
+    ]);
+    historyRows = hist.data || [];
+    notesRows = notes.data || [];
   }
 
+  const notesByOrder = new Map<string, string>(
+    notesRows.map((n: any) => [n.order_id, n.notes])
+  );
+
   return data.map((o: any) => {
-    const payment = o.payments?.[0];
+    // payments.order_id is UNIQUE, so PostgREST embeds a to-one object here.
+    const payment = Array.isArray(o.payments) ? o.payments[0] : o.payments;
     // shipments.order_id is UNIQUE, so PostgREST embeds a to-one object here, not an array
     const shipment = Array.isArray(o.shipments) ? o.shipments[0] : o.shipments;
     const timeline: OrderTimelineItem[] = historyRows
@@ -149,6 +163,12 @@ export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
       paymentProofNote: payment?.proof_note || undefined,
       courier: o.courier_name || undefined,
       trackingNumber: o.tracking_id || undefined,
+      trackingUrl: o.tracking_url || shipment?.tracking_url || undefined,
+      estimatedDelivery: o.estimated_delivery || shipment?.estimated_delivery || undefined,
+      adminNotes: notesByOrder.get(o.id) || undefined,
+      customerNotes: o.customer_notes || undefined,
+      isGiftWrap: Boolean(o.is_gift_wrap),
+      giftMessage: o.gift_message || undefined,
       timeline,
       createdAt: (o.created_at || "").split("T")[0],
     };
@@ -293,70 +313,232 @@ export async function fetchRefundsFromDB(): Promise<RefundRecord[]> {
   }));
 }
 
+export interface TrackingSaveResult {
+  success: boolean;
+  trackingId?: string;
+  error?: string;
+}
+
 export async function updateOrderShippingInDB(
   orderId: string,
   courier: string,
   trackingNumber: string,
-  shippingStatus: Order["shippingStatus"]
-): Promise<boolean> {
-  const { error } = await supabase
-    .from("orders")
-    .update({
-      courier_name: courier || null,
-      tracking_id: trackingNumber || null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", orderId);
+  shippingStatus: Order["shippingStatus"],
+  options?: { trackingUrl?: string; estimatedDelivery?: string; generate?: boolean }
+): Promise<TrackingSaveResult> {
+  const { data, error } = await supabase.rpc("save_order_tracking", {
+    p_order_id: orderId,
+    p_courier: courier || null,
+    p_tracking_id: trackingNumber || null,
+    p_tracking_url: options?.trackingUrl || null,
+    p_estimated_delivery: options?.estimatedDelivery || null,
+    p_shipping_status: trackingNumber || shippingStatus ? mapShippingStatusToShipment(shippingStatus) : null,
+    p_generate: Boolean(options?.generate),
+  });
+
   if (error) {
-    console.error("updateOrderShippingInDB orders:", error.message);
-    return false;
+    console.error("save_order_tracking RPC:", error.message);
+    return { success: false, error: error.message };
   }
-
-  if (trackingNumber) {
-    const { error: shipErr } = await supabase
-      .from("shipments")
-      .upsert(
-        {
-          order_id: orderId,
-          courier_name: courier || "Courier",
-          tracking_number: trackingNumber,
-          status: mapShippingStatusToShipment(shippingStatus),
-        },
-        { onConflict: "order_id" }
-      );
-    if (shipErr) console.error("updateOrderShippingInDB shipments:", shipErr.message);
-  }
-  return true;
+  return { success: Boolean(data?.success), trackingId: data?.tracking_id || undefined };
 }
 
-export async function uploadPaymentProofInDB(
+export async function updateOrderNotesInDB(
   orderId: string,
-  proofPath: string,
-  note?: string
+  notes: { customerNotes?: string; adminNotes?: string }
 ): Promise<boolean> {
-  const { error: payErr } = await supabase
-    .from("payments")
-    .update({
-      status: "Verification Pending",
-      proof_file_path: proofPath || null,
-      proof_note: note || "Payment receipt screenshot attached by customer",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("order_id", orderId);
-  if (payErr) {
-    console.error("uploadPaymentProofInDB payments:", payErr.message);
+  const { error } = await supabase.rpc("update_order_notes", {
+    p_order_id: orderId,
+    p_customer_notes: notes.customerNotes ?? null,
+    p_admin_notes: notes.adminNotes ?? null,
+  });
+  if (error) {
+    console.error("update_order_notes RPC:", error.message);
     return false;
   }
-  await supabase
-    .from("orders")
-    .update({ payment_status: "Verification Pending", updated_at: new Date().toISOString() })
-    .eq("id", orderId);
-  await supabase.from("order_status_history").insert([
-    { order_id: orderId, status: "Pending", note: "Payment proof uploaded — verification pending" },
-  ]);
   return true;
 }
 
+export interface AnalyticsSnapshot {
+  windowDays: number;
+  totals: { orders: number; grossRevenue: number; customers: number; averageOrderValue: number; unitsSold: number; refunded: number };
+  cancellations: { cancelledOrders: number; returnedOrders: number; cancelledValue: number };
+  refunds: { records: number; processedAmount: number; pendingAmount: number; rejectedOrFailed: number };
+  orderStatusDistribution: { status: string; count: number }[];
+  paymentMethodDistribution: { method: string; count: number; value: number }[];
+  paymentStatusDistribution: { status: string; count: number; value: number }[];
+  topProducts: { name: string; units: number; revenue: number; orders: number }[];
+  topSizes: { size: string; units: number; revenue: number }[];
+  salesTrend: { day: string; orders: number; revenue: number }[];
+  customerGrowth: { month: string; signups: number }[];
+  couponPerformance: { code: string; uses: number; discountGiven: number; status: string }[];
+  inventoryAlerts: { outOfStock: number; lowStock: number; inactive: number };
+}
+
+export async function fetchAnalyticsFromDB(days = 90): Promise<AnalyticsSnapshot | null> {
+  const { data, error } = await supabase.rpc("get_admin_analytics", { p_days: days });
+  if (error || !data) {
+    console.warn("fetchAnalyticsFromDB:", error?.message);
+    return null;
+  }
+  return {
+    windowDays: data.window_days,
+    totals: {
+      orders: Number(data.totals?.orders ?? 0),
+      grossRevenue: Number(data.totals?.gross_revenue ?? 0),
+      customers: Number(data.totals?.customers ?? 0),
+      averageOrderValue: Number(data.totals?.average_order_value ?? 0),
+      unitsSold: Number(data.totals?.units_sold ?? 0),
+      // Only refunds tied to live orders may reduce gross revenue.
+      refunded: Number(data.refunds?.processed_on_live_orders ?? data.refunds?.processed_amount ?? 0),
+    },
+    cancellations: {
+      cancelledOrders: Number(data.cancellations?.cancelled_orders ?? 0),
+      returnedOrders: Number(data.cancellations?.returned_orders ?? 0),
+      cancelledValue: Number(data.cancellations?.cancelled_value ?? 0),
+    },
+    refunds: {
+      records: Number(data.refunds?.records ?? 0),
+      processedAmount: Number(data.refunds?.processed_amount ?? 0),
+      pendingAmount: Number(data.refunds?.pending_amount ?? 0),
+      rejectedOrFailed: Number(data.refunds?.rejected_or_failed ?? 0),
+    },
+    orderStatusDistribution: (data.order_status_distribution || []).map((r: any) => ({ status: r.status, count: Number(r.count) })),
+    paymentMethodDistribution: (data.payment_method_distribution || []).map((r: any) => ({ method: r.method, count: Number(r.count), value: Number(r.value) })),
+    paymentStatusDistribution: (data.payment_status_distribution || []).map((r: any) => ({ status: r.status, count: Number(r.count), value: Number(r.value) })),
+    topProducts: (data.top_products || []).map((r: any) => ({ name: r.name, units: Number(r.units), revenue: Number(r.revenue), orders: Number(r.orders) })),
+    topSizes: (data.top_sizes || []).map((r: any) => ({ size: r.size, units: Number(r.units), revenue: Number(r.revenue) })),
+    salesTrend: (data.sales_trend || []).map((r: any) => ({ day: r.day, orders: Number(r.orders), revenue: Number(r.revenue) })),
+    customerGrowth: (data.customer_growth || []).map((r: any) => ({ month: r.month, signups: Number(r.signups) })),
+    couponPerformance: (data.coupon_performance || []).map((r: any) => ({ code: r.code, uses: Number(r.uses), discountGiven: Number(r.discount_given), status: r.status })),
+    inventoryAlerts: {
+      outOfStock: Number(data.inventory_alerts?.out_of_stock ?? 0),
+      lowStock: Number(data.inventory_alerts?.low_stock ?? 0),
+      inactive: Number(data.inventory_alerts?.inactive ?? 0),
+    },
+  };
+}
+
+export interface InventoryPositionRow {
+  variantId: string;
+  productName: string;
+  sku: string;
+  size: string;
+  onHand: number;
+  lowStockThreshold: number;
+  active: boolean;
+  soldUnits: number;
+  restockedUnits: number;
+  netAdjustments: number;
+  reservedInOpenOrders: number;
+  dailyVelocity: number;
+  lastMovement: string | null;
+}
+
+export async function fetchInventoryPositionFromDB(): Promise<InventoryPositionRow[]> {
+  const { data, error } = await supabase.rpc("get_inventory_position");
+  if (error || !data) {
+    console.warn("fetchInventoryPositionFromDB:", error?.message);
+    return [];
+  }
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((r: any) => ({
+    variantId: r.variant_id,
+    productName: r.product_name,
+    sku: r.sku,
+    size: r.size,
+    onHand: Number(r.on_hand ?? 0),
+    lowStockThreshold: Number(r.low_stock_threshold ?? 0),
+    active: r.active !== false,
+    soldUnits: Number(r.sold_units ?? 0),
+    restockedUnits: Number(r.restocked_units ?? 0),
+    netAdjustments: Number(r.net_adjustments ?? 0),
+    reservedInOpenOrders: Number(r.reserved_in_open_orders ?? 0),
+    dailyVelocity: Number(r.daily_velocity ?? 0),
+    lastMovement: r.last_movement || null,
+  }));
+}
+
+export interface CustomerAggregateRow {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  joinedDate: string;
+  ordersCount: number;
+  totalSpent: number;
+  lastOrderDate: string | null;
+  segment: string;
+  wishlistCount: number;
+  reviewCount: number;
+}
+
+export async function fetchAdminCustomerAggregatesFromDB(): Promise<CustomerAggregateRow[]> {
+  const { data, error } = await supabase.rpc("get_admin_customers");
+  if (error || !data) {
+    console.warn("fetchAdminCustomerAggregatesFromDB:", error?.message);
+    return [];
+  }
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.full_name || "Unnamed client",
+    email: r.email || "",
+    phone: r.phone || "",
+    status: r.status || "active",
+    joinedDate: r.joined_at ? String(r.joined_at).slice(0, 10) : "",
+    ordersCount: Number(r.orders ?? 0),
+    totalSpent: Number(r.total_spent ?? 0),
+    lastOrderDate: r.last_order || null,
+    segment: r.segment || "New",
+    wishlistCount: Number(r.wishlist_count ?? 0),
+    reviewCount: Number(r.review_count ?? 0),
+  }));
+}
+
+export async function fetchAbandonedCartsAggFromDB(hours = 24): Promise<AbandonedCart[]> {
+  const { data, error } = await supabase.rpc("get_abandoned_carts", { p_hours: hours });
+  if (error || !data) {
+    console.warn("fetchAbandonedCartsAggFromDB:", error?.message);
+    return [];
+  }
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length === 0) return [];
+
+  const cartIds = rows.map((r: any) => r.cart_id);
+  const { data: itemRows } = await supabase
+    .from("cart_items")
+    .select("cart_id, quantity, product_variants(size, price, sale_price), products(name)")
+    .in("cart_id", cartIds);
+
+  const byCart = new Map<string, AbandonedCart["items"]>();
+  (itemRows || []).forEach((it: any) => {
+    const list = byCart.get(it.cart_id) || [];
+    const variant = Array.isArray(it.product_variants) ? it.product_variants[0] : it.product_variants;
+    const product = Array.isArray(it.products) ? it.products[0] : it.products;
+    list.push({
+      productName: product?.name || "Fragrance",
+      quantity: Number(it.quantity ?? 1),
+      price: Number(variant ? variant.sale_price ?? variant.price : 0),
+    });
+    byCart.set(it.cart_id, list);
+  });
+
+  return rows.map((r: any) => ({
+    id: r.cart_id,
+    customerName: r.customer_name || "Registered client",
+    customerEmail: r.customer_email || "",
+    cartValue: Number(r.cart_value ?? 0),
+    items: byCart.get(r.cart_id) || [],
+    abandonedDate: r.stalled_since ? String(r.stalled_since).replace("T", " ").slice(0, 16) : "",
+    status: "Pending" as const,
+  }));
+}
+
+// Customer payment evidence is written by the submit_payment_proof RPC (see
+// services/checkoutOps.ts); payments has no customer UPDATE policy, so no
+// browser-side proof writer belongs in this file.
 async function verifyPaymentRPC(
   paymentId: string,
   newStatus: "Verified" | "Paid" | "Rejected",
@@ -496,7 +678,7 @@ export async function fetchAdminCouponsFromDB(): Promise<Coupon[]> {
     maxDiscount: c.max_discount != null ? Number(c.max_discount) : undefined,
     usedCount: Number(c.used_count || 0),
     usageLimit: c.usage_limit != null ? Number(c.usage_limit) : 0,
-    perCustomerLimit: 1,
+    perCustomerLimit: Number(c.per_user_limit ?? 0),
     startDate: (c.start_date || "").split("T")[0],
     expiryDate: (c.end_date || "").split("T")[0],
     active: c.active,
@@ -512,6 +694,7 @@ const couponToRow = (c: Partial<Coupon>) => ({
   start_date: c.startDate ? new Date(c.startDate).toISOString() : null,
   end_date: c.expiryDate ? new Date(c.expiryDate).toISOString() : null,
   usage_limit: c.usageLimit && c.usageLimit > 0 ? c.usageLimit : null,
+  per_user_limit: c.perCustomerLimit && c.perCustomerLimit > 0 ? c.perCustomerLimit : 0,
   active: c.active ?? true,
 });
 

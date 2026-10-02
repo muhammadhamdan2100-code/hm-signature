@@ -1,30 +1,51 @@
+import { useEffect, useState } from "react";
 import { Truck, Clock, MapPin, PackageCheck } from "lucide-react";
 import { Link } from "react-router-dom";
-
-const sections = [
-  {
-    icon: Clock,
-    title: "Processing Time",
-    text: "Orders are processed within 1–2 business days. You'll receive a confirmation email as soon as your fragrance is on its way.",
-  },
-  {
-    icon: Truck,
-    title: "Delivery Time",
-    text: "Standard delivery takes 2–4 business days within major cities, and 4–7 business days to other areas across Pakistan.",
-  },
-  {
-    icon: MapPin,
-    title: "Coverage",
-    text: "We currently deliver nationwide across Pakistan. International shipping is coming soon — join our newsletter to be notified.",
-  },
-  {
-    icon: PackageCheck,
-    title: "Shipping Costs",
-    text: "Free shipping on all orders over Rs 6,000. Orders below this threshold incur a flat shipping fee of Rs 300.",
-  },
-];
+import { fetchShippingConfig, DEFAULT_SHIPPING_CONFIG, type ShippingConfig } from "../services/storeConfig";
+import { formatPKR } from "../utils/currency";
 
 export default function ShippingDelivery() {
+  const [shipping, setShipping] = useState<ShippingConfig>(DEFAULT_SHIPPING_CONFIG);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchShippingConfig()
+      .then((config) => {
+        if (mounted) setShipping(config);
+      })
+      .catch(() => {
+        if (mounted) setShipping(DEFAULT_SHIPPING_CONFIG);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const estimatedDays = shipping.estimatedDays.toLowerCase();
+
+  const sections = [
+    {
+      icon: Clock,
+      title: "Processing Time",
+      text: "Orders enter preparation once your payment is confirmed; cash-on-delivery orders begin as soon as the order is placed.",
+    },
+    {
+      icon: Truck,
+      title: "Delivery Time",
+      text: `Standard delivery across Pakistan is estimated at ${estimatedDays}. Remote areas can take longer than the estimate.`,
+    },
+    {
+      icon: MapPin,
+      title: "Coverage",
+      text: "We deliver nationwide across Pakistan. International shipping is not available at this time.",
+    },
+    {
+      icon: PackageCheck,
+      title: "Shipping Costs",
+      text: `Free shipping on orders over ${formatPKR(shipping.freeThreshold)}. Below that threshold, a flat delivery fee of ${formatPKR(shipping.standardCost)} applies.`,
+    },
+  ];
+
   return (
     <div className="pt-24 bg-navy min-h-screen">
       <section className="py-20 border-b border-gold/15 text-center">
@@ -50,8 +71,8 @@ export default function ShippingDelivery() {
 
         <div className="max-w-[900px] mx-auto px-6 lg:px-10 mt-12 text-sm text-muted leading-relaxed border-t border-gold/15 pt-10">
           <p className="mb-4">
-            Once your order ships, you'll receive a tracking link by email and SMS. You can also check your order
-            status any time on our <Link to="/track-order" className="text-goldLight hover:underline">Track Order</Link> page.
+            A tracking reference is assigned when your order is dispatched. You can check your order status any
+            time on our <Link to="/track-order" className="text-goldLight hover:underline">Track Order</Link> page.
           </p>
           <p>
             Please ensure your delivery address and phone number are accurate at checkout — HM Signature is not

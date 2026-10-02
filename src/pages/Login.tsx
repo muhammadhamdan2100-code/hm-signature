@@ -111,6 +111,10 @@ export default function Login() {
 
     if (resetMode) {
       // Completing reset: session already established via the emailed link
+      if (newPassword.length < 6) {
+        setErrorMessage("Please choose a password of at least 6 characters.");
+        return;
+      }
       setResetBusy(true);
       const res = await completePasswordReset(newPassword);
       setResetBusy(false);
@@ -386,6 +390,7 @@ export default function Login() {
                           placeholder="••••••••"
                           className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
                         />
+                        <p className="text-[10px] text-muted mt-1">At least 6 characters.</p>
                       </div>
                     </>
                   ) : (

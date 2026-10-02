@@ -14,6 +14,7 @@ import {
   Printer,
   Send,
   Eye,
+  AlertTriangle,
   CheckCircle,
   XCircle,
   X,
@@ -22,7 +23,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 
 export const OrderDetailPage: React.FC = () => {
-  const { orders, updateOrderStatus, updateOrderShipping, payments, verifyPayment, rejectPayment } = useAdminData();
+  const { orders, updateOrderStatus, updateOrderShipping, payments, verifyPayment, rejectPayment, saveAdminNotes } = useAdminData();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -31,6 +32,10 @@ export const OrderDetailPage: React.FC = () => {
 
   const [courier, setCourier] = useState(order?.courier || "DHL Express Luxury");
   const [trackingNumber, setTrackingNumber] = useState(order?.trackingNumber || "");
+  const [trackingUrl, setTrackingUrl] = useState(order?.trackingUrl || "");
+  const [estimatedDelivery, setEstimatedDelivery] = useState(order?.estimatedDelivery || "");
+  const [adminNotes, setAdminNotes] = useState(order?.adminNotes || "");
+  const [notesBusy, setNotesBusy] = useState(false);
   const [shippingStatus, setShippingStatus] = useState<Order["shippingStatus"]>(
     order?.shippingStatus || "Processing"
   );
@@ -82,6 +87,9 @@ export const OrderDetailPage: React.FC = () => {
     if (!order) return;
     setCourier(order.courier || "DHL Express Luxury");
     setTrackingNumber(order.trackingNumber || "");
+    setTrackingUrl(order.trackingUrl || "");
+    setEstimatedDelivery(order.estimatedDelivery || "");
+    setAdminNotes(order.adminNotes || "");
     setShippingStatus(order.shippingStatus || "Processing");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id]);
@@ -100,9 +108,25 @@ export const OrderDetailPage: React.FC = () => {
     );
   }
 
-  const handleSaveShipping = (e: React.FormEvent) => {
+  const handleSaveShipping = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateOrderShipping(order.id, courier, trackingNumber, shippingStatus);
+    const res = await updateOrderShipping(order.id, courier, trackingNumber, shippingStatus, {
+      trackingUrl: trackingUrl.trim() || undefined,
+      estimatedDelivery: estimatedDelivery || undefined,
+    });
+    if (res.success && res.trackingId) setTrackingNumber(res.trackingId);
+  };
+
+  const handleGenerateTracking = async () => {
+    const res = await updateOrderShipping(order.id, courier, "", shippingStatus, { generate: true });
+    if (res.success && res.trackingId) setTrackingNumber(res.trackingId);
+  };
+
+  const handleSaveAdminNotes = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setNotesBusy(true);
+    await saveAdminNotes(order.id, adminNotes.trim() || "");
+    setNotesBusy(false);
   };
 
   const handleVerify = () => {
@@ -259,60 +283,142 @@ export const OrderDetailPage: React.FC = () => {
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label htmlFor="od-courier" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
                   Courier Carrier
                 </label>
                 <input
+                  id="od-courier"
                   type="text"
                   value={courier}
                   onChange={(e) => setCourier(e.target.value)}
-                  placeholder="DHL Express Luxury"
+                  placeholder="Leopards / TCS / DHL"
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label htmlFor="od-tracking" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
                   Tracking Number
                 </label>
-                <input
-                  type="text"
-                  value={trackingNumber}
-                  onChange={(e) => setTrackingNumber(e.target.value)}
-                  placeholder="DHL-9823411029"
-                  className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
-                />
+                <div className="flex gap-2">
+                  <input
+                    id="od-tracking"
+                    type="text"
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value)}
+                    placeholder="Auto or manual"
+                    className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateTracking}
+                    className="px-3 py-2 shrink-0 bg-navy border border-gold/40 hover:border-gold text-gold rounded text-[10px] uppercase font-bold tracking-wider transition-colors"
+                    title="Generate a unique tracking reference"
+                  >
+                    Generate
+                  </button>
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                <label htmlFor="od-status" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
                   Shipping Status
                 </label>
                 <select
+                  id="od-status"
                   value={shippingStatus}
                   onChange={(e) => setShippingStatus(e.target.value as any)}
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
                 >
-                  <option value="Unfulfilled">Unfulfilled</option>
-                  <option value="Processing">Processing</option>
+                  <option value="Processing">Preparing</option>
                   <option value="In Transit">In Transit</option>
                   <option value="Delivered">Delivered</option>
                   <option value="Returned">Returned</option>
                 </select>
               </div>
+
+              <div>
+                <label htmlFor="od-eta" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                  Estimated Delivery
+                </label>
+                <input
+                  id="od-eta"
+                  type="date"
+                  value={estimatedDelivery ? String(estimatedDelivery).slice(0, 10) : ""}
+                  onChange={(e) => setEstimatedDelivery(e.target.value)}
+                  className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label htmlFor="od-url" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                  Tracking URL
+                </label>
+                <input
+                  id="od-url"
+                  type="url"
+                  value={trackingUrl}
+                  onChange={(e) => setTrackingUrl(e.target.value)}
+                  placeholder="https://courier.example.com/tracking?awb=..."
+                  className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+                />
+                <p className="text-[10px] text-muted font-light mt-1">
+                  Shown to the client on their order and on Track Order.
+                </p>
+              </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <p className="text-[10px] text-muted font-light">
+                Every change is written to the shipment record and the order timeline.
+              </p>
               <button
                 type="submit"
-                className="px-4 py-2 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5"
+                className="px-4 py-2 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5 shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Save Courier Info</span>
               </button>
             </div>
+          </form>
+
+          {/* Internal Notes (staff only — never surfaced on customer routes) */}
+          <form
+            onSubmit={handleSaveAdminNotes}
+            className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-3 shadow-xl"
+          >
+            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+              <AlertTriangle className="w-4 h-4 text-gold" />
+              <h3 className="font-serif text-base font-bold text-ivory">Internal Notes</h3>
+            </div>
+            <label htmlFor="od-notes" className="sr-only">Internal notes</label>
+            <textarea
+              id="od-notes"
+              rows={3}
+              value={adminNotes}
+              onChange={(e) => setAdminNotes(e.target.value)}
+              maxLength={2000}
+              placeholder="Visible to staff only. Never shown to the client."
+              className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted font-mono">{adminNotes.length}/2000</span>
+              <button
+                type="submit"
+                disabled={notesBusy}
+                className="px-4 py-2 bg-navy border border-gold/40 hover:bg-gold hover:text-navy text-gold rounded text-xs uppercase font-bold tracking-wider disabled:opacity-50 transition-colors"
+              >
+                {notesBusy ? "Saving…" : "Save Note"}
+              </button>
+            </div>
+            {order.customerNotes && (
+              <p className="text-[11px] text-muted font-light border-t border-gold/15 pt-3">
+                <span className="text-gold font-mono text-[10px] uppercase block">Client note</span>
+                {order.customerNotes}
+              </p>
+            )}
           </form>
         </div>
 

@@ -1,213 +1,370 @@
-import React, { useState } from "react";
-import { TrendingUp, BarChart2, PieChart } from "lucide-react";
+import React, { useId, useState } from "react";
+import { BarChart2, ChevronDown, TrendingUp } from "lucide-react";
+
+/** One real, server-aggregated datum. Nothing here is generated client side. */
+export interface ChartPoint {
+  label: string;
+  value: number;
+}
 
 interface ChartCardProps {
   title: string;
   subtitle?: string;
-  timeRanges?: string[];
-  onTimeRangeChange?: (range: string) => void;
+  /** Primary series. Empty renders an honest "no rows" panel — never a placeholder. */
+  points?: ChartPoint[];
+  /** Optional second series. Scaled to its own maximum and always labelled. */
+  secondary?: ChartPoint[];
+  /** Formatter for the primary series (e.g. formatPKR for money). */
+  formatter?: (n: number) => string;
+  /** Formatter for the secondary series when its unit differs (e.g. counts). */
+  secondaryFormatter?: (n: number) => string;
+  caption?: string;
+  variant?: "line" | "bar";
+  /** @deprecated Legacy alias of `variant`; kept so older call sites compile. */
   type?: "line" | "bar" | "distribution";
+  primaryLabel?: string;
+  secondaryLabel?: string;
+  /** Column header for the categorical axis of the data table. */
+  axisLabel?: string;
+  emptyMessage?: string;
+}
+
+const VIEW_W = 500;
+const VIEW_H = 160;
+const HEAD_ROOM = 16;
+const MAX_TICKS = 8;
+
+const defaultFormatter = (n: number) => Math.round(n).toLocaleString("en-US");
+
+function scaledHeight(value: number, max: number) {
+  if (!(max > 0) || !Number.isFinite(value) || value <= 0) return 0;
+  const h = (value / max) * (VIEW_H - HEAD_ROOM);
+  return h < 1.5 ? 1.5 : h;
+}
+
+function tickStep(count: number) {
+  return Math.max(1, Math.ceil(count / MAX_TICKS));
+}
+
+function describeSeries(label: string, series: ChartPoint[], fmt: (n: number) => string) {
+  if (series.length === 0) return `${label}: no rows.`;
+  return `${label}: ${series.map((p) => `${p.label} ${fmt(p.value)}`).join("; ")}.`;
 }
 
 export const ChartCard: React.FC<ChartCardProps> = ({
   title,
   subtitle,
-  timeRanges = ["7 days", "30 days", "3 months", "12 months"],
-  onTimeRangeChange,
-  type = "line",
+  points: seriesProp,
+  secondary,
+  formatter = defaultFormatter,
+  secondaryFormatter,
+  caption,
+  variant,
+  type,
+  primaryLabel = "Value",
+  secondaryLabel = "Secondary",
+  axisLabel = "Bucket",
+  emptyMessage = "The aggregation returned no rows for this panel.",
 }) => {
-  const [activeRange, setActiveRange] = useState(timeRanges[1] || "30 days");
+  const uid = `cc-${useId().replace(/[^A-Za-z0-9]/g, "")}`;
+  const [open, setOpen] = useState(false);
 
-  const handleRangeClick = (range: string) => {
-    setActiveRange(range);
-    if (onTimeRangeChange) onTimeRangeChange(range);
-  };
+  const points = seriesProp ?? [];
+  const kind: "line" | "bar" = variant ?? (type === "line" ? "line" : "bar");
+  const sec = secondary ?? [];
+  const hasSecondary = sec.length > 0;
+  const fmtSecondary = secondaryFormatter ?? formatter;
 
-  // Generate realistic data points based on selected range
-  const getPoints = () => {
-    switch (activeRange) {
-      case "7 days":
-        return [
-          { label: "Mon", value: 34000 },
-          { label: "Tue", value: 42000 },
-          { label: "Wed", value: 38000 },
-          { label: "Thu", value: 51000 },
-          { label: "Fri", value: 68000 },
-          { label: "Sat", value: 89000 },
-          { label: "Sun", value: 74000 },
-        ];
-      case "3 months":
-        return [
-          { label: "Jul W1", value: 180000 },
-          { label: "Jul W3", value: 240000 },
-          { label: "Aug W1", value: 310000 },
-          { label: "Aug W3", value: 290000 },
-          { label: "Sep W1", value: 380000 },
-          { label: "Sep W3", value: 440000 },
-        ];
-      case "12 months":
-        return [
-          { label: "Oct", value: 420000 },
-          { label: "Nov", value: 680000 },
-          { label: "Dec", value: 950000 },
-          { label: "Jan", value: 510000 },
-          { label: "Feb", value: 480000 },
-          { label: "Mar", value: 610000 },
-          { label: "Apr", value: 580000 },
-          { label: "May", value: 720000 },
-          { label: "Jun", value: 790000 },
-          { label: "Jul", value: 840000 },
-          { label: "Aug", value: 910000 },
-          { label: "Sep", value: 1120000 },
-        ];
-      default: // 30 days
-        return [
-          { label: "Day 1", value: 12000 },
-          { label: "Day 5", value: 18000 },
-          { label: "Day 10", value: 24000 },
-          { label: "Day 15", value: 31000 },
-          { label: "Day 20", value: 28000 },
-          { label: "Day 25", value: 42000 },
-          { label: "Day 30", value: 49000 },
-        ];
-    }
-  };
+  const primaryMax = points.reduce((m, p) => Math.max(m, p.value), 0);
+  const secondaryMax = sec.reduce((m, p) => Math.max(m, p.value), 0);
+  const primaryTotal = points.reduce((s, p) => s + p.value, 0);
+  const secondaryTotal = sec.reduce((s, p) => s + p.value, 0);
+  const hasSignal = points.some((p) => p.value !== 0) || sec.some((p) => p.value !== 0);
+  const chartVariant: "line" | "bar" = points.length === 1 ? "bar" : kind;
 
-  const points = getPoints();
-  const maxValue = Math.max(...points.map((p) => p.value));
+  const altText = [
+    describeSeries(primaryLabel, points, formatter),
+    hasSecondary ? describeSeries(secondaryLabel, sec, fmtSecondary) : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const band = VIEW_W / Math.max(points.length, 1);
+  const xAt = (i: number) => (points.length <= 1 ? VIEW_W / 2 : (i * VIEW_W) / Math.max(points.length - 1, 1));
+  const yAt = (v: number, max: number) => VIEW_H - scaledHeight(v, max);
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${xAt(i)},${yAt(p.value, primaryMax)}`).join(" ");
+  const areaPath =
+    points.length > 1
+      ? `${linePath} L ${xAt(points.length - 1)},${VIEW_H} L ${xAt(0)},${VIEW_H} Z`
+      : "";
+  const secLinePath = sec.map((p, i) => `${i === 0 ? "M" : "L"} ${xAt(i)},${yAt(p.value, secondaryMax)}`).join(" ");
+  const step = tickStep(points.length);
 
   return (
-    <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 shadow-xl space-y-6">
-      {/* Header & Filter Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-              {title}
-            </h3>
-            <span className="p-1 rounded bg-gold/10 text-gold">
-              {type === "line" && <TrendingUp className="w-4 h-4" />}
-              {type === "bar" && <BarChart2 className="w-4 h-4" />}
-              {type === "distribution" && <PieChart className="w-4 h-4" />}
-            </span>
-          </div>
-          {subtitle && (
-            <p className="text-xs text-muted font-sans font-light mt-0.5">
-              {subtitle}
-            </p>
-          )}
+    <section
+      aria-labelledby={`${uid}-title`}
+      className="bg-navy2/90 border border-gold/20 rounded-lg p-4 sm:p-6 shadow-xl space-y-4 min-w-0"
+    >
+      {/* Header */}
+      <div className="border-b border-gold/15 pb-3">
+        <div className="flex items-center space-x-2 min-w-0">
+          <h3
+            id={`${uid}-title`}
+            className="font-serif text-base sm:text-lg font-bold text-ivory tracking-wide truncate"
+          >
+            {title}
+          </h3>
+          <span className="p-1 rounded bg-gold/10 text-gold shrink-0">
+            {chartVariant === "line" ? (
+              <TrendingUp className="w-4 h-4" />
+            ) : (
+              <BarChart2 className="w-4 h-4" />
+            )}
+          </span>
         </div>
-
-        {/* Time Tabs */}
-        <div className="flex items-center space-x-1 bg-navy/80 p-1 rounded border border-gold/20 self-start sm:self-auto">
-          {timeRanges.map((range) => (
-            <button
-              key={range}
-              onClick={() => handleRangeClick(range)}
-              className={`px-3 py-1 rounded text-[11px] font-sans transition-all ${
-                activeRange === range
-                  ? "bg-gold text-navy font-semibold shadow"
-                  : "text-muted hover:text-ivory"
-              }`}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
+        {subtitle && (
+          <p className="text-xs text-muted font-sans font-light mt-0.5">{subtitle}</p>
+        )}
       </div>
 
-      {/* Chart Visualizer */}
-      {type === "line" && (
-        <div className="pt-2">
-          {/* SVG Line Chart */}
-          <div className="h-56 w-full relative flex items-end pt-4 pb-6">
-            <svg className="w-full h-full overflow-visible" viewBox="0 0 500 150">
-              <defs>
-                <linearGradient id="goldGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#C8A96B" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="#C8A96B" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
+      {/* Derived summary + legend (computed from the series, never hardcoded) */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-mono uppercase tracking-[1.5px] text-muted">
+        <span>
+          {primaryLabel}{" "}
+          <span className="text-gold num-lining normal-case tracking-normal">{formatter(primaryTotal)}</span>
+          <span className="text-muted/70 normal-case tracking-normal"> total · peak </span>
+          <span className="text-gold num-lining normal-case tracking-normal">{formatter(primaryMax)}</span>
+        </span>
+        {hasSecondary && (
+          <span>
+            {secondaryLabel}{" "}
+            <span className="text-ivory num-lining normal-case tracking-normal">{fmtSecondary(secondaryTotal)}</span>
+            <span className="text-muted/70 normal-case tracking-normal"> total · peak </span>
+            <span className="text-ivory num-lining normal-case tracking-normal">{fmtSecondary(secondaryMax)}</span>
+          </span>
+        )}
+        <span className="num-lining normal-case tracking-normal">{points.length} points</span>
+        {hasSecondary && (
+          <span className="flex items-center gap-3 normal-case tracking-normal font-sans">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-2 rounded-sm bg-gold" aria-hidden="true" />
+              {primaryLabel}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-2 rounded-sm bg-ivory/40" aria-hidden="true" />
+              {secondaryLabel}
+            </span>
+          </span>
+        )}
+      </div>
 
-              {/* Grid Lines */}
-              <line x1="0" y1="0" x2="500" y2="0" stroke="rgba(200,169,107,0.1)" strokeDasharray="4" />
-              <line x1="0" y1="50" x2="500" y2="50" stroke="rgba(200,169,107,0.1)" strokeDasharray="4" />
-              <line x1="0" y1="100" x2="500" y2="100" stroke="rgba(200,169,107,0.1)" strokeDasharray="4" />
-              <line x1="0" y1="150" x2="500" y2="150" stroke="rgba(200,169,107,0.1)" />
+      {/* Visual */}
+      {points.length === 0 || !hasSignal ? (
+        <div className="h-28 sm:h-32 flex items-center justify-center border border-dashed border-gold/20 rounded bg-navy/40 px-4 text-center">
+          <p className="text-xs text-muted font-light">
+            {points.length === 0
+              ? emptyMessage
+              : `${points.length} ${points.length === 1 ? "row" : "rows"} returned, every value is zero.`}
+          </p>
+        </div>
+      ) : (
+        <div className="min-w-0">
+          <svg
+            viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+            preserveAspectRatio="none"
+            className="w-full h-36 sm:h-44 overflow-visible"
+            role="img"
+            aria-labelledby={`${uid}-svg-title ${uid}-svg-desc`}
+          >
+            <title id={`${uid}-svg-title`}>{`${title} — ${primaryLabel}`}</title>
+            <desc id={`${uid}-svg-desc`}>{altText}</desc>
+            <defs>
+              <linearGradient id={`${uid}-fill`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#E0C27A" stopOpacity="0.85" />
+                <stop offset="100%" stopColor="#C8A96B" stopOpacity="0.3" />
+              </linearGradient>
+            </defs>
 
-              {/* Area & Line */}
-              {(() => {
-                const stepX = 500 / (points.length - 1);
-                const coords = points.map((p, i) => {
-                  const x = i * stepX;
-                  const y = 140 - (p.value / maxValue) * 120;
-                  return { x, y };
-                });
+            {/* Grid */}
+            {[0.25, 0.5, 0.75, 1].map((f) => (
+              <line
+                key={f}
+                x1="0"
+                x2={VIEW_W}
+                y1={VIEW_H - f * (VIEW_H - HEAD_ROOM)}
+                y2={VIEW_H - f * (VIEW_H - HEAD_ROOM)}
+                stroke="rgba(200,169,107,0.12)"
+                strokeDasharray="4 4"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+            <line
+              x1="0"
+              x2={VIEW_W}
+              y1={VIEW_H}
+              y2={VIEW_H}
+              stroke="rgba(200,169,107,0.35)"
+              vectorEffect="non-scaling-stroke"
+            />
 
-                const dPath = coords.reduce((acc, pt, i) => {
-                  return i === 0 ? `M ${pt.x},${pt.y}` : `${acc} L ${pt.x},${pt.y}`;
-                }, "");
+            {chartVariant === "line" ? (
+              <>
+                {hasSecondary && secondaryMax > 0 && (
+                  <path
+                    d={secLinePath}
+                    fill="none"
+                    stroke="rgba(246,241,231,0.55)"
+                    strokeWidth="2"
+                    strokeDasharray="5 4"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+                {areaPath && <path d={areaPath} fill={`url(#${uid}-fill)`} opacity="0.45" />}
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="#C8A96B"
+                  strokeWidth="2.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
+            ) : (
+              <>
+                {hasSecondary &&
+                  sec.map((p, i) => {
+                    const h = scaledHeight(p.value, secondaryMax);
+                    if (h === 0) return null;
+                    return (
+                      <rect
+                        key={`s-${i}`}
+                        x={i * band + band * 0.5}
+                        y={VIEW_H - h}
+                        width={band * 0.36}
+                        height={h}
+                        fill="rgba(246,241,231,0.28)"
+                      >
+                        <title>{`${p.label} — ${secondaryLabel}: ${fmtSecondary(p.value)}`}</title>
+                      </rect>
+                    );
+                  })}
+                {points.map((p, i) => {
+                  const h = scaledHeight(p.value, primaryMax);
+                  if (h === 0) return null;
+                  return (
+                    <rect
+                      key={`p-${i}`}
+                      x={i * band + band * 0.12}
+                      y={VIEW_H - h}
+                      width={band * 0.36}
+                      height={h}
+                      fill={`url(#${uid}-fill)`}
+                    >
+                      <title>{`${p.label} — ${primaryLabel}: ${formatter(p.value)}`}</title>
+                    </rect>
+                  );
+                })}
+              </>
+            )}
 
-                const areaPath = `${dPath} L 500,150 L 0,150 Z`;
+            {/* Hover / hit targets with per-point text alternatives */}
+            {points.map((p, i) => {
+              const secPoint = sec[i];
+              return (
+                <rect
+                  key={`hit-${i}`}
+                  x={i * band}
+                  y="0"
+                  width={band}
+                  height={VIEW_H}
+                  fill="transparent"
+                >
+                  <title>
+                    {`${p.label}: ${primaryLabel} ${formatter(p.value)}${
+                      secPoint ? ` · ${secondaryLabel} ${fmtSecondary(secPoint.value)}` : ""
+                    }`}
+                  </title>
+                </rect>
+              );
+            })}
+          </svg>
 
-                return (
-                  <>
-                    <path d={areaPath} fill="url(#goldGradient)" />
-                    <path d={dPath} fill="none" stroke="#C8A96B" strokeWidth="3" />
-                    {coords.map((pt, i) => (
-                      <g key={i} className="group cursor-pointer">
-                        <circle
-                          cx={pt.x}
-                          cy={pt.y}
-                          r="4"
-                          fill="#08111C"
-                          stroke="#E0C27A"
-                          strokeWidth="2"
-                        />
-                        <title>{`${points[i].label}: Rs. ${points[i].value.toLocaleString()}`}</title>
-                      </g>
-                    ))}
-                  </>
-                );
-              })()}
-            </svg>
-          </div>
-
-          {/* Labels */}
-          <div className="flex justify-between border-t border-gold/10 pt-3 text-[11px] text-muted font-mono num-lining">
-            {points.map((p, idx) => (
-              <span key={idx}>{p.label}</span>
+          {/* Axis labels (thinned so they never overflow narrow screens) */}
+          <div className="flex border-t border-gold/10 pt-2 mt-1 text-[9px] sm:text-[10px] text-muted font-mono num-lining">
+            {points.map((p, i) => (
+              <span
+                key={`${p.label}-${i}`}
+                className={`flex-1 min-w-0 text-center truncate ${i % step === 0 || i === points.length - 1 ? "" : "invisible"}`}
+                title={p.label}
+              >
+                {p.label}
+              </span>
             ))}
           </div>
         </div>
       )}
 
-      {type === "bar" && (
-        <div className="pt-2 space-y-4">
-          <div className="h-56 flex items-end justify-between gap-3 pt-6 pb-2">
-            {points.map((p, idx) => {
-              const heightPct = Math.round((p.value / maxValue) * 100);
+      {/* Caption + accessible data table toggle */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        {caption && <p className="text-[10px] text-muted font-light sm:max-w-[70%]">{caption}</p>}
+        {points.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-controls={`${uid}-table`}
+            className="self-start sm:self-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gold/25 text-[10px] font-mono uppercase tracking-[1.5px] text-muted hover:text-ivory hover:border-gold/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold focus-visible:text-ivory transition-colors"
+          >
+            <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
+            {open ? "Hide data" : "Show data"}
+          </button>
+        )}
+      </div>
 
-              return (
-                <div key={idx} className="flex-1 flex flex-col items-center group">
-                  <div className="text-[10px] text-gold font-mono mb-2 opacity-0 group-hover:opacity-100 transition-opacity num-lining">
-                    Rs.{(p.value / 1000).toFixed(0)}k
-                  </div>
-                  <div className="w-full bg-navy border border-gold/20 rounded-t h-full flex items-end p-1">
-                    <div
-                      style={{ height: `${heightPct}%` }}
-                      className="w-full bg-gradient-to-t from-gold/40 to-gold rounded-t transition-all duration-500 group-hover:from-gold group-hover:to-goldLight"
-                    />
-                  </div>
-                  <span className="text-[11px] text-muted font-mono mt-3 num-lining">
-                    {p.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+      {open && (
+        <div
+          id={`${uid}-table`}
+          className="overflow-x-auto border border-gold/20 rounded-lg bg-navy/40 max-h-72"
+        >
+          <table className="w-full min-w-[240px] text-left text-xs font-sans">
+            <caption className="sr-only">{`${title}, presented as a table.`}</caption>
+            <thead className="bg-navy text-gold uppercase tracking-[1.5px] text-[10px] border-b border-gold/15">
+              <tr>
+                <th scope="col" className="px-3 py-2.5 whitespace-nowrap">
+                  {axisLabel}
+                </th>
+                <th scope="col" className="px-3 py-2.5 text-right whitespace-nowrap">
+                  {primaryLabel}
+                </th>
+                {hasSecondary && (
+                  <th scope="col" className="px-3 py-2.5 text-right whitespace-nowrap">
+                    {secondaryLabel}
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gold/10 text-ivory num-lining">
+              {points.map((p, i) => {
+                const secPoint = sec[i];
+                return (
+                  <tr key={`${p.label}-${i}`} className="hover:bg-navy/60 transition-colors">
+                    <th scope="row" className="px-3 py-2.5 font-sans font-normal text-left">
+                      {p.label}
+                    </th>
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-gold">
+                      {formatter(p.value)}
+                    </td>
+                    {hasSecondary && (
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono">
+                        {secPoint ? fmtSecondary(secPoint.value) : "—"}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
-    </div>
+    </section>
   );
 };

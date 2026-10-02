@@ -26,7 +26,6 @@ import {
   fetchAdminShippingMethodsFromDB,
   updateOrderStatusInDB,
   updateOrderShippingInDB,
-  uploadPaymentProofInDB,
   verifyPaymentInDB,
   rejectPaymentInDB,
   markCodCollectedInDB,
@@ -37,6 +36,13 @@ import {
   saveShippingMethodToDB,
   fetchRefundsFromDB,
   recordRefundInDB,
+  fetchAdminCustomerAggregatesFromDB,
+  fetchAbandonedCartsAggFromDB,
+  fetchAnalyticsFromDB,
+  fetchInventoryPositionFromDB,
+  updateOrderNotesInDB,
+  type AnalyticsSnapshot,
+  type InventoryPositionRow,
   type RefundRecord,
 } from "../../services/adminOps";
 import {
@@ -53,13 +59,14 @@ import {
   fetchCampaignsFromDB,
   saveCampaignToDB,
   deleteCampaignFromDB,
-  fetchAbandonedCartsFromDB,
   markCartReminderSentInDB,
   fetchStaffMembersFromDB,
 } from "../../services/adminContent";
 
 export type { StaffMember, ProductVariant };
 export { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin };
+
+const fmtOrderStamp = (iso: string) => String(iso).replace("T", " ").slice(0, 16);
 
 // --- TYPES ---
 export interface AdminProduct {
@@ -82,8 +89,15 @@ export interface AdminProduct {
   baseNotes: string[];
   description: string;
   fullDescription: string;
+  shortDescription?: string;
+  fragranceFamily?: string;
+  occasions?: string[];
+  seasons?: string[];
+  intensity?: "Light" | "Moderate" | "Strong" | "Enormous";
+  scentProfile?: string;
   images: string[];
   photos: string[];
+  photoAlts?: string[];
   featured: boolean;
   bestseller: boolean;
   newArrival: boolean;
@@ -195,6 +209,12 @@ export interface Order {
   paymentProofNote?: string;
   courier?: string;
   trackingNumber?: string;
+  trackingUrl?: string;
+  estimatedDelivery?: string;
+  adminNotes?: string;
+  customerNotes?: string;
+  isGiftWrap?: boolean;
+  giftMessage?: string;
   timeline: OrderTimelineItem[];
   createdAt: string;
 }
@@ -1202,8 +1222,8 @@ interface AdminDataContextType {
   toasts: ToastMessage[];
 
   // Actions
-  addProduct: (product: Omit<AdminProduct, "id" | "createdAt">) => void;
-  updateProduct: (id: string, updates: Partial<AdminProduct>) => void;
+  addProduct: (product: Omit<AdminProduct, "id" | "createdAt">) => Promise<boolean>;
+  updateProduct: (id: string, updates: Partial<AdminProduct>) => Promise<boolean>;
   deleteProduct: (id: string) => void;
   bulkDeleteProducts: (ids: string[]) => void;
   bulkToggleProductStatus: (ids: string[], active: boolean) => void;
@@ -1221,11 +1241,21 @@ interface AdminDataContextType {
   generateOrderNumber: () => string;
   generateTrackingId: () => string;
   updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => void;
-  updateOrderShipping: (orderId: string, courier: string, trackingNumber: string, shippingStatus: Order["shippingStatus"]) => void;
-  uploadPaymentProof: (orderId: string, proofUrl: string, note?: string) => void;
-
+  updateOrderShipping: (
+    orderId: string,
+    courier: string,
+    trackingNumber: string,
+    shippingStatus: Order["shippingStatus"],
+    extras?: { trackingUrl?: string; estimatedDelivery?: string; generate?: boolean }
+  ) => Promise<{ success: boolean; trackingId?: string }>;
+  saveAdminNotes: (orderId: string, adminNotes: string) => Promise<boolean>;
+  analytics: AnalyticsSnapshot | null;
+  refreshAnalytics: (days?: number) => Promise<AnalyticsSnapshot | null>;
+  inventoryPosition: InventoryPositionRow[];
+  refreshInventoryPosition: () => Promise<InventoryPositionRow[]>;
   // Payments Management
-  updatePaymentStatus: (paymentId: string, status: PaymentStatus, note?: string) => void;
+  // A payment status only changes through the staff-authorized verify_payment
+  // RPC, so there is no generic browser-side status writer here any more.
   verifyPayment: (paymentId: string, note?: string) => void;
   rejectPayment: (paymentId: string, reason?: string) => void;
   markCodCollected: (paymentId: string) => void;
@@ -1277,26 +1307,32 @@ interface AdminDataContextType {
 const AdminDataContext = createContext<AdminDataContextType | undefined>(undefined);
 
 export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<AdminProduct[]>(initialProducts);
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
-  const [collections, setCollections] = useState<Collection[]>(initialCollections);
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
-  const [payments, setPayments] = useState<PaymentRecord[]>(initialPayments);
+  // When Supabase is connected, demo/seed rows must not masquerade as store
+  // data: every business collection starts empty and is filled from the DB.
+  const seed = <T,>(fallback: T[]): T[] => (isSupabaseConfigured() ? [] : fallback);
+
+  const [products, setProducts] = useState<AdminProduct[]>(seed(initialProducts));
+  const [categories, setCategories] = useState<Category[]>(seed(initialCategories));
+  const [collections, setCollections] = useState<Collection[]>(seed(initialCollections));
+  const [orders, setOrders] = useState<Order[]>(seed(initialOrders));
+  const [payments, setPayments] = useState<PaymentRecord[]>(seed(initialPayments));
   const [refunds, setRefunds] = useState<RefundRecord[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
-  const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>(initialInventoryLogs);
-  const [coupons, setCoupons] = useState<Coupon[]>(initialCoupons);
-  const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>(initialShippingMethods);
-  const [reviews, setReviews] = useState<ReviewItem[]>(initialReviews);
+  const [analytics, setAnalytics] = useState<AnalyticsSnapshot | null>(null);
+  const [inventoryPosition, setInventoryPosition] = useState<InventoryPositionRow[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(seed(initialCustomers));
+  const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>(seed(initialInventoryLogs));
+  const [coupons, setCoupons] = useState<Coupon[]>(seed(initialCoupons));
+  const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>(seed(initialShippingMethods));
+  const [reviews, setReviews] = useState<ReviewItem[]>(seed(initialReviews));
   const [homepageConfig, setHomepageConfig] = useState<HomepageConfig>(initialHomepageConfig);
   const [homepageConfigPersisted, setHomepageConfigPersisted] = useState(false);
-  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
-  const [notifications, setNotifications] = useState<SystemNotification[]>(initialSystemNotifications);
-  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(initialEmailTemplates);
-  const [abandonedCarts, setAbandonedCarts] = useState<AbandonedCart[]>(initialAbandonedCarts);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(initialStaff);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(seed(initialCampaigns));
+  const [notifications, setNotifications] = useState<SystemNotification[]>(seed(initialSystemNotifications));
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(seed(initialEmailTemplates));
+  const [abandonedCarts, setAbandonedCarts] = useState<AbandonedCart[]>(seed(initialAbandonedCarts));
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(seed(initialStaff));
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(initialStoreSettings);
-  const [seoEntries, setSeoEntries] = useState<SeoEntry[]>(initialSeoEntries);
+  const [seoEntries, setSeoEntries] = useState<SeoEntry[]>(seed(initialSeoEntries));
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const showToast = (type: ToastMessage["type"], message: string) => {
@@ -1332,7 +1368,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (dbLogs.length > 0) setInventoryLogs(dbLogs);
         }
 
-        const [dbOrders, dbPayments, dbCustomers, dbReviews, dbCoupons, dbShipping, dbRefunds] = await Promise.all([
+        const [dbOrders, dbPayments, dbCustomers, dbReviews, dbCoupons, dbShipping, dbRefunds, dbAggregates] = await Promise.all([
           fetchAdminOrdersFromDB(),
           fetchAdminPaymentsFromDB(),
           fetchAdminCustomersFromDB(),
@@ -1340,13 +1376,29 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           fetchAdminCouponsFromDB(),
           fetchAdminShippingMethodsFromDB(),
           fetchRefundsFromDB(),
+          fetchAdminCustomerAggregatesFromDB(),
         ]);
 
         if (isMounted) {
           setOrders(dbOrders);
           setPayments(dbPayments);
           setRefunds(dbRefunds);
-          if (dbCustomers.length > 0) setCustomers(dbCustomers);
+          // Server aggregates are authoritative for order counts and spend.
+          if (dbCustomers.length > 0 || dbAggregates.length > 0) {
+            const byId = new Map(dbAggregates.map((a) => [a.id, a]));
+            const merged = dbCustomers.map((c) => {
+              const agg = byId.get(c.id);
+              if (!agg) return c;
+              return {
+                ...c,
+                ordersCount: agg.ordersCount,
+                totalSpent: agg.totalSpent,
+                lastOrderDate: agg.lastOrderDate ? fmtOrderStamp(agg.lastOrderDate) : c.lastOrderDate,
+                status: agg.segment === "VIP" ? "VIP" : c.status,
+              } as Customer;
+            });
+            setCustomers(merged);
+          }
           if (dbReviews.length > 0) setReviews(dbReviews);
           if (dbCoupons.length > 0) setCoupons(dbCoupons);
           if (dbShipping.length > 0) setShippingMethods(dbShipping);
@@ -1359,7 +1411,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           fetchNotificationsFromDB(),
           fetchEmailTemplatesFromDB(),
           fetchCampaignsFromDB(),
-          fetchAbandonedCartsFromDB(),
+          fetchAbandonedCartsAggFromDB(),
           fetchStaffMembersFromDB(),
         ]);
 
@@ -1373,7 +1425,8 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (dbNotifs.length > 0) setNotifications(dbNotifs);
           if (dbTemplates.length > 0) setEmailTemplates(dbTemplates);
           if (dbCampaigns.length > 0) setCampaigns(dbCampaigns);
-          if (dbCarts.length > 0) setAbandonedCarts(dbCarts);
+          // Derived from real synced bags — never fall back to demo carts.
+          setAbandonedCarts(dbCarts);
           if (dbStaff.length > 0) setStaffMembers(dbStaff);
         }
       } catch (err) {
@@ -1406,12 +1459,12 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     setRefunds(dbRefunds);
   };
 
-  // Products
-  const addProduct = async (prodData: Omit<AdminProduct, "id" | "createdAt">) => {
+  // Products — resolve to a boolean so the editor only navigates away on success.
+  const addProduct = async (prodData: Omit<AdminProduct, "id" | "createdAt">): Promise<boolean> => {
     const success = await saveProductToDB(prodData);
     if (!success) {
       showToast("error", `Product "${prodData.name}" could not be saved. Check the size, SKU and price values.`);
-      return;
+      return false;
     }
     if (isSupabaseConfigured()) {
       const refreshed = await fetchAdminProductsFromDB();
@@ -1425,16 +1478,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       setProducts((prev) => [newProd, ...prev]);
     }
     showToast("success", `Product "${prodData.name}" saved.`);
+    return true;
   };
 
-  const updateProduct = async (id: string, updates: Partial<AdminProduct>) => {
+  const updateProduct = async (id: string, updates: Partial<AdminProduct>): Promise<boolean> => {
     const existing = products.find((p) => p.id === id);
     if (existing) {
       const merged = { ...existing, ...updates };
       const success = await saveProductToDB(merged);
       if (!success) {
         showToast("error", "Product could not be saved. Check the size, SKU and price values.");
-        return;
+        return false;
       }
     }
     if (isSupabaseConfigured()) {
@@ -1445,18 +1499,23 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
       );
     }
-    showToast("success", "Product updated successfully.");
+    showToast("success", `${existing?.name || "Product"} updated.`);
+    return true;
   };
 
   const deleteProduct = async (id: string) => {
-    await deleteProductSafeFromDB(id);
+    const removed = await deleteProductSafeFromDB(id);
+    if (!removed) {
+      showToast("error", "The fragrance could not be removed or archived. Please try again.");
+      return;
+    }
     if (isSupabaseConfigured()) {
       const refreshed = await fetchAdminProductsFromDB();
       setProducts(refreshed);
     } else {
       setProducts((prev) => prev.filter((p) => p.id !== id));
     }
-    showToast("info", "Product updated / archived.");
+    showToast("success", "Fragrance removed or archived (archived when it has order or stock history).");
   };
 
   const bulkDeleteProducts = async (ids: string[]) => {
@@ -1669,94 +1728,60 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     orderId: string,
     courier: string,
     trackingNumber: string,
-    shippingStatus: Order["shippingStatus"]
+    shippingStatus: Order["shippingStatus"],
+    extras?: { trackingUrl?: string; estimatedDelivery?: string; generate?: boolean }
   ) => {
     if (isSupabaseConfigured() && isRealDbId(orderId)) {
-      const ok = await updateOrderShippingInDB(orderId, courier, trackingNumber, shippingStatus);
-      if (!ok) {
-        showToast("error", "Failed to save tracking information.");
-        return;
+      const res = await updateOrderShippingInDB(orderId, courier, trackingNumber, shippingStatus, extras);
+      if (!res.success) {
+        showToast("error", res.error || "Tracking information could not be saved.");
+        return { success: false };
       }
       await refreshOrdersAndPayments();
-      showToast("success", `Tracking info updated for order.`);
-      return;
+      showToast("success", res.trackingId ? `Tracking saved — ${res.trackingId}.` : "Tracking information saved.");
+      return { success: true, trackingId: res.trackingId };
     }
     setOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
-          ? { ...o, courier, trackingNumber, shippingStatus }
+          ? {
+              ...o,
+              courier,
+              trackingNumber: extras?.generate ? `HM-${Math.random().toString(36).slice(2, 10).toUpperCase()}` : trackingNumber,
+              shippingStatus,
+            }
           : o
       )
     );
-    showToast("success", `Tracking info updated for order.`);
+    showToast("success", "Tracking information saved.");
+    return { success: true };
   };
 
-  const uploadPaymentProof = async (orderId: string, proofUrl: string, note?: string) => {
+  const saveAdminNotes = async (orderId: string, adminNotes: string) => {
     if (isSupabaseConfigured() && isRealDbId(orderId)) {
-      const ok = await uploadPaymentProofInDB(orderId, proofUrl, note);
-      if (!ok) {
-        showToast("error", "Failed to attach payment proof. Please try again.");
-        return;
-      }
-      await refreshOrdersAndPayments();
-      showToast("success", "Payment proof uploaded successfully. Verification is pending approval.");
-      return;
+      const ok = await updateOrderNotesInDB(orderId, { adminNotes });
+      showToast(ok ? "success" : "error", ok ? "Internal note saved." : "Internal note could not be saved.");
+      if (ok) await refreshOrdersAndPayments();
+      return ok;
     }
-    const timeString = new Date().toISOString().replace("T", " ").slice(0, 16);
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id === orderId) {
-          return {
-            ...o,
-            paymentStatus: "Verification Pending" as PaymentStatus,
-            paymentProofUrl: proofUrl,
-            paymentProofNote: note || "Payment receipt screenshot attached by customer",
-            timeline: [
-              ...o.timeline,
-              { status: o.status, date: timeString, note: "Payment proof uploaded — verification pending" },
-            ],
-          };
-        }
-        return o;
-      })
-    );
-    setPayments((prev) =>
-      prev.map((p) => {
-        if (p.orderId === orderId) {
-          return {
-            ...p,
-            status: "Verification Pending" as PaymentStatus,
-            proofNote: note || "Payment receipt screenshot attached by customer",
-            referenceId: proofUrl ? "PROOF-ATTACHED" : p.referenceId,
-          };
-        }
-        return p;
-      })
-    );
-    showToast("success", "Payment proof uploaded successfully. Verification is pending approval.");
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, adminNotes } : o)));
+    showToast("success", "Internal note saved.");
+    return true;
+  };
+
+  const refreshAnalytics = async (days = 90) => {
+    const snapshot = await fetchAnalyticsFromDB(days);
+    if (snapshot) setAnalytics(snapshot);
+    return snapshot;
+  };
+
+  const refreshInventoryPosition = async () => {
+    const rows = await fetchInventoryPositionFromDB();
+    setInventoryPosition(rows);
+    return rows;
   };
 
   // Payments Management
-  const updatePaymentStatus = async (paymentId: string, status: PaymentStatus, note?: string) => {
-    if (isSupabaseConfigured() && isRealDbId(paymentId)) {
-      const { error } = await supabase
-        .from("payments")
-        .update({ status, proof_note: note, updated_at: new Date().toISOString() })
-        .eq("id", paymentId);
-      if (error) {
-        showToast("error", "Failed to update payment status.");
-        return;
-      }
-      await refreshOrdersAndPayments();
-      showToast("success", `Payment record status changed to ${status}.`);
-      return;
-    }
-    setPayments((prev) =>
-      prev.map((p) => (p.id === paymentId ? { ...p, status, proofNote: note || p.proofNote } : p))
-    );
-    showToast("success", `Payment record status changed to ${status}.`);
-  };
-
   const verifyPayment = async (paymentId: string, note?: string) => {
     if (isSupabaseConfigured() && isRealDbId(paymentId)) {
       const ok = await verifyPaymentInDB(paymentId, note);
@@ -2074,9 +2099,9 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         showToast("error", "Failed to record reminder.");
         return;
       }
-      const dbCarts = await fetchAbandonedCartsFromDB();
+      const dbCarts = await fetchAbandonedCartsAggFromDB();
       setAbandonedCarts(dbCarts);
-      showToast("success", `Recovery reminder recorded with note: "${customNote.slice(0, 30)}..."`);
+      showToast("success", "Recovery reminder recorded for this client.");
       return;
     }
     setAbandonedCarts((prev) =>
@@ -2236,8 +2261,11 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         generateTrackingId,
         updateOrderStatus,
         updateOrderShipping,
-        uploadPaymentProof,
-        updatePaymentStatus,
+        saveAdminNotes,
+        analytics,
+        refreshAnalytics,
+        inventoryPosition,
+        refreshInventoryPosition,
         verifyPayment,
         rejectPayment,
         markCodCollected,

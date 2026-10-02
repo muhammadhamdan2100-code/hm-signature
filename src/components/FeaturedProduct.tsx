@@ -2,27 +2,36 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { products as fallbackProducts, type Product } from "../data/products";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { getCatalogProducts } from "../services/catalog";
 import Bottle from "./Bottle";
 import Pedestal from "./Pedestal";
 
 export default function FeaturedProduct() {
-  const [featured, setFeatured] = useState<Product>(
-    () => fallbackProducts.find((p) => p.bestseller) || fallbackProducts[0]
+  // The demo catalogue is only a stand-in while Supabase is unconfigured; a live
+  // store never features a fragrance the database did not return.
+  const [featured, setFeatured] = useState<Product | null>(() =>
+    isSupabaseConfigured()
+      ? null
+      : fallbackProducts.find((p) => p.bestseller) || fallbackProducts[0]
   );
 
   useEffect(() => {
+    if (!isSupabaseConfigured()) return;
     let mounted = true;
-    getCatalogProducts().then((prods) => {
-      if (mounted && prods && prods.length > 0) {
-        const best = prods.find((p) => p.bestseller) || prods[0];
-        setFeatured(best);
-      }
-    });
+    getCatalogProducts()
+      .then((prods) => {
+        if (mounted && prods && prods.length > 0) {
+          setFeatured(prods.find((p) => p.bestseller) || prods[0]);
+        }
+      })
+      .catch(() => setFeatured(null));
     return () => {
       mounted = false;
     };
   }, []);
+
+  if (!featured) return null;
 
   return (
     <section

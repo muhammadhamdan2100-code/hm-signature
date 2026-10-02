@@ -1,6 +1,11 @@
 -- ====================================================================
--- HM SIGNATURE LUXURY FRAGRANCE - COMPLETE SUPABASE BACKEND SCHEMA
+-- HM SIGNATURE LUXURY FRAGRANCE - BACKEND SCHEMA SNAPSHOT
 -- Date: 2026-09-30
+--
+-- HISTORICAL REFERENCE ONLY. supabase/migrations/ is the source of truth and is
+-- applied to the linked project in order; this snapshot predates the October
+-- hardening passes (order operations, tracking, analytics, inventory ledger,
+-- privileges) and is never executed by the CLI or the application.
 -- ====================================================================
 
 -- 1. EXTENSIONS

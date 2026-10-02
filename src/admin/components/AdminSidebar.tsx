@@ -100,6 +100,20 @@ export const NAV_GROUPS: NavGroup[] = [
 
 export const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
+/**
+ * Resolves the single nav path that owns the current URL. Child routes such as
+ * /admin/payments/refunds win over their parent (/admin/payments) through the
+ * longest matching prefix, so only one item is ever highlighted.
+ */
+const resolveActivePath = (pathname: string, candidates: string[]): string | null => {
+  let best: string | null = null;
+  for (const path of candidates) {
+    const matches = pathname === path || pathname.startsWith(`${path}/`);
+    if (matches && (best === null || path.length > best.length)) best = path;
+  }
+  return best;
+};
+
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   collapsed,
   onToggleCollapse,
@@ -128,6 +142,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     });
     return { ...group, items: allowedItems };
   }).filter((group) => group.items.length > 0);
+
+  const visiblePaths = filteredNavGroups.flatMap((group) =>
+    group.items.map((item) => item.path)
+  );
+  const activePath = resolveActivePath(location.pathname, visiblePaths);
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-navy2/95 backdrop-blur-md text-ivory border-r border-gold/20 select-none">
@@ -174,20 +193,19 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             )}
             {group.items.map((item) => {
               const Icon = item.icon;
-              const isActive = location.pathname.startsWith(item.path);
+              const isActive = activePath === item.path;
 
               return (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   onClick={() => onCloseMobile()}
-                  className={({ isActive: active }) =>
-                    `flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-sans transition-all duration-200 group relative ${
-                      active || isActive
-                        ? "bg-navy text-gold font-semibold border border-gold/30 shadow-md"
-                        : "text-muted hover:text-ivory hover:bg-navy/50"
-                    }`
-                  }
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-sans transition-all duration-200 group relative ${
+                    isActive
+                      ? "bg-navy text-gold font-semibold border border-gold/30 shadow-md"
+                      : "text-muted hover:text-ivory hover:bg-navy/50"
+                  }`}
                   title={collapsed ? item.label : undefined}
                 >
                   <Icon className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />

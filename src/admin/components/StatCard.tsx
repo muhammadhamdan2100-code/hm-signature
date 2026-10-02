@@ -22,17 +22,14 @@ export const StatCard: React.FC<StatCardProps> = ({
   accent = false,
   onClick,
 }) => {
-  return (
-    <div
-      onClick={onClick}
-      className={`relative p-5 rounded-lg border transition-all duration-300 h-full flex flex-col justify-between ${
-        onClick ? "cursor-pointer hover:border-gold/60 hover:shadow-lg" : ""
-      } ${
-        accent
-          ? "bg-gradient-to-br from-navy2 to-burgundy/40 border-gold/40 backdrop-blur-md"
-          : "bg-navy2/80 backdrop-blur-md border-gold/20"
-      }`}
-    >
+  const cardClass = `relative p-5 rounded-lg border transition-all duration-300 h-full flex flex-col justify-between ${
+    accent
+      ? "bg-gradient-to-br from-navy2 to-burgundy/40 border-gold/40 backdrop-blur-md"
+      : "bg-navy2/80 backdrop-blur-md border-gold/20"
+  }`;
+
+  const content = (
+    <>
       <div>
         <div className="flex items-start justify-between">
           <span className="text-[11px] font-sans uppercase tracking-[2px] text-gold font-medium pr-8 leading-snug">
@@ -69,6 +66,20 @@ export const StatCard: React.FC<StatCardProps> = ({
           {subtitle}
         </p>
       )}
-    </div>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${cardClass} w-full text-left cursor-pointer hover:border-gold/60 hover:shadow-lg focus:outline-none focus-visible:ring-1 focus-visible:ring-gold`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={cardClass}>{content}</div>;
 };

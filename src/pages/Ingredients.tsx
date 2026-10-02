@@ -6,27 +6,27 @@ const principles = [
   {
     icon: Globe2,
     title: "Sourced Globally",
-    text: "Our raw materials are sourced from renowned growing regions — Bulgarian rose fields, Indian sandalwood forests, and Cambodian oud plantations — chosen for the character only that terroir can produce.",
+    text: "Our raw materials come from established suppliers across several growing regions — rose, sandalwood and oud among them — chosen for the character those origins give them.",
   },
   {
     icon: Droplet,
     title: "High Concentration",
-    text: "Every HM Signature fragrance is formulated as an Extrait de Parfum, with a higher concentration of aromatic compounds than eau de parfum or eau de toilette — richer, longer-lasting, and truer to the raw material.",
+    text: "Every HM Signature fragrance is formulated as an Extrait de Parfum — a higher aromatic concentration than eau de parfum or eau de toilette. How a fragrance then behaves depends on the skin it is worn on.",
   },
   {
     icon: Leaf,
     title: "Naturals & Fine Synthetics",
-    text: "We blend natural absolutes and essential oils with fine synthetic molecules where they improve longevity, sillage, or sustainability — never to cut cost or corners.",
+    text: "We blend natural absolutes and essential oils with fine synthetic molecules where they serve the composition — for character, stability or sustainability — never to cut cost or corners.",
   },
   {
     icon: ShieldCheck,
-    title: "Tested & Compliant",
-    text: "All formulations are dermatologically tested and comply with IFRA (International Fragrance Association) safety standards for concentration and allergen labelling.",
+    title: "Safety & Disclosure",
+    text: "We formulate to fragrance-industry safety guidance, and every product page lists the full ingredient declaration, including declared allergens.",
   },
 ];
 
 const families = [
-  { name: "Oud & Amber", desc: "Deep, resinous, and warm — the backbone of our most magnetic compositions." },
+  { name: "Oud & Amber", desc: "Deep, resinous, and warm — built around oud and amber notes." },
   { name: "White Florals", desc: "Jasmine, tuberose, and orange blossom — luminous and romantic." },
   { name: "Woods & Musks", desc: "Cedar, vetiver, and clean musks — the quiet confidence in our fresher blends." },
   { name: "Gourmand Accords", desc: "Vanilla, tonka bean, and praline — comforting warmth in our amber creations." },

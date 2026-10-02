@@ -1,12 +1,50 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Inbox, ArrowUpDown } from "lucide-react";
 
 export interface Column<T> {
   header: string;
   accessor?: keyof T | ((row: T) => React.ReactNode);
   sortable?: boolean;
+  /**
+   * Primitive sort key. Required when `accessor` returns React nodes, because a
+   * rendered element carries no comparable value.
+   */
+  sortValue?: (row: T) => string | number;
   className?: string;
 }
+
+type SortPrimitive = string | number | boolean;
+
+const isSortPrimitive = (value: unknown): value is SortPrimitive =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+/** Reads the primitive a column sorts by, or null when the value is not comparable. */
+const resolveSortKey = <T,>(col: Column<T>, row: T): SortPrimitive | null => {
+  if (col.sortValue) {
+    const derived = col.sortValue(row);
+    return isSortPrimitive(derived) ? derived : null;
+  }
+  const cell: unknown =
+    typeof col.accessor === "function"
+      ? col.accessor(row)
+      : col.accessor
+      ? (row as Record<string, unknown>)[col.accessor as string]
+      : null;
+  return isSortPrimitive(cell) ? cell : null;
+};
+
+/** Compares two sort keys; missing values always sink to the bottom. */
+const compareSortKeys = (a: SortPrimitive | null, b: SortPrimitive | null, asc: boolean): number => {
+  if (a === null || b === null) {
+    if (a === null && b === null) return 0;
+    return a === null ? 1 : -1;
+  }
+  const valA = typeof a === "string" ? a.toLowerCase() : a;
+  const valB = typeof b === "string" ? b.toLowerCase() : b;
+  if (valA < valB) return asc ? -1 : 1;
+  if (valA > valB) return asc ? 1 : -1;
+  return 0;
+};
 
 interface DataTableProps<T> {
   columns: Column<T>[];
@@ -45,43 +83,52 @@ export function DataTable<T>({
   const [sortAsc, setSortAsc] = useState(true);
 
   // Search filter
-  const filteredData = data.filter((item) => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return JSON.stringify(item).toLowerCase().includes(query);
-  });
+  const filteredData = useMemo(
+    () =>
+      data.filter((item) => {
+        if (!searchQuery.trim()) return true;
+        const query = searchQuery.toLowerCase();
+        return JSON.stringify(item).toLowerCase().includes(query);
+      }),
+    [data, searchQuery]
+  );
+
+  // A sortable header only works when the column yields comparable primitives.
+  const sortableColumns = useMemo(
+    () =>
+      columns.map((col) => {
+        if (!col.sortable) return false;
+        if (col.sortValue) return true;
+        if (!col.accessor || data.length === 0) return false;
+        return data.some((row) => isSortPrimitive(resolveSortKey(col, row)));
+      }),
+    [columns, data]
+  );
 
   // Sorting
-  const sortedData = [...filteredData].sort((a, b) => {
-    if (sortIndex === null) return 0;
-    const col = columns[sortIndex];
-    if (!col || !col.accessor) return 0;
+  const sortedData = useMemo(() => {
+    const col = sortIndex === null ? undefined : columns[sortIndex];
+    if (!col || sortIndex === null) return filteredData;
+    return filteredData
+      .map((row) => ({ row, key: resolveSortKey(col, row) }))
+      .sort((a, b) => compareSortKeys(a.key, b.key, sortAsc))
+      .map((entry) => entry.row);
+  }, [columns, filteredData, sortAsc, sortIndex]);
 
-    let valA: any = "";
-    let valB: any = "";
-
-    if (typeof col.accessor === "function") {
-      valA = col.accessor(a);
-      valB = col.accessor(b);
-    } else {
-      valA = a[col.accessor];
-      valB = b[col.accessor];
-    }
-
-    if (typeof valA === "string") valA = valA.toLowerCase();
-    if (typeof valB === "string") valB = valB.toLowerCase();
-
-    if (valA < valB) return sortAsc ? -1 : 1;
-    if (valA > valB) return sortAsc ? 1 : -1;
-    return 0;
-  });
-
-  // Pagination
-  const totalPages = Math.ceil(sortedData.length / pageSize) || 1;
+  // Pagination (page index clamped to the pages that actually exist)
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+  const activePage = Math.min(Math.max(1, currentPage), totalPages);
   const paginatedData = sortedData.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
+    (activePage - 1) * pageSize,
+    activePage * pageSize
   );
+
+  // Data or filters can shrink the page count mid-session (filterControls,
+  // search, row deletes); snap the stored page back into range during render so
+  // the table never commits an out-of-range page.
+  if (currentPage !== activePage) {
+    setCurrentPage(activePage);
+  }
 
   const handleSelectAllOnPage = () => {
     if (!onSelectAll) return;
@@ -96,6 +143,7 @@ export function DataTable<T>({
   };
 
   const handleSort = (index: number) => {
+    if (!sortableColumns[index]) return;
     if (sortIndex === index) {
       setSortAsc(!sortAsc);
     } else {
@@ -143,24 +191,63 @@ export function DataTable<T>({
                       )
                     }
                     onChange={handleSelectAllOnPage}
-                    className="rounded border-gold/30 bg-navy text-gold focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                    aria-label="Select all rows on this page"
+                    className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold cursor-pointer"
                   />
                 </th>
               )}
-              {columns.map((col, idx) => (
-                <th
-                  key={idx}
-                  className={`px-4 py-3.5 ${col.className || ""} ${
-                    col.sortable ? "cursor-pointer hover:text-ivory select-none" : ""
-                  }`}
-                  onClick={() => col.sortable && handleSort(idx)}
-                >
-                  <div className="flex items-center space-x-1">
+              {columns.map((col, idx) => {
+                const canSort = sortableColumns[idx];
+                const isSorted = sortIndex === idx && canSort;
+                const ariaSort: "ascending" | "descending" | "none" | undefined = !col.sortable
+                  ? undefined
+                  : isSorted
+                  ? sortAsc
+                    ? "ascending"
+                    : "descending"
+                  : "none";
+
+                const headerLabel = (
+                  <>
                     <span>{col.header}</span>
-                    {col.sortable && <ArrowUpDown className="w-3 h-3 text-muted/60" />}
-                  </div>
-                </th>
-              ))}
+                    {col.sortable && (
+                      <ArrowUpDown
+                        className={`w-3 h-3 ${isSorted ? "text-gold" : "text-muted/60"}`}
+                      />
+                    )}
+                  </>
+                );
+
+                return (
+                  <th
+                    key={idx}
+                    className={`px-4 py-3.5 ${col.className || ""}`}
+                    aria-sort={ariaSort}
+                  >
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSort(idx)}
+                        aria-disabled={canSort ? undefined : true}
+                        title={
+                          canSort
+                            ? `Sort by ${col.header}`
+                            : `${col.header} has no sortable value`
+                        }
+                        className={`flex items-center space-x-1 rounded-sm text-left ${
+                          canSort
+                            ? "cursor-pointer hover:text-ivory select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+                            : "cursor-default"
+                        }`}
+                      >
+                        {headerLabel}
+                      </button>
+                    ) : (
+                      <div className="flex items-center space-x-1">{headerLabel}</div>
+                    )}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-gold/10 text-ivory">
@@ -201,7 +288,8 @@ export function DataTable<T>({
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => onSelectRow && onSelectRow(id)}
-                          className="rounded border-gold/30 bg-navy text-gold focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                          aria-label="Select this row"
+                          className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold cursor-pointer"
                         />
                       </td>
                     )}
@@ -235,11 +323,11 @@ export function DataTable<T>({
         <div>
           Showing{" "}
           <span className="text-gold font-medium font-mono num-lining">
-            {sortedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}
+            {sortedData.length > 0 ? (activePage - 1) * pageSize + 1 : 0}
           </span>{" "}
           to{" "}
           <span className="text-gold font-medium font-mono num-lining">
-            {Math.min(currentPage * pageSize, sortedData.length)}
+            {Math.min(activePage * pageSize, sortedData.length)}
           </span>{" "}
           of <span className="text-gold font-medium font-mono num-lining">{sortedData.length}</span> entries
         </div>
@@ -247,18 +335,20 @@ export function DataTable<T>({
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="p-1.5 rounded border border-gold/20 text-muted hover:text-ivory disabled:opacity-30 disabled:cursor-not-allowed hover:bg-navy transition-colors"
+            disabled={activePage === 1}
+            aria-label="Previous page"
+            className="p-1.5 rounded border border-gold/20 text-muted hover:text-ivory disabled:opacity-30 disabled:cursor-not-allowed hover:bg-navy transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="px-3 py-1 font-mono text-[11px] text-ivory num-lining">
-            {currentPage} / {totalPages}
+            {activePage} / {totalPages}
           </span>
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className="p-1.5 rounded border border-gold/20 text-muted hover:text-ivory disabled:opacity-30 disabled:cursor-not-allowed hover:bg-navy transition-colors"
+            disabled={activePage === totalPages}
+            aria-label="Next page"
+            className="p-1.5 rounded border border-gold/20 text-muted hover:text-ivory disabled:opacity-30 disabled:cursor-not-allowed hover:bg-navy transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

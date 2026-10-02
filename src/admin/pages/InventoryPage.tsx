@@ -1,11 +1,24 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal } from "../components/Modal";
 import { Plus, Minus, History, RefreshCw, Package } from "lucide-react";
 
 export const InventoryPage: React.FC = () => {
-  const { products, inventoryLogs, adjustStock } = useAdminData();
+  const { products, inventoryLogs, adjustStock, inventoryPosition, refreshInventoryPosition } = useAdminData();
+  const [positionLoading, setPositionLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setPositionLoading(true);
+    Promise.resolve(refreshInventoryPosition()).finally(() => {
+      if (mounted) setPositionLoading(false);
+    });
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [stockChange, setStockChange] = useState<number>(10);
@@ -116,6 +129,76 @@ export const InventoryPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Per-size inventory position, computed from the ledger */}
+      <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
+          <div className="flex items-center space-x-2">
+            <Package className="w-4 h-4 text-gold" />
+            <h3 className="font-serif text-base font-bold text-ivory">
+              Inventory Position by Bottle Size
+            </h3>
+          </div>
+          <button
+            onClick={refreshInventoryPosition}
+            className="px-3 py-1.5 rounded border border-gold/30 text-gold hover:bg-gold hover:text-navy text-[10px] uppercase font-bold tracking-wider flex items-center space-x-1.5 transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${positionLoading ? "animate-spin" : ""}`} />
+            <span>Recalculate</span>
+          </button>
+        </div>
+
+        <p className="text-[11px] text-muted font-light">
+          Reserved units are stock committed to orders that have not been dispatched yet; on-hand
+          is already reduced at checkout, so these figures are context rather than an addition.
+        </p>
+
+        {inventoryPosition.length === 0 && !positionLoading ? (
+          <p className="text-xs text-muted font-light py-4 text-center">
+            No size-level movements recorded yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-sans">
+              <thead className="bg-navy text-gold uppercase tracking-widest text-[10px] border-b border-gold/15">
+                <tr>
+                  <th className="py-2.5 px-3">Fragrance</th>
+                  <th className="py-2.5 px-3">Size</th>
+                  <th className="py-2.5 px-3">On Hand</th>
+                  <th className="py-2.5 px-3">Low Limit</th>
+                  <th className="py-2.5 px-3">Reserved</th>
+                  <th className="py-2.5 px-3">Sold</th>
+                  <th className="py-2.5 px-3" title="Units put back on the shelf by returns and cancellations">Restocked</th>
+                  <th className="py-2.5 px-3">Adjustments</th>
+                  <th className="py-2.5 px-3">Units / Day</th>
+                  <th className="py-2.5 px-3">Last Movement</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gold/10 text-ivory">
+                {inventoryPosition.map((row) => (
+                  <tr key={row.variantId} className="hover:bg-navy/50 transition-colors">
+                    <td className="py-2.5 px-3">
+                      <span className="font-serif font-bold text-ivory">{row.productName}</span>
+                      <span className="block text-[10px] text-muted font-mono">{row.sku}</span>
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-gold">{row.size}</td>
+                    <td className="py-2.5 px-3 font-mono font-bold">{row.onHand}</td>
+                    <td className="py-2.5 px-3 font-mono text-muted">{row.lowStockThreshold}</td>
+                    <td className="py-2.5 px-3 font-mono">{row.reservedInOpenOrders}</td>
+                    <td className="py-2.5 px-3 font-mono">{row.soldUnits}</td>
+                    <td className="py-2.5 px-3 font-mono">{row.restockedUnits}</td>
+                    <td className="py-2.5 px-3 font-mono">{row.netAdjustments}</td>
+                    <td className="py-2.5 px-3 font-mono">{row.dailyVelocity}</td>
+                    <td className="py-2.5 px-3 font-mono text-[10px] text-muted">
+                      {row.lastMovement ? String(row.lastMovement).replace("T", " ").slice(0, 16) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Stock History Audit Log */}

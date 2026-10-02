@@ -7,25 +7,34 @@ export interface Review {
 
 export interface ProductVariant {
   id: string;
-  size: string; // e.g. "10ml", "30ml", "50ml", "100ml"
+  size: string; // e.g. "10ml", "75ml", "100ml"
   price: number;
   salePrice?: number;
   sku: string;
   stock: number;
   active: boolean;
   auto?: boolean; // true = price derived from the 50ml base price
+  lowStockThreshold?: number;
+  images?: string[];
 }
 
 export interface Product {
   id: string;
   name: string;
   slug: string;
+  sku?: string;
   price: number; // 50ml reference base price
   images: string[]; // texture-class keys used to render gallery placeholder panels
   photos?: string[]; // real product photography paths (public/), used in place of the placeholder when present
-  category: string; // fragrance family
+  category: string; // merchandising category
   gender: "men" | "women" | "unisex";
   description: string;
+  shortDescription?: string;
+  fragranceFamily?: string;
+  occasions?: string[];
+  seasons?: string[];
+  intensity?: "Light" | "Moderate" | "Strong" | "Enormous";
+  scentProfile?: string;
   topNotes: string[];
   heartNotes: string[];
   baseNotes: string[];
@@ -38,12 +47,57 @@ export interface Product {
   stock: number;
   featured: boolean;
   bestseller: boolean;
+  newArrival?: boolean;
+  active?: boolean;
+  seoTitle?: string;
+  seoDescription?: string;
   texture: string; // primary card texture class
   variants?: ProductVariant[];
 }
 
+export const SIZE_PRESETS = ["10ml", "30ml", "50ml", "75ml", "100ml"] as const;
+
+export const FRAGRANCE_FAMILIES = [
+  "Woody Oriental",
+  "Amber Vanilla",
+  "Floral Amber",
+  "Floral Musk",
+  "Fresh Aromatic",
+  "Citrus Fougère",
+  "Gourmand",
+  "Chypre",
+  "Leather",
+] as const;
+
+export const OCCASION_OPTIONS = ["Day", "Evening", "Office", "Wedding", "Night Out", "Everyday", "Gifting"] as const;
+export const SEASON_OPTIONS = ["Spring", "Summer", "Autumn", "Winter", "All Season"] as const;
+export const INTENSITY_OPTIONS = ["Light", "Moderate", "Strong", "Enormous"] as const;
+
+export function sizeToMl(size: string): number {
+  const ml = parseInt(size, 10);
+  return Number.isFinite(ml) && ml > 0 ? ml : 0;
+}
+
+export function isValidSizeLabel(size: string): boolean {
+  return /^[1-9][0-9]{0,3}ml$/i.test(String(size || "").trim());
+}
+
+export function normalizeSizeLabel(size: string): string {
+  return String(size || "").trim().toLowerCase();
+}
+
+export function compareSizes(a: string, b: string): number {
+  return sizeToMl(a) - sizeToMl(b);
+}
+
 export function roundCleanPrice(amount: number): number {
   return Math.round(amount / 50) * 50;
+}
+
+// The single price rule shared with the database: place_order charges
+// COALESCE(sale_price, price), so every read path must show the same figure.
+export function effectiveVariantPrice(variant: { price: number; salePrice?: number }): number {
+  return variant.salePrice ?? variant.price;
 }
 
 // Proportional volume pricing: size price = (50ml base / 50) × size in ml

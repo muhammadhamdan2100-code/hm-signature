@@ -1,6 +1,35 @@
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { AdminProduct, Category, Collection, InventoryLog } from "../admin/context/AdminDataContext";
 import type { ProductVariant } from "../data/products";
+import { isValidSizeLabel, normalizeSizeLabel, sizeToMl } from "../data/products";
+
+// Resolve note names to fragrance_notes ids, creating any missing note once.
+async function ensureFragranceNotes(
+  notes: { name: string; type: string }[]
+): Promise<{ id: string; type: string }[]> {
+  const resolved: { id: string; type: string }[] = [];
+  for (const n of notes) {
+    const name = n.name.trim();
+    if (!name) continue;
+    const { data: existing } = await supabase
+      .from("fragrance_notes")
+      .select("id")
+      .ilike("name", name)
+      .maybeSingle();
+
+    let id = existing?.id;
+    if (!id) {
+      const { data: created } = await supabase
+        .from("fragrance_notes")
+        .insert([{ name, category: n.type }])
+        .select("id")
+        .single();
+      id = created?.id;
+    }
+    if (id) resolved.push({ id, type: n.type });
+  }
+  return resolved;
+}
 
 /**
  * Upload an image file directly to Supabase Storage 'products' bucket
@@ -52,7 +81,7 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
         *,
         categories (id, name, slug),
         collections!products_collection_id_fkey (id, name, slug),
-        product_images (id, image_url, alt_text, display_order, is_primary),
+        product_images (id, image_url, alt_text, display_order, is_primary, variant_id),
         product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active, is_auto_price),
         product_fragrance_notes (note_type, fragrance_notes (id, name))
       `)
@@ -64,8 +93,18 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
     }
 
     return data.map((p: any) => {
+      const variantImagesByVariant = new Map<string, string[]>();
+      (p.product_images || []).forEach((img: any) => {
+        if (img.variant_id) {
+          const list = variantImagesByVariant.get(img.variant_id) || [];
+          list.push(img.image_url);
+          variantImagesByVariant.set(img.variant_id, list);
+        }
+      });
+
       const variants: ProductVariant[] = (p.product_variants || [])
         .filter((v: any) => v.active !== false)
+        .sort((a: any, b: any) => sizeToMl(a.size) - sizeToMl(b.size))
         .map((v: any) => ({
           id: v.id,
           size: v.size,
@@ -75,6 +114,8 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
           stock: Number(v.stock ?? 0),
           active: v.active !== false,
           auto: v.is_auto_price !== false,
+          lowStockThreshold: Number(v.low_stock_threshold ?? 10),
+          images: variantImagesByVariant.get(v.id) || [],
         }));
 
       const topNotes: string[] = [];
@@ -91,8 +132,10 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
       });
 
       const imagesSorted = (p.product_images || [])
+        .filter((img: any) => !img.variant_id)
         .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0));
       const photos = imagesSorted.map((img: any) => img.image_url);
+      const photoAlts = imagesSorted.map((img: any) => img.alt_text || "");
 
       const var50 = variants.find((v) => v.size.toLowerCase() === "50ml");
 
@@ -103,21 +146,28 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
         price: Number(p.base_price || (var50 ? var50.price : 4500)),
         salePrice: p.sale_price ? Number(p.sale_price) : undefined,
         sku: p.sku,
-        category: p.categories?.name || "Woody Oriental",
+        category: p.categories?.name || p.fragrance_family || "Woody Oriental",
         collection: p.collections?.name || "Unisex Collection",
         gender: (p.gender as "men" | "women" | "unisex") || "unisex",
         fragranceType: p.fragrance_type || "Extrait de Parfum",
+        fragranceFamily: p.fragrance_family || p.categories?.name || undefined,
         size: "50ml",
         concentration: p.concentration || "Extrait de Parfum (25-30% Oil)",
         stock: var50 ? var50.stock : variants.reduce((a, b) => a + b.stock, 0),
-        lowStockThreshold: 10,
-        topNotes: topNotes.length ? topNotes : ["Bergamot", "Saffron"],
-        heartNotes: heartNotes.length ? heartNotes : ["Bulgarian Rose", "Oud Wood"],
-        baseNotes: baseNotes.length ? baseNotes : ["Amber", "Vanilla"],
+        lowStockThreshold: variants.length ? Math.min(...variants.map((v) => v.lowStockThreshold ?? 10)) : 10,
+        topNotes,
+        heartNotes,
+        baseNotes,
         description: p.description || "",
+        shortDescription: p.short_description || undefined,
+        occasions: Array.isArray(p.occasions) ? p.occasions : [],
+        seasons: Array.isArray(p.seasons) ? p.seasons : [],
+        intensity: p.intensity || undefined,
+        scentProfile: p.scent_profile || undefined,
         fullDescription: p.full_description || p.description || "",
         images: ["texture-velvet", "texture-marble-dark"],
         photos: photos.length ? photos : [],
+        photoAlts: photoAlts.length ? photoAlts : [],
         featured: Boolean(p.featured),
         bestseller: Boolean(p.bestseller),
         newArrival: Boolean(p.new_arrival),
@@ -278,9 +328,15 @@ export async function saveProductToDB(
       collection_id: collectionId,
       gender: productData.gender,
       fragrance_type: productData.fragranceType,
+      fragrance_family: productData.fragranceFamily || productData.category || null,
       concentration: productData.concentration,
       description: productData.description,
+      short_description: productData.shortDescription || null,
       full_description: productData.fullDescription,
+      occasions: productData.occasions || [],
+      seasons: productData.seasons || [],
+      intensity: productData.intensity || null,
+      scent_profile: productData.scentProfile || null,
       featured: productData.featured,
       bestseller: productData.bestseller,
       new_arrival: productData.newArrival,
@@ -310,45 +366,143 @@ export async function saveProductToDB(
 
     if (!productId) return false;
 
-    // 3. Save Variants (10ml, 30ml, 50ml, 100ml)
+    // 3. Save variants. Stock is never written directly: every movement goes
+    // through adjust_inventory_stock so the ledger stays the source of truth.
     if (productData.variants && productData.variants.length > 0) {
       for (const v of productData.variants) {
+        const sizeLabel = normalizeSizeLabel(v.size);
+        if (!isValidSizeLabel(sizeLabel)) {
+          throw new Error(`Invalid bottle size "${v.size}". Use a whole millilitre value such as 75ml.`);
+        }
+
+        const threshold = Number(v.lowStockThreshold ?? productData.lowStockThreshold ?? 10);
         const variantPayload: any = {
           product_id: productId,
-          size: v.size,
-          sku: v.sku || `${productData.sku}-${v.size.toUpperCase()}`,
+          size: sizeLabel,
+          sku: v.sku || `${productData.sku}-${sizeLabel.toUpperCase()}`,
           price: v.price,
           sale_price: v.salePrice || null,
-          stock: v.stock,
+          low_stock_threshold: threshold,
           active: v.active !== false,
           is_auto_price: v.auto !== false,
           updated_at: new Date().toISOString(),
         };
 
-        if (v.id && !v.id.startsWith("v-")) {
-          const { error: vErr } = await supabase.from("product_variants").update(variantPayload).eq("id", v.id);
-          if (vErr) throw vErr;
-        } else {
+        let variantId: string | null = v.id && !v.id.startsWith("v-") ? v.id : null;
+        if (!variantId) {
+          const { data: found } = await supabase
+            .from("product_variants")
+            .select("id")
+            .eq("product_id", productId)
+            .eq("size", sizeLabel)
+            .maybeSingle();
+          variantId = found?.id || null;
+        }
+
+        if (variantId) {
+          const { data: current, error: readErr } = await supabase
+            .from("product_variants")
+            .select("stock")
+            .eq("id", variantId)
+            .single();
+          if (readErr) throw readErr;
+
           const { error: vErr } = await supabase
             .from("product_variants")
-            .upsert([variantPayload], { onConflict: "product_id,size" });
+            .update(variantPayload)
+            .eq("id", variantId);
           if (vErr) throw vErr;
+
+          const delta = Number(v.stock ?? 0) - Number(current?.stock ?? 0);
+          if (delta !== 0) {
+            const { error: adjErr } = await supabase.rpc("adjust_inventory_stock", {
+              p_variant_id: variantId,
+              p_quantity_change: delta,
+              p_transaction_type: "adjustment",
+              p_notes: "Stock revised in the product catalogue",
+            });
+            if (adjErr) throw adjErr;
+          }
+        } else {
+          const { data: created, error: cErr } = await supabase
+            .from("product_variants")
+            .insert([{ ...variantPayload, stock: 0 }])
+            .select("id")
+            .single();
+          if (cErr) throw cErr;
+          const opening = Number(v.stock ?? 0);
+          if (opening > 0) {
+            const { error: adjErr } = await supabase.rpc("adjust_inventory_stock", {
+              p_variant_id: created.id,
+              p_quantity_change: opening,
+              p_transaction_type: "restock",
+              p_notes: "Opening stock for a new bottle size",
+            });
+            if (adjErr) throw adjErr;
+          }
         }
       }
     }
 
-    // 4. Save Product Images
-    if (productData.photos && productData.photos.length > 0) {
-      // Clear existing images for this product
-      await supabase.from("product_images").delete().eq("product_id", productId);
+    // 4. Save product and variant images
+    if (Array.isArray(productData.photos) && productData.photos.length > 0) {
+      await supabase.from("product_images").delete().eq("product_id", productId).is("variant_id", null);
 
       const imageRows = productData.photos.map((url, idx) => ({
         product_id: productId,
         image_url: url,
+        alt_text: productData.photoAlts?.[idx] || `${productData.name} — HM Signature fragrance photograph`,
         display_order: idx,
         is_primary: idx === 0,
       }));
-      await supabase.from("product_images").insert(imageRows);
+      const { error: imgErr } = await supabase.from("product_images").insert(imageRows);
+      if (imgErr) throw imgErr;
+    }
+
+    if (productData.variants?.length) {
+      for (const v of productData.variants) {
+        if (!v.id || v.id.startsWith("v-")) continue;
+        const wanted = v.images || [];
+        const { data: existingRows } = await supabase
+          .from("product_images")
+          .select("id, image_url")
+          .eq("variant_id", v.id);
+        const existingUrls = (existingRows || []).map((r: any) => r.image_url);
+        if (existingUrls.join("|") !== wanted.join("|")) {
+          await supabase.from("product_images").delete().eq("variant_id", v.id);
+          if (wanted.length > 0) {
+            const { error: vImgErr } = await supabase
+              .from("product_images")
+              .insert(wanted.map((url, idx) => ({
+                product_id: productId,
+                variant_id: v.id,
+                image_url: url,
+                display_order: idx,
+                is_primary: idx === 0,
+              })));
+            if (vImgErr) throw vImgErr;
+          }
+        }
+      }
+    }
+
+    // 4b. Fragrance notes (previously dropped on save)
+    if (productData.topNotes || productData.heartNotes || productData.baseNotes) {
+      await supabase.from("product_fragrance_notes").delete().eq("product_id", productId);
+      const noteRows = [
+        ...(productData.topNotes || []).map((name) => ({ name, type: "top" })),
+        ...(productData.heartNotes || []).map((name) => ({ name, type: "heart" })),
+        ...(productData.baseNotes || []).map((name) => ({ name, type: "base" })),
+      ];
+      if (noteRows.length > 0) {
+        const resolved = await ensureFragranceNotes(noteRows);
+        if (resolved.length > 0) {
+          const { error: fnErr } = await supabase
+            .from("product_fragrance_notes")
+            .insert(resolved.map((r) => ({ product_id: productId, note_type: r.type, note_id: r.id })));
+          if (fnErr) throw fnErr;
+        }
+      }
     }
 
     // 5. Save Collection Products junction
@@ -391,15 +545,30 @@ export async function deleteProductSafeFromDB(productId: string): Promise<boolea
   if (!isSupabaseConfigured() || productId.startsWith("prod-")) return true;
 
   try {
-    // Attempt hard delete first
     const { error } = await supabase.from("products").delete().eq("id", productId);
-    if (error) {
-      // FK constraint violation (e.g. order_items or inventory history exists) -> Soft delete / Archive
-      console.warn(`Hard delete blocked for product ${productId}, deactivating instead:`, error.message);
-      await supabase.from("products").update({ active: false, updated_at: new Date().toISOString() }).eq("id", productId);
+    if (!error) return true;
+
+    // The audit tables are ON DELETE RESTRICT on purpose: a fragrance that has
+    // been sold or has stock history keeps its ledger, payments and timeline, so
+    // the only honest outcome is to archive it.
+    const blockedByHistory = error.code === "23503" || /violates foreign key constraint/i.test(error.message);
+    if (!blockedByHistory) {
+      console.error("deleteProductSafeFromDB failed:", error.message);
+      return false;
+    }
+
+    console.warn(`Product ${productId} keeps its order/stock history, archiving instead:`, error.message);
+    const { error: archiveErr } = await supabase
+      .from("products")
+      .update({ active: false, updated_at: new Date().toISOString() })
+      .eq("id", productId);
+    if (archiveErr) {
+      console.error("Archive after blocked delete failed:", archiveErr.message);
+      return false;
     }
     return true;
   } catch (e) {
+    console.error("deleteProductSafeFromDB exception:", e);
     return false;
   }
 }
@@ -542,11 +711,27 @@ export async function adjustStockAtomicDB(
     });
 
     if (rpcError) {
-      console.warn("RPC adjust_inventory_stock unavailable or error, falling back to direct transaction:", rpcError.message);
-      
-      // Fallback: Perform atomic update & log in direct sequence if RPC function not created in DB yet
+      // PGRST202 / 404 means the function is not present in this database yet.
+      // Anything else (P0001 from a RAISE, 403 from the privilege layer, a
+      // connection failure) is a real answer and must reach the admin as-is:
+      // writing stock by hand behind a rejected adjustment would leave the
+      // stock column and the inventory ledger disagreeing.
+      const functionMissing =
+        rpcError.code === "PGRST202" ||
+        rpcError.code === "42883" ||
+        /does not exist|not found/i.test(rpcError.message);
+
+      if (!functionMissing) {
+        return { success: false, error: rpcError.message };
+      }
+
+      console.warn("adjust_inventory_stock is unavailable, using the direct write path:", rpcError.message);
+
       const oldStock = var50.stock;
       const newStock = Math.max(0, oldStock + change);
+      if (newStock < 0) {
+        return { success: false, error: `Only ${oldStock} unit(s) of this size are in stock.` };
+      }
 
       const { error: updateErr } = await supabase
         .from("product_variants")
@@ -556,15 +741,18 @@ export async function adjustStockAtomicDB(
       if (updateErr) return { success: false, error: updateErr.message };
 
       const staffUser = (await supabase.auth.getUser()).data.user;
-      await supabase.from("inventory_transactions").insert([{
+      const { error: ledgerErr } = await supabase.from("inventory_transactions").insert([{
         variant_id: var50.id,
         transaction_type: "adjustment",
-        quantity_change: change,
+        quantity_change: newStock - oldStock,
         previous_stock: oldStock,
         new_stock: newStock,
         created_by: staffUser?.id || null,
-        notes: reason || "Manual atelier stock adjustment",
+        notes: `${reason || "Manual atelier stock adjustment"} (direct write: adjust_inventory_stock unavailable)`,
       }]);
+      if (ledgerErr) {
+        return { success: false, error: `Stock changed but the ledger entry failed: ${ledgerErr.message}` };
+      }
 
       return { success: true };
     }

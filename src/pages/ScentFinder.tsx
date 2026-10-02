@@ -1,100 +1,217 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { products as fallbackProducts, type Product } from "../data/products";
+import { ArrowLeft, ArrowRight, Check, RotateCcw } from "lucide-react";
+import type { Product } from "../data/products";
 import { getCatalogProducts } from "../services/catalog";
-import TexturePanel from "../components/TexturePanel";
-import Bottle from "../components/Bottle";
+import { useCart } from "../context/CartContext";
+import { useSeoMeta } from "../hooks/useSeoMeta";
+import ProductVisual from "../components/ProductVisual";
+import { formatPKR } from "../utils/currency";
+import {
+  FINDER_STEPS,
+  STRONG_MATCH_SCORE,
+  UNSPECIFIED,
+  availabilityLabel,
+  defaultFinderAnswers,
+  describeAnswers,
+  familyOptionsForCatalogue,
+  resultHeading,
+  scoreProducts,
+  selectRecommendations,
+  sizesFor,
+  type FinderAnswerKey,
+  type FinderAnswers,
+  type FinderStep,
+  type RankedProduct,
+} from "../lib/fragranceMatch";
 
-const questions = [
-  {
-    q: "What kind of personality describes you?",
-    options: [
-      { label: "Bold & Magnetic", tag: "oud" },
-      { label: "Calm & Refined", tag: "woods" },
-      { label: "Warm & Romantic", tag: "floral" },
-    ],
-  },
-  {
-    q: "Which fragrance family attracts you?",
-    options: [
-      { label: "Woody Oriental", tag: "oud" },
-      { label: "Fresh Woods", tag: "woods" },
-      { label: "Floral Amber", tag: "floral" },
-    ],
-  },
-  {
-    q: "When will you wear your fragrance?",
-    options: [
-      { label: "Evening Occasions", tag: "oud" },
-      { label: "Everyday Elegance", tag: "woods" },
-      { label: "Special Moments", tag: "floral" },
-    ],
-  },
-  {
-    q: "What mood do you want to create?",
-    options: [
-      { label: "Mysterious & Intense", tag: "oud" },
-      { label: "Confident & Understated", tag: "woods" },
-      { label: "Romantic & Luminous", tag: "floral" },
-    ],
-  },
-  {
-    q: "Which notes do you prefer?",
-    options: [
-      { label: "Amber, Leather & Spice", tag: "oud" },
-      { label: "Musk, Vetiver & Cedar", tag: "woods" },
-      { label: "Jasmine, Rose & Vanilla", tag: "floral" },
-    ],
-  },
-];
+/** Namespaced session key, in the same shape as the site's `hm-signature-cart` / `hm-signature-recent`. */
+const SESSION_KEY = "hm-signature-scent-finder";
+
+type ViewMode = "questions" | "results";
+type LoadStatus = "loading" | "ready" | "error";
+
+interface FinderSession {
+  version: 1;
+  answers: FinderAnswers;
+  step: number;
+  view: ViewMode;
+}
+
+const asString = (value: unknown, fallback: string): string =>
+  typeof value === "string" && value.trim() ? value : fallback;
+
+/** Restore the last consultation. Any drift in shape falls back to a clean start. */
+function readSession(): FinderSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as Partial<FinderSession>;
+    const savedAnswers = (saved.answers || {}) as Partial<FinderAnswers>;
+    const answers: FinderAnswers = {
+      family: asString(savedAnswers.family, UNSPECIFIED),
+      intensity: asString(savedAnswers.intensity, UNSPECIFIED),
+      occasion: asString(savedAnswers.occasion, UNSPECIFIED),
+      season: asString(savedAnswers.season, UNSPECIFIED),
+      leaning: asString(savedAnswers.leaning, UNSPECIFIED),
+      intent: asString(savedAnswers.intent, UNSPECIFIED),
+      notesText: typeof savedAnswers.notesText === "string" ? savedAnswers.notesText : "",
+    };
+    const totalSteps = FINDER_STEPS.length;
+    const step = Number.isInteger(saved.step) && saved.step! >= 0 && saved.step! < totalSteps ? saved.step! : 0;
+    return { version: 1, answers, step, view: saved.view === "results" ? "results" : "questions" };
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(session: FinderSession): void {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // Storage is unavailable (private mode) — the consultation still works in memory.
+  }
+}
+
+const capitalise = (value: string): string => (value ? value.charAt(0).toUpperCase() + value.slice(1) : value);
+
+const restore = readSession();
 
 export default function ScentFinder() {
-  const [catalogList, setCatalogList] = useState<Product[]>(fallbackProducts);
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<string[]>([]);
-  const [result, setResult] = useState<Product | null>(null);
+  useSeoMeta(
+    "/scent-finder",
+    "Scent finder — HM Signature",
+    "A short consultation on family, projection, occasion and season, matched to the scents we actually stock."
+  );
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [status, setStatus] = useState<LoadStatus>("loading");
+  const [attempt, setAttempt] = useState(0);
+
+  const [answers, setAnswers] = useState<FinderAnswers>(restore?.answers ?? defaultFinderAnswers());
+  const [step, setStep] = useState(restore?.step ?? 0);
+  const [view, setView] = useState<ViewMode>(restore?.view ?? "questions");
+  const [refining, setRefining] = useState(false);
+
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     let mounted = true;
-    getCatalogProducts().then((prods) => {
-      if (mounted && prods && prods.length > 0) {
-        setCatalogList(prods);
-      }
-    });
+    getCatalogProducts()
+      .then((list) => {
+        if (!mounted) return;
+        setProducts(Array.isArray(list) ? list : []);
+        setStatus("ready");
+      })
+      .catch((err) => {
+        console.error("Scent finder catalog error:", err);
+        if (mounted) setStatus("error");
+      });
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [attempt]);
 
-  const getProductByTag = (tag: string): Product => {
-    if (tag === "oud") {
-      return catalogList.find((p) => p.slug.includes("oud") || p.category.toLowerCase().includes("oriental")) || catalogList[0];
-    }
-    if (tag === "woods") {
-      return catalogList.find((p) => p.slug.includes("kimmy") || p.gender === "men" || p.category.toLowerCase().includes("woods")) || catalogList[1] || catalogList[0];
-    }
-    return catalogList.find((p) => p.slug.includes("harm") || p.gender === "women" || p.category.toLowerCase().includes("amber")) || catalogList[2] || catalogList[0];
+  useEffect(() => {
+    writeSession({ version: 1, answers, step, view });
+  }, [answers, step, view]);
+
+  const steps: FinderStep[] = useMemo(() => {
+    const familyOptions = familyOptionsForCatalogue(products);
+    return FINDER_STEPS.map((s) => (s.key === "family" ? { ...s, options: familyOptions } : s));
+  }, [products]);
+
+  const current = steps[Math.min(step, steps.length - 1)];
+  const total = steps.length;
+
+  const ranked = useMemo<RankedProduct[]>(
+    () => (view === "results" ? scoreProducts(answers, products) : []),
+    [view, answers, products]
+  );
+  const { matches, hasConfidentMatch } = useMemo(() => selectRecommendations(ranked), [ranked]);
+  const answerChips = useMemo(() => describeAnswers(answers), [answers]);
+
+  const focusHeading = () => {
+    // Move the reader back to the question after any step change.
+    window.setTimeout(() => headingRef.current?.focus(), 0);
   };
 
-  const choose = (tag: string) => {
-    const next = [...answers, tag];
-    setAnswers(next);
-    if (step < questions.length - 1) {
+  const goToStep = (next: number, refine: boolean) => {
+    setStep(Math.max(0, Math.min(next, total - 1)));
+    setRefining(refine);
+    setView("questions");
+    focusHeading();
+  };
+
+  const setValue = (key: FinderAnswerKey, value: string) => {
+    setAnswers((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const advance = () => {
+    if (step < total - 1) {
       setStep(step + 1);
+      focusHeading();
     } else {
-      const counts: Record<string, number> = {};
-      next.forEach((t) => (counts[t] = (counts[t] || 0) + 1));
-      const winner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-      setResult(getProductByTag(winner));
+      setView("results");
+      setRefining(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      focusHeading();
+    }
+  };
+
+  const blankFor = (definition: FinderStep): string => (definition.freeText ? "" : UNSPECIFIED);
+
+  const skip = () => {
+    setValue(current.key, blankFor(current));
+    advance();
+  };
+
+  const clearAnswer = () => {
+    setValue(current.key, blankFor(current));
+  };
+
+  const back = () => {
+    if (refining) {
+      setView("results");
+      setRefining(false);
+      focusHeading();
+      return;
+    }
+    if (step > 0) {
+      setStep(step - 1);
+      focusHeading();
     }
   };
 
   const restart = () => {
+    setAnswers(defaultFinderAnswers());
     setStep(0);
-    setAnswers([]);
-    setResult(null);
+    setView("questions");
+    setRefining(false);
+    focusHeading();
   };
+
+  const retry = () => {
+    setStatus("loading");
+    setAttempt((a) => a + 1);
+  };
+
+  const onOptionKeyDown = (event: KeyboardEvent<HTMLDivElement>, optionCount: number) => {
+    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const active = document.activeElement;
+    const index = optionRefs.current.findIndex((el) => el === active);
+    if (index < 0) return;
+    const forward = event.key === "ArrowRight" || event.key === "ArrowDown";
+    const next = (index + (forward ? 1 : -1) + optionCount) % optionCount;
+    optionRefs.current[next]?.focus();
+  };
+
+  const answeredCount = answerChips.filter((chip) => chip.specified).length;
+  const progressLabel = view === "results" ? "complete" : `${Math.round((answeredCount / total) * 100)} percent answered`;
 
   return (
     <div className="pt-24 min-h-screen bg-navy relative overflow-hidden">
@@ -102,63 +219,413 @@ export default function ScentFinder() {
         className="absolute inset-0 opacity-70 pointer-events-none"
         style={{ background: "radial-gradient(circle at 50% 20%, rgba(16,40,61,0.8), transparent 60%)" }}
       />
-      <div className="max-w-[900px] mx-auto px-6 lg:px-10 py-20 relative">
-        <div className="text-center mb-16">
+
+      <div className="max-w-[980px] mx-auto px-5 sm:px-6 lg:px-10 py-16 lg:py-20 relative">
+        <header className="text-center mb-12 lg:mb-16">
           <div className="eyebrow mb-4">SCENT FINDER</div>
           <h1 className="font-serif text-4xl lg:text-6xl leading-tight">
             Find Your
             <br />
             <span className="italic text-goldLight">Signature Scent</span>
           </h1>
-        </div>
+          <p className="text-muted mt-6 text-sm leading-relaxed max-w-md mx-auto">
+            A short consultation on family, projection, occasion and season — answered with the scents in
+            stock today, and with nothing claimed about them that they do not declare.
+          </p>
+        </header>
 
-        {!result ? (
-          <>
-            <div className="flex gap-2 mb-14 max-w-md mx-auto">
-              {questions.map((_, i) => (
-                <div key={i} className={`h-[2px] flex-1 ${i <= step ? "bg-gold" : "bg-gold/20"}`} />
+        {status === "loading" && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="w-10 h-10 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-xs font-mono uppercase tracking-[2px] text-gold">Preparing the collection…</p>
+          </div>
+        )}
+
+        {status === "error" && (
+          <div className="text-center border border-gold/25 bg-navy2/40 px-6 py-12">
+            <h2 className="font-serif text-2xl mb-3">The collection could not be reached</h2>
+            <p className="text-muted text-sm leading-relaxed mb-7 max-w-sm mx-auto">
+              Something interrupted the connection to our catalogue. Nothing you have entered is lost.
+            </p>
+            <button onClick={retry} className="btn-gold-fill inline-flex items-center gap-2">
+              <RotateCcw size={14} /> TRY AGAIN
+            </button>
+          </div>
+        )}
+
+        {status === "ready" && products.length === 0 && (
+          <div className="text-center border border-gold/25 bg-navy2/40 px-6 py-14">
+            <h2 className="font-serif text-2xl lg:text-3xl mb-3">The collection is being prepared</h2>
+            <p className="text-muted text-sm leading-relaxed mb-7 max-w-md mx-auto">
+              No fragrances are listed just yet, so we would rather say so than show you anything invented.
+              Please check again soon.
+            </p>
+            <Link to="/" className="btn-gold">RETURN HOME</Link>
+          </div>
+        )}
+
+        {status === "ready" && products.length > 0 && view === "questions" && (
+          <div className="max-w-xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[11px] tracking-[1.5px] text-muted font-mono">
+                QUESTION {step + 1} OF {total}
+              </span>
+              <span className="text-[11px] tracking-[1.5px] text-muted font-mono">
+                {refining ? "REFINING" : "SCENT FINDER"}
+              </span>
+            </div>
+
+            <div className="flex gap-2 mb-10" aria-hidden="true">
+              {steps.map((s, i) => (
+                <div key={s.key} className={`h-[2px] flex-1 ${i <= step ? "bg-gold" : "bg-gold/20"}`} />
               ))}
             </div>
+
             <AnimatePresence mode="wait">
               <motion.div
-                key={step}
-                initial={{ opacity: 0, y: 16 }}
+                key={current.key}
+                initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
-                transition={{ duration: 0.4 }}
-                className="max-w-xl mx-auto text-center"
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.35 }}
+                className="text-center"
               >
-                <div className="text-xs text-gold tracking-[2px] mb-4">0{step + 1}</div>
-                <h2 className="font-serif text-2xl lg:text-3xl mb-10">{questions[step].q}</h2>
-                <div className="flex flex-col gap-4">
-                  {questions[step].options.map((o) => (
+                <div className="eyebrow mb-3">{current.eyebrow}</div>
+                <h2
+                  ref={headingRef}
+                  tabIndex={-1}
+                  id={`step-${current.key}`}
+                  className="font-serif text-2xl lg:text-3xl leading-snug mb-3 focus:outline-none"
+                >
+                  {current.question}
+                </h2>
+                <p id={`step-help-${current.key}`} className="text-muted text-xs leading-relaxed mb-9 max-w-md mx-auto">
+                  {current.help}
+                </p>
+
+                {current.freeText ? (
+                  <div className="text-left">
+                    <label htmlFor="notes-text" className="block text-[11px] tracking-[1.5px] text-goldLight mb-3">
+                      SCENTS YOU HAVE LOVED (OPTIONAL)
+                    </label>
+                    <textarea
+                      id="notes-text"
+                      rows={3}
+                      value={answers.notesText}
+                      onChange={(e) => setValue("notesText", e.target.value)}
+                      placeholder={current.placeholder}
+                      aria-describedby={`step-help-${current.key}`}
+                      className="w-full bg-transparent border border-gold/25 rounded-sm px-4 py-3 text-sm text-ivory placeholder:text-muted/60 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/50 leading-relaxed"
+                    />
+                  </div>
+                ) : (
+                  <div
+                    role="group"
+                    aria-labelledby={`step-${current.key}`}
+                    aria-describedby={`step-help-${current.key}`}
+                    onKeyDown={(e) => onOptionKeyDown(e, (current.options || []).length)}
+                    className="grid gap-3 sm:grid-cols-2 text-left"
+                  >
+                    {(current.options || []).map((option, i) => {
+                      const selected = answers[current.key] === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          ref={(el) => {
+                            optionRefs.current[i] = el;
+                          }}
+                          aria-pressed={selected}
+                          onClick={() => setValue(current.key, option.value)}
+                          className={`min-h-[56px] w-full px-5 py-3 border transition-colors text-left flex items-start justify-between gap-3 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/60 ${
+                            selected
+                              ? "border-gold bg-gold/10 text-ivory"
+                              : "border-gold/25 hover:border-gold/70 hover:bg-gold/5 text-ivory/90"
+                          }`}
+                        >
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-sm break-words">{option.label}</span>
+                            {option.caption && (
+                              <span className="block text-[11px] text-muted mt-1 leading-relaxed">
+                                {option.caption}
+                              </span>
+                            )}
+                          </span>
+                          {selected && <Check size={14} className="text-gold shrink-0 mt-1" aria-hidden="true" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center mt-10">
+                  {(step > 0 || refining) && (
                     <button
-                      key={o.label}
-                      onClick={() => choose(o.tag)}
-                      className="border border-gold/25 py-5 px-6 text-sm hover:border-gold hover:bg-gold/5 transition-colors"
+                      onClick={back}
+                      className="btn-gold inline-flex items-center justify-center gap-2 min-h-[48px] text-[11px]"
                     >
-                      {o.label}
+                      <ArrowLeft size={14} aria-hidden="true" />
+                      {refining ? "BACK TO MATCHES" : "BACK"}
                     </button>
-                  ))}
+                  )}
+                  {current.skippable && (
+                    <button
+                      onClick={refining ? clearAnswer : skip}
+                      className="link-underline text-[11px] sm:ml-auto py-3 min-h-[44px]"
+                    >
+                      {refining ? "CLEAR THIS ANSWER" : "NOT SURE YET"}
+                    </button>
+                  )}
+                  <button
+                    onClick={advance}
+                    className="btn-gold-fill inline-flex items-center justify-center gap-2 min-h-[48px]"
+                  >
+                    {refining ? "UPDATE MATCHES" : step === total - 1 ? "SEE MY MATCHES" : "CONTINUE"}
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </button>
                 </div>
               </motion.div>
             </AnimatePresence>
-          </>
-        ) : (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-lg mx-auto text-center">
-            <div className="eyebrow mb-4">YOUR SIGNATURE MATCH</div>
-            <TexturePanel texture={result.texture} className="aspect-[4/3] flex items-center justify-center border border-gold/25 mb-8">
-              <Bottle className="w-24" />
-            </TexturePanel>
-            <h2 className="font-serif text-3xl mb-3">{result.name}</h2>
-            <p className="text-muted leading-relaxed mb-8">{result.description}</p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to={`/product/${result.slug}`} className="btn-gold-fill">SHOP THIS SCENT →</Link>
-              <button onClick={restart} className="link-underline">Retake the Quiz</button>
-            </div>
-          </motion.div>
+
+            <p className="text-center text-muted text-[11px] mt-14 leading-relaxed">
+              Your answers are kept on this device, so you can leave and come back.{" "}
+              <button onClick={restart} className="link-underline text-[11px] py-1">
+                START AGAIN
+              </button>
+            </p>
+          </div>
         )}
+
+        {status === "ready" && products.length > 0 && view === "results" && (
+          <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+            <div className="flex gap-2 mb-8" aria-hidden="true">
+              {steps.map((s) => (
+                <div key={s.key} className="h-[2px] flex-1 bg-gold" />
+              ))}
+            </div>
+
+            <div className="text-center mb-10">
+              <div className="eyebrow mb-3">
+                {hasConfidentMatch ? "YOUR SHORTLIST" : "NOTHING TO RECOMMEND YET"}
+              </div>
+              <h2
+                ref={headingRef}
+                tabIndex={-1}
+                className="font-serif text-3xl lg:text-5xl leading-tight focus:outline-none"
+              >
+                {hasConfidentMatch ? resultHeading(matches.length, answers) : "Nothing matches this combination yet"}
+              </h2>
+              <p className="text-muted text-sm leading-relaxed mt-5 max-w-lg mx-auto">
+                {hasConfidentMatch
+                  ? `Based on your answers — ${answerChips.filter((c) => c.specified).map((c) => c.label).join(", ")}. Each card below lists the attributes that overlap.`
+                  : `We only put a scent forward when it genuinely shares what you asked for. None of the ${products.length} fragrances listed today clears that bar — usually because their season, occasion or intensity details are still being completed.`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 mb-12">
+              {steps.map((s, i) => {
+                const chip = answerChips.find((c) => c.key === s.key);
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => goToStep(i, true)}
+                    className={`min-h-[44px] px-4 py-2 border text-[11px] tracking-[1px] transition-colors focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/60 ${
+                      chip?.specified
+                        ? "border-gold/40 text-ivory hover:border-gold hover:bg-gold/5"
+                        : "border-gold/15 text-muted hover:border-gold/50"
+                    }`}
+                  >
+                    {capitalise(chip?.label || "Not specified")}
+                    <span className="text-gold ml-2">Change</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {hasConfidentMatch ? (
+              <div className={matches.length === 1 ? "grid gap-6 lg:gap-8 mx-auto max-w-[520px]" : "grid gap-6 md:grid-cols-2 lg:gap-8"}>
+                {matches.map((item, i) => (
+                  <ResultCard
+                    key={item.product.id}
+                    item={item}
+                    rank={i}
+                    strong={i === 0 && item.score >= STRONG_MATCH_SCORE}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center border border-gold/25 bg-navy2/40 px-6 py-12">
+                <p className="text-muted text-sm leading-relaxed mb-7 max-w-sm mx-auto">
+                  Try loosening one answer — the family or the projection level usually opens this up.
+                </p>
+                <Link to="/collections" className="btn-gold-fill">BROWSE THE COLLECTION</Link>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-center gap-4 mt-14 pt-8 border-t border-gold/15">
+              <Link to="/collections" className="link-underline py-2 min-h-[44px]">VIEW ALL FRAGRANCES</Link>
+              <button
+                onClick={() => goToStep(0, true)}
+                className="link-underline py-2 min-h-[44px]"
+              >
+                REFINE FROM THE FIRST QUESTION
+              </button>
+              <button onClick={restart} className="link-underline py-2 min-h-[44px]">
+                START AGAIN
+              </button>
+            </div>
+
+            <p className="text-center text-muted text-[11px] mt-8 leading-relaxed max-w-md mx-auto">
+              Every line under “why this matched” is quoted from what the fragrance declares in our catalogue.
+              Where a detail is missing, we leave it out rather than guess.
+            </p>
+          </motion.section>
+        )}
+
+        <span className="sr-only" aria-live="polite">
+          {view === "results"
+            ? hasConfidentMatch
+              ? `${matches.length} ${matches.length === 1 ? "match" : "matches"} ready.`
+              : "No close match found."
+            : `Question ${step + 1} of ${total}. ${current.question}. ${progressLabel}.`}
+        </span>
       </div>
     </div>
+  );
+}
+
+function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number; strong: boolean }) {
+  const { product, reasons } = item;
+  const { addToCart } = useCart();
+  const sizes = useMemo(() => sizesFor(product), [product]);
+  const [sizeIndex, setSizeIndex] = useState(() => {
+    const available = sizes.findIndex((s) => s.stock > 0);
+    const preferred = sizes.findIndex((s) => s.size.toLowerCase() === "50ml" && s.stock > 0);
+    return preferred >= 0 ? preferred : available >= 0 ? available : 0;
+  });
+
+  const safeIndex = Math.min(sizeIndex, Math.max(sizes.length - 1, 0));
+  const size = sizes[safeIndex];
+  const availability = availabilityLabel(size);
+  const pyramid = [
+    { label: "Top", items: product.topNotes || [] },
+    { label: "Heart", items: product.heartNotes || [] },
+    { label: "Base", items: product.baseNotes || [] },
+  ].filter((group) => group.items.length > 0);
+  const sparseData = !product.seasons?.length && !product.occasions?.length && !product.intensity;
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: rank * 0.06 }}
+      className="flex flex-col border border-gold/25 bg-navy2/40"
+    >
+      <ProductVisual product={product} photoIndex={0} className="aspect-[4/3]" bottleSize="w-24" />
+
+      <div className="p-5 sm:p-6 flex flex-col flex-1">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="eyebrow break-words">{product.fragranceFamily || product.category}</div>
+          {strong && (
+            <span className="text-[10px] tracking-[1.5px] text-gold border border-gold/40 px-2 py-1 shrink-0">
+              CLOSEST
+            </span>
+          )}
+        </div>
+
+        <h3 className="font-serif text-2xl mb-2 break-words">{product.name}</h3>
+        <p className="text-muted text-sm leading-relaxed mb-5 line-clamp-3">
+          {product.shortDescription || product.description}
+        </p>
+
+        <div className="mb-5">
+          <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">WHY THIS MATCHED</div>
+          <ul className="space-y-2 text-sm text-ivory/90">
+            {reasons.map((reason) => (
+              <li key={reason} className="flex gap-2 leading-relaxed">
+                <span className="text-gold shrink-0" aria-hidden="true">
+                  ·
+                </span>
+                <span className="min-w-0 break-words">{reason}</span>
+              </li>
+            ))}
+          </ul>
+          {sparseData && (
+            <p className="text-muted text-[11px] mt-3 leading-relaxed">
+              Season and occasion details for this scent are still being listed.
+            </p>
+          )}
+        </div>
+
+        {pyramid.length > 0 && (
+          <div className="mb-6 pt-5 border-t border-gold/15">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              {pyramid.map((group) => (
+                <div key={group.label}>
+                  <div className="text-[10px] text-muted tracking-[1.5px] mb-2">{group.label.toUpperCase()} NOTES</div>
+                  {group.items.slice(0, 4).map((note) => (
+                    <div key={note} className="text-ivory/90 mb-0.5 break-words">
+                      {note}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-auto">
+          <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">AVAILABLE SIZES</div>
+          <div
+            role="group"
+            aria-label={`${product.name} sizes and prices`}
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4"
+          >
+            {sizes.map((option, i) => {
+              const selected = i === safeIndex;
+              const state = availabilityLabel(option);
+              return (
+                <button
+                  key={`${option.size}-${i}`}
+                  type="button"
+                  onClick={() => setSizeIndex(i)}
+                  aria-pressed={selected}
+                  className={`min-h-[44px] px-2 py-2 border text-center transition-colors focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/60 flex flex-col items-center justify-center ${
+                    selected
+                      ? "border-gold bg-gold/10 text-ivory"
+                      : "border-gold/20 text-muted hover:border-gold/60 hover:text-ivory"
+                  } ${state.available ? "" : "opacity-50"}`}
+                >
+                  <span className="text-[11px] font-mono tracking-wider">{option.size}</span>
+                  <span className="text-[10px] font-mono text-goldLight">{formatPKR(option.price)}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 mb-4 text-[11px] font-mono tracking-wider">
+            <span className={availability.available ? "text-goldLight" : "text-muted"}>
+              {availability.text.toUpperCase()}
+            </span>
+            <span className="text-gold font-bold text-sm">{formatPKR(size.price)}</span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              disabled={!availability.available}
+              onClick={() => addToCart(product, size.size, 1, size.price, size.sku)}
+              className="btn-gold-fill flex-1 text-center min-h-[48px] disabled:opacity-40"
+            >
+              ADD TO CART ({size.size})
+            </button>
+            <Link to={`/product/${product.slug}`} className="btn-gold flex-1 text-center min-h-[48px]">
+              VIEW DETAILS
+            </Link>
+          </div>
+        </div>
+      </div>
+    </motion.article>
   );
 }

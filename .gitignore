@@ -5,3 +5,4 @@ dist
 .env.*.local
 supabase/.temp/
 *.local
+scripts/seed-test-accounts.sql

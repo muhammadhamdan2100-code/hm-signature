@@ -5,7 +5,7 @@ import { Plus, Minus } from "lucide-react";
 const faqs = [
   {
     q: "How long does an HM Signature fragrance last?",
-    a: "Our fragrances are formulated as Extrait de Parfum — the most concentrated form of perfume. Most clients find they last 8–12 hours on skin, often longer on fabric.",
+    a: "Our fragrances are formulated as Extrait de Parfum — the most concentrated form of perfume. Because they are concentrated, a little goes far, and how a scent develops depends on your skin, so no two wear the same way.",
   },
   {
     q: "Are HM Signature fragrances unisex?",
@@ -13,7 +13,7 @@ const faqs = [
   },
   {
     q: "How do I choose the right fragrance for me?",
-    a: "Take our Scent Finder quiz — five quick questions that match your personality and preferences to one of our signature blends. You can retake it as many times as you like.",
+    a: "Take our Scent Finder — seven questions that match your preferences to one of our signature blends. Every question can be skipped, and you can retake it as many times as you like.",
   },
   {
     q: "Do you offer samples or discovery sets?",
@@ -21,7 +21,7 @@ const faqs = [
   },
   {
     q: "What payment methods do you accept?",
-    a: "We accept major debit and credit cards, as well as cash on delivery within Pakistan. All payment details are handled securely at checkout.",
+    a: "Raast, JazzCash, direct bank transfer and cash on delivery. Card payments are not live yet. Payment instructions appear at checkout.",
   },
   {
     q: "Can I return a fragrance if I don't like the scent?",
@@ -29,7 +29,7 @@ const faqs = [
   },
   {
     q: "Do you ship internationally?",
-    a: "Currently we ship within Pakistan. International shipping is on our roadmap — subscribe to our newsletter to be notified when it launches.",
+    a: "Currently we ship within Pakistan only. International shipping is not available yet.",
   },
 ];
 

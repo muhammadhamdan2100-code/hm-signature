@@ -29,7 +29,7 @@ export default function ReturnsExchanges() {
           <div className="border border-gold/20 p-8 text-center">
             <XCircle size={26} strokeWidth={1.2} className="text-gold mx-auto mb-5" />
             <h3 className="font-serif text-lg mb-3">Full Refund</h3>
-            <p className="text-sm text-muted leading-relaxed">Refunded to your original payment method within 7 business days.</p>
+            <p className="text-sm text-muted leading-relaxed">Refunded to the account you paid from, within 7 business days.</p>
           </div>
         </div>
 
@@ -38,8 +38,8 @@ export default function ReturnsExchanges() {
             <h3 className="font-serif text-xl text-ivory mb-3">How to Start a Return</h3>
             <p>
               Contact our team via the <Link to="/contact" className="text-goldLight hover:underline">Contact page</Link> with
-              your order number and reason for return. We'll send you return instructions and a prepaid shipping label
-              where applicable.
+              your order number and reason for return. We'll reply with return instructions and the address to send
+              the item to.
             </p>
           </div>
           <div>

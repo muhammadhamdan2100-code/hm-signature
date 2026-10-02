@@ -1,0 +1,3 @@
+-- Version 20261002062341 is recorded on the remote as an empty migration (the intended
+-- changes were never executed under this version). The repair ships in
+-- 20261002062651_repair_analytics_and_inventory_aggregation.sql instead.

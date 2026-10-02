@@ -19,7 +19,7 @@ export default function Footer() {
           <div className="col-span-2 lg:col-span-1">
             <img src="/logo.png" alt="HM Signature" className="h-12 mb-4" />
             <p className="text-muted text-sm leading-relaxed max-w-[220px]">
-              Timeless scents crafted for unforgettable moments.
+              Extrait de parfum blends, shipped across Pakistan.
             </p>
           </div>
           <div>

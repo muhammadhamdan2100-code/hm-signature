@@ -9,16 +9,17 @@ import JournalSection from "../components/JournalSection";
 import Reviews from "../components/Reviews";
 import Newsletter from "../components/Newsletter";
 import ProductCard from "../components/ProductCard";
-import { products as fallbackProducts, type Product } from "../data/products";
+import { type Product } from "../data/products";
 import { getCatalogProducts } from "../services/catalog";
 import { useAdminData } from "../admin/context/AdminDataContext";
 import { Link as RouterLink } from "react-router-dom";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 
 export default function Home() {
-  const [featuredList, setFeaturedList] = useState<Product[]>(
-    () => fallbackProducts.filter((p) => p.featured)
-  );
+  // Start empty: fixtures only appear if the offline fallback in the service
+  // hands them back — an empty catalogue is shown honestly, not masked.
+  const [featuredList, setFeaturedList] = useState<Product[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
   const [searchParams] = useSearchParams();
   const { homepageConfig, homepageConfigPersisted } = useAdminData();
   useSeoMeta("/", "HM Signature — Haute Parfumerie", "Luxury extrait de parfum crafted in small batches.");
@@ -28,12 +29,16 @@ export default function Home() {
 
   useEffect(() => {
     let mounted = true;
-    getCatalogProducts().then((prods) => {
-      if (mounted && prods && prods.length > 0) {
-        const feat = prods.filter((p) => p.featured);
-        setFeaturedList(feat.length > 0 ? feat : prods.slice(0, 3));
-      }
-    });
+    getCatalogProducts()
+      .then((prods) => {
+        if (!mounted) return;
+        const list = prods || [];
+        const feat = list.filter((p) => p.featured);
+        setFeaturedList(feat.length > 0 ? feat : list.slice(0, 3));
+      })
+      .finally(() => {
+        if (mounted) setFeaturedLoading(false);
+      });
     return () => {
       mounted = false;
     };
@@ -77,11 +82,30 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {featuredList.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          {featuredLoading ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8" aria-busy="true" aria-live="polite">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="border border-gold/10 bg-navy2/50 animate-pulse h-96" aria-hidden="true" />
+              ))}
+            </div>
+          ) : featuredList.length === 0 ? (
+            <div className="border border-gold/20 bg-navy2/40 p-10 text-center max-w-xl mx-auto">
+              <p className="font-serif text-2xl mb-3">A new collection is being composed</p>
+              <p className="text-muted text-sm leading-relaxed mb-6">
+                Our published fragrances will appear here. In the meantime, our Scent Finder can
+                still guide you to the family that suits you.
+              </p>
+              <Link to="/scent-finder" className="btn-gold text-xs">
+                FIND YOUR SCENT
+              </Link>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              {featuredList.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

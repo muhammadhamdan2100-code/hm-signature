@@ -2,11 +2,11 @@ import { motion } from "framer-motion";
 import { Gem, Clock, Sparkles, Package, ShieldCheck } from "lucide-react";
 
 const values = [
-  { icon: Gem, title: "LUXURY INGREDIENTS", text: "Finest raw materials from around the world" },
-  { icon: Clock, title: "LONG LASTING", text: "Premium extrait de parfum" },
-  { icon: Sparkles, title: "SIGNATURE SCENTS", text: "Unique blends crafted with expertise" },
+  { icon: Gem, title: "LUXURY INGREDIENTS", text: "Rare raw materials from established suppliers" },
+  { icon: Clock, title: "EXTRAIT CONCENTRATION", text: "A higher aromatic concentration than eau de parfum" },
+  { icon: Sparkles, title: "SIGNATURE SCENTS", text: "Blends created for HM Signature" },
   { icon: Package, title: "ELEGANT PACKAGING", text: "Designed to reflect luxury and style" },
-  { icon: ShieldCheck, title: "TRUST & QUALITY", text: "Crafted with passion and precision" },
+  { icon: ShieldCheck, title: "INGREDIENT TRANSPARENCY", text: "Ingredient listings published on product pages" },
 ];
 
 export default function ValuesSection() {

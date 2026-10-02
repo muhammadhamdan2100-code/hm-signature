@@ -15,7 +15,7 @@ export default function RefundPolicy() {
         {
           title: "Refund Method",
           body: [
-            "Approved refunds are issued to your original payment method within 7 business days of us receiving the returned item. Cash-on-delivery orders are refunded via bank transfer.",
+            "Approved refunds are issued to the account you paid from within 7 business days of us receiving the returned item. Cash-on-delivery orders are refunded via bank transfer.",
           ],
         },
         {
@@ -27,7 +27,7 @@ export default function RefundPolicy() {
         {
           title: "Non-Refundable Situations",
           body: [
-            "Opened or used fragrances, items returned after the 30-day window, and gift cards are not eligible for a refund.",
+            "Opened or used fragrances, and items returned after the 30-day window, are not eligible for a refund.",
           ],
         },
         {

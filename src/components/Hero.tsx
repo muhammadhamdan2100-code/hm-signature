@@ -46,9 +46,9 @@ export default function Hero() {
             transition={{ delay: 0.35, duration: 0.9 }}
             className="font-serif text-[42px] sm:text-[54px] lg:text-[68px] leading-[1.05] mb-6"
           >
-            THE ESSENCE OF
+            THE SIGNATURE OF
             <br />
-            YOUR <span className="text-goldLight italic">ESSENCE</span>
+            WHO <span className="text-goldLight italic">YOU ARE</span>
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 18 }}

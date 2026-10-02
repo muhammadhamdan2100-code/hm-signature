@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { getCurrentStaff } from "../../services/auth";
 import { toDisplayRole } from "../../types/staff";
 import { StatCard } from "../components/StatCard";
-import { ChartCard } from "../components/ChartCard";
+import { ChartCard, type ChartPoint } from "../components/ChartCard";
 import { StatusBadge } from "../components/StatusBadge";
+import { formatPKR } from "../../utils/currency";
+import { requestBusinessInsights } from "../../services/aiConcierge";
 import {
   DollarSign,
   ShoppingBag,
@@ -28,6 +30,31 @@ import {
   Boxes,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+// --- SHARED DASHBOARD HELPERS ---------------------------------------------
+const greetingFor = (date = new Date()) => {
+  const h = date.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+};
+
+// Local calendar day, because toISOString() is UTC and would shift the "today"
+// panel by five hours for a Pakistani atelier.
+const localDay = (date = new Date()) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+// A fragrance can be sold out in one size while the 50ml row still shows stock.
+const lowestVariantStock = (p: any): number => {
+  const live = (p.variants || []).filter((v: any) => v.active !== false);
+  return live.length > 0
+    ? Math.min(...live.map((v: any) => Number(v.stock ?? 0)))
+    : Number(p.stock ?? 0);
+};
 
 // --- 1. ORDER MANAGER DEDICATED DASHBOARD ---
 const OrderManagerDashboard: React.FC = () => {
@@ -60,7 +87,7 @@ const OrderManagerDashboard: React.FC = () => {
             ORDER FULFILLMENT & DISPATCH CONCIERGE
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            Good morning, {currentStaff?.name || "Order Manager"} — Order Operations
+            {greetingFor()}, {currentStaff?.name || "Order Manager"} — Order Operations
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
             Live operations workspace for pending acquisitions, courier tracking IDs, payment verification, and order dispatch.
@@ -282,7 +309,7 @@ const ContentManagerDashboard: React.FC = () => {
             CMS CATALOG & CONTENT WORKSPACE
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            Good morning, {currentStaff?.name || "Content Manager"} — Content Operations
+            {greetingFor()}, {currentStaff?.name || "Content Manager"} — Content Operations
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
             Curate rare extraits de parfum, categories, homepage CMS blocks, and moderate client reviews.
@@ -458,15 +485,107 @@ const ContentManagerDashboard: React.FC = () => {
   );
 };
 
+// Revenue trend drawn from the server aggregation — never a decorative placeholder.
+function useSalesTrendPoints(): { points: ChartPoint[]; orders: ChartPoint[] } {
+  const { analytics, refreshAnalytics } = useAdminData();
+
+  useEffect(() => {
+    if (!analytics) refreshAnalytics(90);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rows = analytics?.salesTrend || [];
+  return {
+    points: rows.map((r) => ({ label: r.day.slice(5), value: r.revenue })),
+    orders: rows.map((r) => ({ label: r.day.slice(5), value: r.orders })),
+  };
+}
+
+// AI business insights — generated from the same aggregated snapshot the
+// charts use. No individual customer records are sent, and the panel states
+// plainly when no provider is configured.
+const AiInsightsCard: React.FC = () => {
+  const [state, setState] = useState<{
+    loading: boolean;
+    text: string | null;
+    error: string | null;
+    at: string | null;
+  }>({
+    loading: false,
+    text: null,
+    error: null,
+    at: null,
+  });
+
+  const generate = async () => {
+    setState({ loading: true, text: null, error: null, at: null });
+    const res = await requestBusinessInsights();
+    if (!res.ok) {
+      setState({ loading: false, text: null, error: res.error || (res.configured ? "Insights are unavailable." : "No AI provider is configured on this deployment."), at: null });
+      return;
+    }
+    setState({ loading: false, text: res.insight, error: null, at: res.generatedAt || null });
+  };
+
+  return (
+    <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
+        <div>
+          <span className="text-[10px] font-mono uppercase tracking-[2.5px] text-gold font-semibold">
+            AI Business Intelligence
+          </span>
+          <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
+            Observations from your own metrics
+          </h3>
+        </div>
+        <button
+          onClick={generate}
+          disabled={state.loading}
+          className="px-4 py-2 bg-navy border border-gold/40 hover:bg-gold hover:text-navy text-gold rounded text-xs uppercase font-bold tracking-wider disabled:opacity-50 transition-colors"
+        >
+          {state.loading ? "Analysing…" : "Generate insights"}
+        </button>
+      </div>
+
+      {state.error && (
+        <p className="text-xs text-rose-300 font-mono" role="status">
+          {state.error}
+        </p>
+      )}
+
+      {state.text ? (
+        <div className="space-y-2">
+          <ul className="space-y-2 text-xs text-ivory font-light leading-relaxed list-disc list-inside">
+            {state.text.split("\n").map((line, i) => (
+              <li key={i}>{line.replace(/^[-*•]\s*/, "")}</li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-muted font-mono">
+            Generated {state.at ? new Date(state.at).toLocaleString() : "—"} · aggregated metrics only, no customer records shared
+          </p>
+        </div>
+      ) : (
+        !state.error && (
+          <p className="text-xs text-muted font-light">
+            Produce a short written reading of revenue, cancellations, refunds, coupon performance and inventory risk
+            using the figures already shown on this page.
+          </p>
+        )
+      )}
+    </div>
+  );
+};
+
 // --- 3. STORE MANAGER DASHBOARD ---
 const ManagerDashboard: React.FC = () => {
   const { products, orders, customers } = useAdminData();
+  const trend = useSalesTrendPoints();
   const navigate = useNavigate();
   const currentStaff = getCurrentStaff();
 
   const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((acc, o) => acc + o.total, 0);
   const pendingOrders = orders.filter((o) => o.status === "Pending");
-  const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
+  const lowStockProducts = products.filter((p) => lowestVariantStock(p) <= (p.lowStockThreshold ?? 10));
 
   return (
     <div className="space-y-8 animate-fade-in font-sans">
@@ -477,7 +596,7 @@ const ManagerDashboard: React.FC = () => {
             STORE MANAGEMENT WORKSPACE
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            Good morning, {currentStaff?.name || "Store Manager"} — Boutique Overview
+            {greetingFor()}, {currentStaff?.name || "Store Manager"} — Boutique Overview
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
             Store operations overview, inventory telemetry, client order fulfillment, and sales reports.
@@ -534,9 +653,18 @@ const ManagerDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <ChartCard
-            title="Revenue Performance Trajectory"
-            subtitle="Store sales metrics across selected horizons"
-            type="line"
+            title="Revenue Trend"
+            subtitle="Daily order value, last 90 days"
+            variant="line"
+            points={trend.points}
+            secondary={trend.orders}
+            formatter={formatPKR}
+            secondaryFormatter={(n) => `${n} orders`}
+            primaryLabel="Revenue"
+            secondaryLabel="Orders"
+            axisLabel="Day"
+            caption="Computed from stored orders; cancelled orders are excluded."
+            emptyMessage="No order value recorded in this window yet."
           />
         </div>
 
@@ -573,11 +701,13 @@ const ManagerDashboard: React.FC = () => {
 
 // --- 4. PRIMARY / SUPER ADMIN FULL EXECUTIVE DASHBOARD ---
 const FullAdminDashboard: React.FC = () => {
-  const { products, orders, customers } = useAdminData();
+  const { products, orders, customers, analytics } = useAdminData();
+  const trend = useSalesTrendPoints();
   const navigate = useNavigate();
 
+  const today = localDay();
   const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((acc, o) => acc + o.total, 0);
-  const todaysOrders = orders.filter((o) => o.createdAt === "2026-09-29");
+  const todaysOrders = orders.filter((o) => o.createdAt === today);
   const todaysRevenue = todaysOrders.reduce((acc, o) => acc + o.total, 0);
 
   const pendingOrders = orders.filter((o) => o.status === "Pending");
@@ -601,7 +731,7 @@ const FullAdminDashboard: React.FC = () => {
             PRIMARY ATELIER EXECUTIVE OVERVIEW
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            Good morning, Muhammad Hamdan — HM Signature Overview
+            {greetingFor()} — HM Signature Overview
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
             Real-time telemetry for private fragrance orders, inventory extraits, client subscriptions, staff access, and boutique revenue streams.
@@ -693,13 +823,24 @@ const FullAdminDashboard: React.FC = () => {
         />
       </div>
 
+      <AiInsightsCard />
+
       {/* Main Charts & Analytics Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <ChartCard
-            title="Revenue Performance Trend"
-            subtitle="Extrait sales trajectory across selected time horizons"
-            type="line"
+            title="Revenue Trend"
+            subtitle="Daily order value, last 90 days"
+            variant="line"
+            points={trend.points}
+            secondary={trend.orders}
+            formatter={formatPKR}
+            secondaryFormatter={(n) => `${n} orders`}
+            primaryLabel="Revenue"
+            secondaryLabel="Orders"
+            axisLabel="Day"
+            caption="Computed from stored orders; cancelled orders are excluded."
+            emptyMessage="No order value recorded in this window yet."
           />
         </div>
 
@@ -819,14 +960,20 @@ const FullAdminDashboard: React.FC = () => {
             <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
               Top Perfumes
             </h3>
-            <p className="text-xs text-muted font-light">Highest revenue extraits</p>
+            <p className="text-xs text-muted font-light">
+              {analytics?.topProducts?.length
+                ? `Highest revenue in the last ${analytics.windowDays} days`
+                : "Ranked once the first orders land"}
+            </p>
           </div>
 
           <div className="space-y-3">
-            {products.slice(0, 4).map((p, idx) => (
+            {(analytics?.topProducts || []).slice(0, 4).map((tp, idx) => {
+              const match = products.find((p) => p.name === tp.name);
+              return (
               <div
-                key={p.id}
-                onClick={() => navigate(`/admin/products/${p.id}`)}
+                key={tp.name}
+                onClick={() => match && navigate(`/admin/products/${match.id}`)}
                 className="flex items-center justify-between p-3 rounded bg-navy/60 border border-gold/10 hover:border-gold/30 cursor-pointer transition-colors"
               >
                 <div className="flex items-center space-x-3">
@@ -837,16 +984,24 @@ const FullAdminDashboard: React.FC = () => {
                   </div>
                   <div>
                     <h4 className="font-serif font-bold text-sm text-ivory">
-                      {p.name}
+                      {tp.name}
                     </h4>
-                    <p className="text-[10px] font-mono text-muted num-lining">{p.sku}</p>
+                    <p className="text-[10px] font-mono text-muted num-lining">
+                      {tp.units} unit{tp.units === 1 ? "" : "s"} across {tp.orders} order{tp.orders === 1 ? "" : "s"}
+                    </p>
                   </div>
                 </div>
                 <span className="text-xs font-mono text-gold font-semibold num-lining">
-                  Rs. {p.price.toLocaleString()}
+                  Rs. {Math.round(tp.revenue).toLocaleString()}
                 </span>
               </div>
-            ))}
+              );
+            })}
+            {(analytics?.topProducts || []).length === 0 && (
+              <p className="text-xs text-muted font-light py-4 text-center">
+                No sales recorded in the analytics window yet.
+              </p>
+            )}
           </div>
         </div>
       </div>

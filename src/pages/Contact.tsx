@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Clock, MessageCircle } from "lucide-react";
+import { sendTransactionalEmail } from "../services/emailService";
 
 const WHATSAPP_NUMBER = "923218602034";
+const ATELIER_EMAIL = "xeltriotechnologies@gmail.com";
 const MAPS_QUERY = encodeURIComponent("Rahim Yar Khan, Pakistan");
 
 const info = [
@@ -21,8 +23,8 @@ const info = [
   {
     icon: Mail,
     label: "EMAIL",
-    text: "xeltriotechnologies@gmail.com",
-    href: "mailto:xeltriotechnologies@gmail.com",
+    text: ATELIER_EMAIL,
+    href: `mailto:${ATELIER_EMAIL}`,
   },
   {
     icon: Clock,
@@ -34,9 +36,25 @@ const info = [
 
 export default function Contact() {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
-  const [sent, setSent] = useState(false);
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submitMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus("sending");
+    const delivered = await sendTransactionalEmail({
+      to: ATELIER_EMAIL,
+      subject: `Website enquiry — ${form.subject || "General"}`,
+      template: "contact_enquiry",
+      data: { name: form.name, email: form.email, subject: form.subject, message: form.message },
+    });
+    setStatus(delivered ? "sent" : "failed");
+  };
+
+  const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+    `${form.subject ? `${form.subject}\n\n` : ""}${form.message}\n\n— ${form.name}, ${form.email}`
+  )}`;
 
   return (
     <div className="pt-24 bg-navy min-h-screen">
@@ -55,19 +73,29 @@ export default function Contact() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7 }}>
             <h2 className="font-serif text-2xl mb-8">Send a Message</h2>
 
-            {sent ? (
+            {status === "sent" ? (
               <div className="border border-gold/25 p-10 text-center">
-                <p className="text-goldLight font-serif text-xl mb-3">Message Sent</p>
-                <p className="text-muted">Thank you for reaching out — our team will respond within 24 hours.</p>
+                <p className="text-goldLight font-serif text-xl mb-3">Message sent</p>
+                <p className="text-muted">Your enquiry has reached our inbox. We reply during working hours, Monday to Saturday.</p>
+              </div>
+            ) : status === "failed" ? (
+              <div className="border border-gold/25 p-10 text-center">
+                <p className="text-goldLight font-serif text-xl mb-3">Not sent</p>
+                <p className="text-muted mb-6">
+                  Email delivery is not available right now, so your message has not been sent. Open WhatsApp to send
+                  it to the atelier.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-8">
+                  <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-gold-fill">
+                    OPEN WHATSAPP →
+                  </a>
+                  <button onClick={() => setStatus("idle")} className="link-underline">
+                    Edit the message
+                  </button>
+                </div>
               </div>
             ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setSent(true);
-                }}
-                className="space-y-6"
-              >
+              <form onSubmit={submitMessage} className="space-y-6">
                 <div className="grid sm:grid-cols-2 gap-6">
                   <Field label="Full Name" value={form.name} onChange={(v) => update("name", v)} required />
                   <Field label="Email Address" type="email" value={form.email} onChange={(v) => update("email", v)} required />
@@ -83,7 +111,9 @@ export default function Contact() {
                     className="w-full bg-transparent border border-gold/25 px-4 py-3 text-sm focus:outline-none focus:border-gold resize-none"
                   />
                 </label>
-                <button type="submit" className="btn-gold-fill">SEND MESSAGE →</button>
+                <button type="submit" className="btn-gold-fill" disabled={status === "sending"}>
+                  {status === "sending" ? "SENDING…" : "SEND MESSAGE →"}
+                </button>
               </form>
             )}
           </motion.div>
