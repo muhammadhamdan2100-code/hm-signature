@@ -35,6 +35,9 @@ import {
   saveCouponToDB,
   deleteCouponFromDB,
   saveShippingMethodToDB,
+  fetchRefundsFromDB,
+  recordRefundInDB,
+  type RefundRecord,
 } from "../../services/adminOps";
 import {
   fetchStoreSettingsFromDB,
@@ -1181,6 +1184,7 @@ interface AdminDataContextType {
   collections: Collection[];
   orders: Order[];
   payments: PaymentRecord[];
+  refunds: RefundRecord[];
   customers: Customer[];
   inventoryLogs: InventoryLog[];
   coupons: Coupon[];
@@ -1225,6 +1229,15 @@ interface AdminDataContextType {
   verifyPayment: (paymentId: string, note?: string) => void;
   rejectPayment: (paymentId: string, reason?: string) => void;
   markCodCollected: (paymentId: string) => void;
+  createRefund: (input: {
+    paymentId: string;
+    amount: number;
+    currency?: string;
+    reference?: string;
+    reason?: string;
+    notes?: string;
+    status?: "pending" | "processed" | "failed" | "rejected";
+  }) => Promise<{ success: boolean; error?: string }>;
 
   adjustStock: (productId: string, change: number, reason: string) => void;
 
@@ -1269,6 +1282,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [collections, setCollections] = useState<Collection[]>(initialCollections);
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [payments, setPayments] = useState<PaymentRecord[]>(initialPayments);
+  const [refunds, setRefunds] = useState<RefundRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>(initialInventoryLogs);
   const [coupons, setCoupons] = useState<Coupon[]>(initialCoupons);
@@ -1318,18 +1332,20 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (dbLogs.length > 0) setInventoryLogs(dbLogs);
         }
 
-        const [dbOrders, dbPayments, dbCustomers, dbReviews, dbCoupons, dbShipping] = await Promise.all([
+        const [dbOrders, dbPayments, dbCustomers, dbReviews, dbCoupons, dbShipping, dbRefunds] = await Promise.all([
           fetchAdminOrdersFromDB(),
           fetchAdminPaymentsFromDB(),
           fetchAdminCustomersFromDB(),
           fetchAdminReviewsFromDB(),
           fetchAdminCouponsFromDB(),
           fetchAdminShippingMethodsFromDB(),
+          fetchRefundsFromDB(),
         ]);
 
         if (isMounted) {
           setOrders(dbOrders);
           setPayments(dbPayments);
+          setRefunds(dbRefunds);
           if (dbCustomers.length > 0) setCustomers(dbCustomers);
           if (dbReviews.length > 0) setReviews(dbReviews);
           if (dbCoupons.length > 0) setCoupons(dbCoupons);
@@ -1380,18 +1396,24 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const refreshOrdersAndPayments = async () => {
-    const [dbOrders, dbPayments] = await Promise.all([
+    const [dbOrders, dbPayments, dbRefunds] = await Promise.all([
       fetchAdminOrdersFromDB(),
       fetchAdminPaymentsFromDB(),
+      fetchRefundsFromDB(),
     ]);
     setOrders(dbOrders);
     setPayments(dbPayments);
+    setRefunds(dbRefunds);
   };
 
   // Products
   const addProduct = async (prodData: Omit<AdminProduct, "id" | "createdAt">) => {
     const success = await saveProductToDB(prodData);
-    if (success && isSupabaseConfigured()) {
+    if (!success) {
+      showToast("error", `Product "${prodData.name}" could not be saved. Check the size, SKU and price values.`);
+      return;
+    }
+    if (isSupabaseConfigured()) {
       const refreshed = await fetchAdminProductsFromDB();
       if (refreshed.length > 0) setProducts(refreshed);
     } else {
@@ -1409,7 +1431,11 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     const existing = products.find((p) => p.id === id);
     if (existing) {
       const merged = { ...existing, ...updates };
-      await saveProductToDB(merged);
+      const success = await saveProductToDB(merged);
+      if (!success) {
+        showToast("error", "Product could not be saved. Check the size, SKU and price values.");
+        return;
+      }
     }
     if (isSupabaseConfigured()) {
       const refreshed = await fetchAdminProductsFromDB();
@@ -1806,6 +1832,28 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("success", "COD payment marked as Collected.");
   };
 
+  const createRefund = async (input: {
+    paymentId: string;
+    amount: number;
+    currency?: string;
+    reference?: string;
+    reason?: string;
+    notes?: string;
+    status?: "pending" | "processed" | "failed" | "rejected";
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: "Refunds require the Supabase backend to be configured." };
+    }
+    const res = await recordRefundInDB(input);
+    if (res.success) {
+      await refreshOrdersAndPayments();
+      showToast("success", res.fullyRefunded ? "Payment fully refunded." : "Refund recorded.");
+    } else {
+      showToast("error", "Refund could not be recorded.");
+    }
+    return { success: res.success, error: res.error };
+  };
+
   // Inventory
   const adjustStock = async (productId: string, change: number, reason: string) => {
     const prod = products.find((p) => p.id === productId);
@@ -2155,6 +2203,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         collections,
         orders,
         payments,
+        refunds,
         customers,
         inventoryLogs,
         coupons,
@@ -2192,6 +2241,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         verifyPayment,
         rejectPayment,
         markCodCollected,
+        createRefund,
         adjustStock,
         addCoupon,
         updateCoupon,

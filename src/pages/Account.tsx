@@ -78,6 +78,8 @@ function getPaymentStatusBadge(status: PaymentStatus | string) {
     case "Failed":
     case "Rejected":
       return { label: "Payment Failed / Rejected", bg: "bg-rose-950/60 text-rose-300 border-rose-800/40" };
+    case "Refunded":
+      return { label: "Refunded", bg: "bg-sky-950/60 text-sky-300 border-sky-800/40" };
     default:
       return { label: "Payment Pending", bg: "bg-navy/80 text-muted border-gold/20" };
   }
@@ -237,7 +239,7 @@ const PaymentProofUploadSection: React.FC<{ order: Order }> = ({ order }) => {
 
 export default function Account() {
   const { user, logout } = useAuth();
-  const { orders } = useAdminData();
+  const { orders, refunds } = useAdminData();
   const navigate = useNavigate();
 
   if (!user) {
@@ -347,6 +349,10 @@ export default function Account() {
                 const isSpecialState = order.status === "Cancelled" || order.status === "Returned";
                 const pmBadge = getPaymentMethodBadge(order.paymentMethod);
                 const psBadge = getPaymentStatusBadge(order.paymentStatus);
+                const orderRefunds = refunds.filter((r) => r.orderId === order.id);
+                const refundedTotal = orderRefunds
+                  .filter((r) => r.status === "processed" || r.status === "pending")
+                  .reduce((acc, r) => acc + r.amount, 0);
                 const PMIcon = pmBadge.icon;
 
                 return (
@@ -381,6 +387,12 @@ export default function Account() {
                         <span className={`px-3 py-1 rounded text-xs font-semibold border ${psBadge.bg}`}>
                           {psBadge.label}
                         </span>
+
+                        {refundedTotal > 0 && (
+                          <span className="px-3 py-1 rounded text-xs font-mono border border-sky-800/40 bg-sky-950/40 text-sky-300">
+                            Refunded {formatPKR(refundedTotal)}
+                          </span>
+                        )}
 
                         {/* Total Amount */}
                         <div className="text-right">

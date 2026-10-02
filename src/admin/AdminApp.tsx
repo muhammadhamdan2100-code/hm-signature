@@ -15,6 +15,7 @@ import { CouponsPage } from "./pages/CouponsPage";
 import { ShippingPage } from "./pages/ShippingPage";
 import { ReviewsPage } from "./pages/ReviewsPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
+import { RefundsPage } from "./pages/RefundsPage";
 import { HomepageCmsPage } from "./pages/HomepageCmsPage";
 import { MarketingPage } from "./pages/MarketingPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -45,6 +46,7 @@ export default function AdminApp() {
         <Route path="shipping" element={<ShippingPage />} />
         <Route path="reviews" element={<ReviewsPage />} />
         <Route path="payments" element={<PaymentsPage />} />
+        <Route path="payments/refunds" element={<RefundsPage />} />
         <Route path="homepage" element={<HomepageCmsPage />} />
         <Route path="marketing" element={<MarketingPage />} />
         <Route path="notifications" element={<NotificationsPage />} />

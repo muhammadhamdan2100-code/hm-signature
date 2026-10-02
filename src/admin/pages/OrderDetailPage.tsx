@@ -76,6 +76,16 @@ export const OrderDetailPage: React.FC = () => {
     };
   }, [order?.paymentProofUrl]);
 
+  // The order list hydrates from Supabase after this page mounts, so seed the
+  // shipping fields from the stored record instead of keeping the mount-time defaults.
+  useEffect(() => {
+    if (!order) return;
+    setCourier(order.courier || "DHL Express Luxury");
+    setTrackingNumber(order.trackingNumber || "");
+    setShippingStatus(order.shippingStatus || "Processing");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
+
   if (!order) {
     return (
       <div className="py-16 text-center space-y-4">

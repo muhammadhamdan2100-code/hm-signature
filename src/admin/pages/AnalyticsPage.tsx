@@ -12,7 +12,7 @@ import {
 export const AnalyticsPage: React.FC = () => {
   const { products, orders } = useAdminData();
 
-  const totalRevenue = orders.reduce((acc, o) => acc + o.total, 0);
+  const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((acc, o) => acc + o.total, 0);
   const totalItemsSold = orders.reduce(
     (acc, o) => acc + o.items.reduce((sum, item) => sum + item.quantity, 0),
     0

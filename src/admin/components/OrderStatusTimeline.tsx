@@ -72,7 +72,6 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
                 </option>
               ))}
               <option value="Cancelled">Cancelled</option>
-              <option value="Refunded">Refunded</option>
             </select>
           </div>
         )}

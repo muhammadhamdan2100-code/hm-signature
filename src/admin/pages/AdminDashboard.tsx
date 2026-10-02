@@ -464,7 +464,7 @@ const ManagerDashboard: React.FC = () => {
   const navigate = useNavigate();
   const currentStaff = getCurrentStaff();
 
-  const totalRevenue = orders.reduce((acc, o) => acc + o.total, 0);
+  const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((acc, o) => acc + o.total, 0);
   const pendingOrders = orders.filter((o) => o.status === "Pending");
   const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
 
@@ -576,7 +576,7 @@ const FullAdminDashboard: React.FC = () => {
   const { products, orders, customers } = useAdminData();
   const navigate = useNavigate();
 
-  const totalRevenue = orders.reduce((acc, o) => acc + o.total, 0);
+  const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((acc, o) => acc + o.total, 0);
   const todaysOrders = orders.filter((o) => o.createdAt === "2026-09-29");
   const todaysRevenue = todaysOrders.reduce((acc, o) => acc + o.total, 0);
 

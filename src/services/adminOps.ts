@@ -96,7 +96,8 @@ export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
 
   return data.map((o: any) => {
     const payment = o.payments?.[0];
-    const shipment = o.shipments?.[0];
+    // shipments.order_id is UNIQUE, so PostgREST embeds a to-one object here, not an array
+    const shipment = Array.isArray(o.shipments) ? o.shipments[0] : o.shipments;
     const timeline: OrderTimelineItem[] = historyRows
       .filter((h) => h.order_id === o.id)
       .map((h) => ({
@@ -186,6 +187,9 @@ export async function updateOrderStatusInDB(
   status: OrderStatus,
   note?: string
 ): Promise<boolean> {
+  if (status === "Cancelled") {
+    return cancelOrderInDB(orderId, note);
+  }
   const user = (await supabase.auth.getUser()).data.user;
   const { error } = await supabase
     .from("orders")
@@ -203,6 +207,90 @@ export async function updateOrderStatusInDB(
     return false;
   }
   return true;
+}
+
+export async function cancelOrderInDB(orderId: string, note?: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("cancel_order", {
+    p_order_id: orderId,
+    p_note: note || null,
+  });
+  if (error) {
+    console.error("cancel_order RPC:", error.message);
+    return false;
+  }
+  return Boolean(data?.success);
+}
+
+export interface RefundResult {
+  success: boolean;
+  error?: string;
+  fullyRefunded?: boolean;
+}
+
+export async function recordRefundInDB(input: {
+  paymentId: string;
+  amount: number;
+  currency?: string;
+  reference?: string;
+  reason?: string;
+  notes?: string;
+  status?: "pending" | "processed" | "failed" | "rejected";
+}): Promise<RefundResult> {
+  const { data, error } = await supabase.rpc("record_refund", {
+    p_payment_id: input.paymentId,
+    p_amount: input.amount,
+    p_currency: input.currency || "PKR",
+    p_reference: input.reference || null,
+    p_reason: input.reason || null,
+    p_notes: input.notes || null,
+    p_status: input.status || "processed",
+  });
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  return { success: Boolean(data?.success), fullyRefunded: Boolean(data?.fully_refunded) };
+}
+
+export interface RefundRecord {
+  id: string;
+  paymentId: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  amount: number;
+  currency: string;
+  status: "pending" | "processed" | "failed" | "rejected";
+  reference?: string;
+  reason?: string;
+  notes?: string;
+  date: string;
+  refundedAt?: string;
+}
+
+export async function fetchRefundsFromDB(): Promise<RefundRecord[]> {
+  const { data, error } = await supabase
+    .from("refunds")
+    .select("*, orders ( order_number, customer_name )")
+    .order("created_at", { ascending: false });
+  if (error || !data) {
+    if (error) console.warn("fetchRefundsFromDB:", error.message);
+    return [];
+  }
+  return data.map((r: any) => ({
+    id: r.id,
+    paymentId: r.payment_id,
+    orderId: r.order_id,
+    orderNumber: r.orders?.order_number || "—",
+    customerName: r.orders?.customer_name || "—",
+    amount: Number(r.amount),
+    currency: r.currency,
+    status: r.status,
+    reference: r.refund_reference || undefined,
+    reason: r.reason || undefined,
+    notes: r.notes || undefined,
+    date: fmtDate(r.created_at),
+    refundedAt: r.refunded_at || undefined,
+  }));
 }
 
 export async function updateOrderShippingInDB(

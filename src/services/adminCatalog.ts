@@ -326,9 +326,13 @@ export async function saveProductToDB(
         };
 
         if (v.id && !v.id.startsWith("v-")) {
-          await supabase.from("product_variants").update(variantPayload).eq("id", v.id);
+          const { error: vErr } = await supabase.from("product_variants").update(variantPayload).eq("id", v.id);
+          if (vErr) throw vErr;
         } else {
-          await supabase.from("product_variants").upsert([variantPayload], { onConflict: "product_id,size" });
+          const { error: vErr } = await supabase
+            .from("product_variants")
+            .upsert([variantPayload], { onConflict: "product_id,size" });
+          if (vErr) throw vErr;
         }
       }
     }

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { useAdminData, type PaymentMethod } from "../context/AdminDataContext";
+import { useAdminData, type PaymentMethod, type PaymentRecord } from "../context/AdminDataContext";
 import { DataTable, type Column } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatCard } from "../components/StatCard";
+import { Modal } from "../components/Modal";
 import {
   CreditCard,
   Banknote,
@@ -11,15 +12,74 @@ import {
   Truck,
   Clock,
   Eye,
+  RotateCcw,
+  ArrowLeftRight,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 export const PaymentsPage: React.FC = () => {
-  const { payments, verifyPayment, rejectPayment, markCodCollected } = useAdminData();
+  const { payments, refunds, verifyPayment, rejectPayment, markCodCollected, createRefund } = useAdminData();
   const navigate = useNavigate();
 
   const [methodFilter, setMethodFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Refund modal state
+  const [refundTarget, setRefundTarget] = useState<PaymentRecord | null>(null);
+  const [refundAmount, setRefundAmount] = useState<number>(0);
+  const [refundReference, setRefundReference] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundNotes, setRefundNotes] = useState("");
+  const [refundStatus, setRefundStatus] = useState<"processed" | "pending">("processed");
+  const [refundError, setRefundError] = useState("");
+  const [refundBusy, setRefundBusy] = useState(false);
+
+  const refundedSoFar = (paymentId: string) =>
+    refunds
+      .filter((r) => r.paymentId === paymentId && (r.status === "processed" || r.status === "pending"))
+      .reduce((acc, r) => acc + r.amount, 0);
+
+  const remainingRefundable = (p: PaymentRecord) => Math.max(0, p.amount - refundedSoFar(p.id));
+
+  const openRefundModal = (p: PaymentRecord) => {
+    setRefundTarget(p);
+    setRefundAmount(remainingRefundable(p));
+    setRefundReference("");
+    setRefundReason("");
+    setRefundNotes("");
+    setRefundStatus("processed");
+    setRefundError("");
+  };
+
+  const handleRefundSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!refundTarget) return;
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      setRefundError("Refund amount must be greater than zero.");
+      return;
+    }
+    if (refundAmount > remainingRefundable(refundTarget)) {
+      setRefundError(`Refund exceeds remaining refundable amount (Rs. ${remainingRefundable(refundTarget).toLocaleString()}).`);
+      return;
+    }
+    setRefundBusy(true);
+    setRefundError("");
+    const res = await createRefund({
+      paymentId: refundTarget.id,
+      amount: refundAmount,
+      currency: "PKR",
+      reference: refundReference || undefined,
+      reason: refundReason || undefined,
+      notes: refundNotes || undefined,
+      status: refundStatus,
+    });
+    setRefundBusy(false);
+    if (!res.success) {
+      setRefundError(res.error || "Refund could not be recorded.");
+      return;
+    }
+    setRefundTarget(null);
+  };
 
   // Filtered Payments
   const filteredPayments = payments.filter((p) => {
@@ -116,6 +176,25 @@ export const PaymentsPage: React.FC = () => {
       sortable: true,
     },
     {
+      header: "Refunds",
+      accessor: (p) => {
+        const done = refunds.filter((r) => r.paymentId === p.id);
+        if (done.length === 0) return <span className="text-[10px] text-muted font-mono">—</span>;
+        const total = refundedSoFar(p.id);
+        const pendingOnly = done.every((r) => r.status === "pending");
+        return (
+          <div className="space-y-0.5">
+            <span className="font-mono text-[11px] text-gold block">
+              Rs. {total.toLocaleString()} / {p.amount.toLocaleString()}
+            </span>
+            <span className={`text-[9px] font-mono uppercase tracking-wider ${pendingOnly ? "text-amber-300" : "text-rose-300"}`}>
+              {pendingOnly ? "Refund Pending" : total >= p.amount ? "Fully Refunded" : "Partial Refund"}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
       header: "Actions",
       accessor: (p) => (
         <div className="flex items-center space-x-2 justify-end">
@@ -143,6 +222,17 @@ export const PaymentsPage: React.FC = () => {
                 Reject
               </button>
             </>
+          )}
+
+          {(p.status === "Paid" || p.status === "Verified") && remainingRefundable(p) > 0 && (
+            <button
+              onClick={() => openRefundModal(p)}
+              className="px-2 py-1 bg-navy hover:bg-navy2 text-gold border border-gold/40 hover:border-gold rounded text-[10px] uppercase font-bold transition-colors flex items-center space-x-1"
+              title="Issue refund for this payment"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Refund</span>
+            </button>
           )}
 
           <button
@@ -173,6 +263,13 @@ export const PaymentsPage: React.FC = () => {
             Verify Pakistan digital transfers (JazzCash, Raast, Bank Transfer) and audit Cash on Delivery collections.
           </p>
         </div>
+        <Link
+          to="/admin/payments/refunds"
+          className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center space-x-1.5 shrink-0"
+        >
+          <ArrowLeftRight className="w-4 h-4 text-gold" />
+          <span>Refund Ledger</span>
+        </Link>
       </div>
 
       {/* Metrics Row */}
@@ -242,9 +339,12 @@ export const PaymentsPage: React.FC = () => {
           >
             <option value="all">All Statuses</option>
             <option value="Pending">Pending</option>
+            <option value="Verification Pending">Verification Pending</option>
             <option value="Verified">Verified</option>
             <option value="Paid">Paid (COD Collected)</option>
+            <option value="Failed">Failed</option>
             <option value="Rejected">Rejected</option>
+            <option value="Refunded">Refunded</option>
           </select>
         </div>
       </div>
@@ -256,6 +356,89 @@ export const PaymentsPage: React.FC = () => {
         keyExtractor={(p) => p.id}
         searchPlaceholder="Search by order number, client name, email, or transaction reference..."
       />
+
+      {/* Issue Refund Modal */}
+      <Modal
+        isOpen={Boolean(refundTarget)}
+        onClose={() => setRefundTarget(null)}
+        title="Issue Refund"
+        subtitle={refundTarget ? `Order ${refundTarget.orderNumber} • ${refundTarget.method} • Paid Rs. ${refundTarget.amount.toLocaleString()} • Remaining Rs. ${remainingRefundable(refundTarget).toLocaleString()}` : undefined}
+      >
+        <form onSubmit={handleRefundSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Refund Amount (PKR) *</label>
+            <input
+              type="number"
+              required
+              min={1}
+              step="0.01"
+              value={refundAmount}
+              onChange={(e) => setRefundAmount(Number(e.target.value))}
+              className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Refund / Bank Reference</label>
+            <input
+              type="text"
+              value={refundReference}
+              onChange={(e) => setRefundReference(e.target.value)}
+              placeholder="e.g. HBL-REF-88213"
+              className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Reason</label>
+            <input
+              type="text"
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="e.g. Damaged flacon on delivery"
+              className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Internal Notes</label>
+            <textarea
+              rows={2}
+              value={refundNotes}
+              onChange={(e) => setRefundNotes(e.target.value)}
+              placeholder="Optional note for finance records"
+              className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Refund Status</label>
+            <select
+              value={refundStatus}
+              onChange={(e) => setRefundStatus(e.target.value as "processed" | "pending")}
+              className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+            >
+              <option value="processed">Processed — funds returned</option>
+              <option value="pending">Pending — bank transfer in progress</option>
+            </select>
+          </div>
+          {refundError && (
+            <p className="text-xs text-rose-300 font-mono">{refundError}</p>
+          )}
+          <div className="flex justify-end space-x-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setRefundTarget(null)}
+              className="px-4 py-2 rounded text-xs text-muted hover:text-ivory uppercase font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={refundBusy}
+              className="px-4 py-2 bg-gold text-navy font-bold rounded text-xs uppercase hover:bg-goldLight disabled:opacity-50"
+            >
+              {refundBusy ? "Processing…" : "Record Refund"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

@@ -27,6 +27,7 @@ import {
   ExternalLink,
   Sparkles,
   CreditCard,
+  ArrowLeftRight,
   LogOut,
 } from "lucide-react";
 
@@ -82,6 +83,7 @@ export const NAV_GROUPS: NavGroup[] = [
     groupName: "Operations",
     items: [
       { label: "Payments", path: "/admin/payments", icon: CreditCard },
+      { label: "Refunds", path: "/admin/payments/refunds", icon: ArrowLeftRight },
       { label: "Abandoned Carts", path: "/admin/abandoned-carts", icon: ShoppingCart },
     ],
   },
