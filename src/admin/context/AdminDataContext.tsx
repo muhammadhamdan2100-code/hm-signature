@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { products as initialProductsData, type ProductVariant, generateDefaultVariants } from "../../data/products";
 import { type StaffMember, type StaffStatus, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
 import { INITIAL_STAFF_MEMBERS } from "../../services/staff";
-import { isSupabaseConfigured, dbService } from "../../lib/supabase";
+import { isSupabaseConfigured, dbService, supabase } from "../../lib/supabase";
 import {
   fetchAdminProductsFromDB,
   fetchAdminCategoriesFromDB,
@@ -17,6 +17,43 @@ import {
   deleteCollectionSafeFromDB,
   adjustStockAtomicDB,
 } from "../../services/adminCatalog";
+import {
+  fetchAdminOrdersFromDB,
+  fetchAdminPaymentsFromDB,
+  fetchAdminCustomersFromDB,
+  fetchAdminReviewsFromDB,
+  fetchAdminCouponsFromDB,
+  fetchAdminShippingMethodsFromDB,
+  updateOrderStatusInDB,
+  updateOrderShippingInDB,
+  uploadPaymentProofInDB,
+  verifyPaymentInDB,
+  rejectPaymentInDB,
+  markCodCollectedInDB,
+  updateReviewStatusInDB,
+  deleteReviewFromDB,
+  saveCouponToDB,
+  deleteCouponFromDB,
+  saveShippingMethodToDB,
+} from "../../services/adminOps";
+import {
+  fetchStoreSettingsFromDB,
+  saveStoreSettingsToDB,
+  fetchHomepageConfigFromDB,
+  saveHomepageConfigToDB,
+  fetchSeoEntriesFromDB,
+  saveSeoEntryToDB,
+  fetchNotificationsFromDB,
+  markNotificationReadInDB,
+  fetchEmailTemplatesFromDB,
+  saveEmailTemplateToDB,
+  fetchCampaignsFromDB,
+  saveCampaignToDB,
+  deleteCampaignFromDB,
+  fetchAbandonedCartsFromDB,
+  markCartReminderSentInDB,
+  fetchStaffMembersFromDB,
+} from "../../services/adminContent";
 
 export type { StaffMember, ProductVariant };
 export { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin };
@@ -1150,6 +1187,7 @@ interface AdminDataContextType {
   shippingMethods: ShippingMethod[];
   reviews: ReviewItem[];
   homepageConfig: HomepageConfig;
+  homepageConfigPersisted: boolean;
   campaigns: Campaign[];
   notifications: SystemNotification[];
   emailTemplates: EmailTemplate[];
@@ -1231,12 +1269,13 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [collections, setCollections] = useState<Collection[]>(initialCollections);
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [payments, setPayments] = useState<PaymentRecord[]>(initialPayments);
-  const [customers] = useState<Customer[]>(initialCustomers);
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>(initialInventoryLogs);
   const [coupons, setCoupons] = useState<Coupon[]>(initialCoupons);
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>(initialShippingMethods);
   const [reviews, setReviews] = useState<ReviewItem[]>(initialReviews);
   const [homepageConfig, setHomepageConfig] = useState<HomepageConfig>(initialHomepageConfig);
+  const [homepageConfigPersisted, setHomepageConfigPersisted] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
   const [notifications, setNotifications] = useState<SystemNotification[]>(initialSystemNotifications);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(initialEmailTemplates);
@@ -1263,7 +1302,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (!isSupabaseConfigured()) return;
 
     let isMounted = true;
-    async function loadCatalogData() {
+    async function loadAdminData() {
       try {
         const [dbProds, dbCats, dbCols, dbLogs] = await Promise.all([
           fetchAdminProductsFromDB(),
@@ -1278,16 +1317,76 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (dbCols.length > 0) setCollections(dbCols);
           if (dbLogs.length > 0) setInventoryLogs(dbLogs);
         }
+
+        const [dbOrders, dbPayments, dbCustomers, dbReviews, dbCoupons, dbShipping] = await Promise.all([
+          fetchAdminOrdersFromDB(),
+          fetchAdminPaymentsFromDB(),
+          fetchAdminCustomersFromDB(),
+          fetchAdminReviewsFromDB(),
+          fetchAdminCouponsFromDB(),
+          fetchAdminShippingMethodsFromDB(),
+        ]);
+
+        if (isMounted) {
+          setOrders(dbOrders);
+          setPayments(dbPayments);
+          if (dbCustomers.length > 0) setCustomers(dbCustomers);
+          if (dbReviews.length > 0) setReviews(dbReviews);
+          if (dbCoupons.length > 0) setCoupons(dbCoupons);
+          if (dbShipping.length > 0) setShippingMethods(dbShipping);
+        }
+
+        const [dbSettings, dbHomepage, dbSeo, dbNotifs, dbTemplates, dbCampaigns, dbCarts, dbStaff] = await Promise.all([
+          fetchStoreSettingsFromDB(),
+          fetchHomepageConfigFromDB(),
+          fetchSeoEntriesFromDB(),
+          fetchNotificationsFromDB(),
+          fetchEmailTemplatesFromDB(),
+          fetchCampaignsFromDB(),
+          fetchAbandonedCartsFromDB(),
+          fetchStaffMembersFromDB(),
+        ]);
+
+        if (isMounted) {
+          if (dbSettings) setStoreSettings(dbSettings);
+          if (dbHomepage) {
+            setHomepageConfig(dbHomepage);
+            setHomepageConfigPersisted(true);
+          }
+          if (dbSeo.length > 0) setSeoEntries(dbSeo);
+          if (dbNotifs.length > 0) setNotifications(dbNotifs);
+          if (dbTemplates.length > 0) setEmailTemplates(dbTemplates);
+          if (dbCampaigns.length > 0) setCampaigns(dbCampaigns);
+          if (dbCarts.length > 0) setAbandonedCarts(dbCarts);
+          if (dbStaff.length > 0) setStaffMembers(dbStaff);
+        }
       } catch (err) {
         console.error("Failed loading initial Supabase admin data:", err);
       }
     }
 
-    loadCatalogData();
+    loadAdminData();
+
+    const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+        loadAdminData();
+      }
+    });
+
     return () => {
       isMounted = false;
+      authSub.subscription.unsubscribe();
     };
   }, []);
+
+  const refreshOrdersAndPayments = async () => {
+    const [dbOrders, dbPayments] = await Promise.all([
+      fetchAdminOrdersFromDB(),
+      fetchAdminPaymentsFromDB(),
+    ]);
+    setOrders(dbOrders);
+    setPayments(dbPayments);
+  };
 
   // Products
   const addProduct = async (prodData: Omit<AdminProduct, "id" | "createdAt">) => {
@@ -1473,7 +1572,16 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     return `HMS-TRK-${code}`;
   };
 
-  const addOrder = (orderData: Omit<Order, "id"> & { id?: string }) => {
+  const isRealDbId = (id?: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || "");
+
+  const addOrder = async (orderData: Omit<Order, "id"> & { id?: string }) => {
+    if (isSupabaseConfigured() && isRealDbId(orderData.id)) {
+      // Order already persisted by place_order RPC — refresh authoritative state
+      await refreshOrdersAndPayments();
+      showToast("success", `New Order #${orderData.orderNumber} placed via ${orderData.paymentMethod}.`);
+      return;
+    }
+
     const timeString = new Date().toISOString().replace("T", " ").slice(0, 16);
     const orderId = orderData.id || `ord-${Date.now()}`;
     const initialTimeline: OrderTimelineItem[] = [
@@ -1503,7 +1611,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("success", `New Order #${newOrder.orderNumber} placed via ${newOrder.paymentMethod}.`);
   };
 
-  const updateOrderStatus = (orderId: string, status: OrderStatus, note?: string) => {
+  const updateOrderStatus = async (orderId: string, status: OrderStatus, note?: string) => {
+    if (isSupabaseConfigured() && isRealDbId(orderId)) {
+      const ok = await updateOrderStatusInDB(orderId, status, note);
+      if (!ok) {
+        showToast("error", "Failed to update order status in database.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("success", `Order status changed to ${status}.`);
+      return;
+    }
     const timeString = new Date().toISOString().replace("T", " ").slice(0, 16);
     setOrders((prev) =>
       prev.map((o) => {
@@ -1521,12 +1639,22 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("success", `Order #${orderId} status changed to ${status}.`);
   };
 
-  const updateOrderShipping = (
+  const updateOrderShipping = async (
     orderId: string,
     courier: string,
     trackingNumber: string,
     shippingStatus: Order["shippingStatus"]
   ) => {
+    if (isSupabaseConfigured() && isRealDbId(orderId)) {
+      const ok = await updateOrderShippingInDB(orderId, courier, trackingNumber, shippingStatus);
+      if (!ok) {
+        showToast("error", "Failed to save tracking information.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("success", `Tracking info updated for order.`);
+      return;
+    }
     setOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
@@ -1537,7 +1665,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("success", `Tracking info updated for order.`);
   };
 
-  const uploadPaymentProof = (orderId: string, proofUrl: string, note?: string) => {
+  const uploadPaymentProof = async (orderId: string, proofUrl: string, note?: string) => {
+    if (isSupabaseConfigured() && isRealDbId(orderId)) {
+      const ok = await uploadPaymentProofInDB(orderId, proofUrl, note);
+      if (!ok) {
+        showToast("error", "Failed to attach payment proof. Please try again.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("success", "Payment proof uploaded successfully. Verification is pending approval.");
+      return;
+    }
     const timeString = new Date().toISOString().replace("T", " ").slice(0, 16);
     setOrders((prev) =>
       prev.map((o) => {
@@ -1573,14 +1711,37 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Payments Management
-  const updatePaymentStatus = (paymentId: string, status: PaymentStatus, note?: string) => {
+  const updatePaymentStatus = async (paymentId: string, status: PaymentStatus, note?: string) => {
+    if (isSupabaseConfigured() && isRealDbId(paymentId)) {
+      const { error } = await supabase
+        .from("payments")
+        .update({ status, proof_note: note, updated_at: new Date().toISOString() })
+        .eq("id", paymentId);
+      if (error) {
+        showToast("error", "Failed to update payment status.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("success", `Payment record status changed to ${status}.`);
+      return;
+    }
     setPayments((prev) =>
       prev.map((p) => (p.id === paymentId ? { ...p, status, proofNote: note || p.proofNote } : p))
     );
     showToast("success", `Payment record status changed to ${status}.`);
   };
 
-  const verifyPayment = (paymentId: string, note?: string) => {
+  const verifyPayment = async (paymentId: string, note?: string) => {
+    if (isSupabaseConfigured() && isRealDbId(paymentId)) {
+      const ok = await verifyPaymentInDB(paymentId, note);
+      if (!ok) {
+        showToast("error", "Failed to verify payment. Check staff authorization.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("success", "Payment verified successfully.");
+      return;
+    }
     setPayments((prev) =>
       prev.map((p) => {
         if (p.id === paymentId) {
@@ -1595,7 +1756,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("success", "Payment verified successfully.");
   };
 
-  const rejectPayment = (paymentId: string, reason?: string) => {
+  const rejectPayment = async (paymentId: string, reason?: string) => {
+    if (isSupabaseConfigured() && isRealDbId(paymentId)) {
+      const ok = await rejectPaymentInDB(paymentId, reason);
+      if (!ok) {
+        showToast("error", "Failed to reject payment.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("error", "Payment rejected.");
+      return;
+    }
     setPayments((prev) =>
       prev.map((p) => {
         if (p.id === paymentId) {
@@ -1610,7 +1781,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("error", "Payment rejected.");
   };
 
-  const markCodCollected = (paymentId: string) => {
+  const markCodCollected = async (paymentId: string) => {
+    if (isSupabaseConfigured() && isRealDbId(paymentId)) {
+      const ok = await markCodCollectedInDB(paymentId);
+      if (!ok) {
+        showToast("error", "Failed to mark COD as collected.");
+        return;
+      }
+      await refreshOrdersAndPayments();
+      showToast("success", "COD payment marked as Collected.");
+      return;
+    }
     setPayments((prev) =>
       prev.map((p) => {
         if (p.id === paymentId) {
@@ -1669,24 +1850,72 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Coupons
-  const addCoupon = (coupon: Omit<Coupon, "id" | "usedCount">) => {
+  const refreshCoupons = async () => {
+    const dbCoupons = await fetchAdminCouponsFromDB();
+    if (dbCoupons.length > 0) setCoupons(dbCoupons);
+  };
+
+  const addCoupon = async (coupon: Omit<Coupon, "id" | "usedCount">) => {
+    if (isSupabaseConfigured()) {
+      const ok = await saveCouponToDB({ ...coupon, usedCount: 0 } as Partial<Coupon>);
+      if (!ok) {
+        showToast("error", "Failed to create coupon in database.");
+        return;
+      }
+      await refreshCoupons();
+      showToast("success", `Coupon code "${coupon.code}" created.`);
+      return;
+    }
     const newCoup: Coupon = { ...coupon, id: "coup-" + Date.now(), usedCount: 0 };
     setCoupons((prev) => [newCoup, ...prev]);
     showToast("success", `Coupon code "${newCoup.code}" created.`);
   };
 
-  const updateCoupon = (id: string, updates: Partial<Coupon>) => {
+  const updateCoupon = async (id: string, updates: Partial<Coupon>) => {
+    if (isSupabaseConfigured()) {
+      const existing = coupons.find((c) => c.id === id);
+      const ok = await saveCouponToDB({ ...existing, ...updates, id });
+      if (!ok) {
+        showToast("error", "Failed to update coupon.");
+        return;
+      }
+      await refreshCoupons();
+      showToast("success", "Coupon updated.");
+      return;
+    }
     setCoupons((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
     showToast("success", "Coupon updated.");
   };
 
-  const deleteCoupon = (id: string) => {
+  const deleteCoupon = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      await deleteCouponFromDB(id);
+      await refreshCoupons();
+      showToast("info", "Coupon removed.");
+      return;
+    }
     setCoupons((prev) => prev.filter((c) => c.id !== id));
     showToast("info", "Coupon removed.");
   };
 
   // Shipping
-  const updateShippingMethod = (id: string, updates: Partial<ShippingMethod>) => {
+  const refreshShippingMethods = async () => {
+    const dbShipping = await fetchAdminShippingMethodsFromDB();
+    if (dbShipping.length > 0) setShippingMethods(dbShipping);
+  };
+
+  const updateShippingMethod = async (id: string, updates: Partial<ShippingMethod>) => {
+    if (isSupabaseConfigured()) {
+      const existing = shippingMethods.find((s) => s.id === id);
+      const ok = await saveShippingMethodToDB({ ...existing, ...updates, id });
+      if (!ok) {
+        showToast("error", "Failed to update shipping method.");
+        return;
+      }
+      await refreshShippingMethods();
+      showToast("success", "Shipping method updated.");
+      return;
+    }
     setShippingMethods((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
     );
@@ -1694,41 +1923,114 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Reviews
-  const updateReviewStatus = (id: string, status: ReviewItem["status"]) => {
+  const refreshReviews = async () => {
+    const dbReviews = await fetchAdminReviewsFromDB();
+    setReviews(dbReviews);
+  };
+
+  const updateReviewStatus = async (id: string, status: ReviewItem["status"]) => {
+    if (isSupabaseConfigured() && isRealDbId(id)) {
+      const ok = await updateReviewStatusInDB(id, status);
+      if (!ok) {
+        showToast("error", "Failed to update review status.");
+        return;
+      }
+      await refreshReviews();
+      showToast("success", `Review status changed to ${status}.`);
+      return;
+    }
     setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     showToast("success", `Review status changed to ${status}.`);
   };
 
-  const deleteReview = (id: string) => {
+  const deleteReview = async (id: string) => {
+    if (isSupabaseConfigured() && isRealDbId(id)) {
+      await deleteReviewFromDB(id);
+      await refreshReviews();
+      showToast("info", "Review deleted.");
+      return;
+    }
     setReviews((prev) => prev.filter((r) => r.id !== id));
     showToast("info", "Review deleted.");
   };
 
   // Homepage Config
-  const updateHomepageConfig = (updates: Partial<HomepageConfig>) => {
-    setHomepageConfig((prev) => ({ ...prev, ...updates }));
+  const updateHomepageConfig = async (updates: Partial<HomepageConfig>) => {
+    const merged = { ...homepageConfig, ...updates };
+    if (isSupabaseConfigured()) {
+      const ok = await saveHomepageConfigToDB(merged);
+      if (!ok) {
+        showToast("error", "Failed to save homepage settings to database.");
+        return;
+      }
+      setHomepageConfigPersisted(true);
+    }
+    setHomepageConfig(merged);
     showToast("success", "Homepage CMS settings saved.");
   };
 
   // Campaigns
-  const addCampaign = (camp: Omit<Campaign, "id">) => {
+  const refreshCampaigns = async () => {
+    const dbCampaigns = await fetchCampaignsFromDB();
+    if (dbCampaigns.length > 0) setCampaigns(dbCampaigns);
+  };
+
+  const addCampaign = async (camp: Omit<Campaign, "id">) => {
+    if (isSupabaseConfigured()) {
+      const ok = await saveCampaignToDB(camp);
+      if (!ok) {
+        showToast("error", "Failed to create campaign.");
+        return;
+      }
+      await refreshCampaigns();
+      showToast("success", `Marketing campaign "${camp.name}" launched.`);
+      return;
+    }
     const newCamp: Campaign = { ...camp, id: "camp-" + Date.now() };
     setCampaigns((prev) => [newCamp, ...prev]);
     showToast("success", `Marketing campaign "${newCamp.name}" launched.`);
   };
 
-  const updateCampaign = (id: string, updates: Partial<Campaign>) => {
+  const updateCampaign = async (id: string, updates: Partial<Campaign>) => {
+    if (isSupabaseConfigured()) {
+      const existing = campaigns.find((c) => c.id === id);
+      const ok = await saveCampaignToDB({ ...existing, ...updates, id });
+      if (!ok) {
+        showToast("error", "Failed to update campaign.");
+        return;
+      }
+      await refreshCampaigns();
+      showToast("success", "Campaign updated.");
+      return;
+    }
     setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
     showToast("success", "Campaign updated.");
   };
 
-  const deleteCampaign = (id: string) => {
+  const deleteCampaign = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      await deleteCampaignFromDB(id);
+      await refreshCampaigns();
+      showToast("info", "Campaign removed.");
+      return;
+    }
     setCampaigns((prev) => prev.filter((c) => c.id !== id));
     showToast("info", "Campaign removed.");
   };
 
   // Abandoned Carts
-  const sendCartRecoveryReminder = (cartId: string, customNote: string) => {
+  const sendCartRecoveryReminder = async (cartId: string, customNote: string) => {
+    if (isSupabaseConfigured() && /^[0-9a-f]{8}-/i.test(cartId)) {
+      const ok = await markCartReminderSentInDB(cartId);
+      if (!ok) {
+        showToast("error", "Failed to record reminder.");
+        return;
+      }
+      const dbCarts = await fetchAbandonedCartsFromDB();
+      setAbandonedCarts(dbCarts);
+      showToast("success", `Recovery reminder recorded with note: "${customNote.slice(0, 30)}..."`);
+      return;
+    }
     setAbandonedCarts((prev) =>
       prev.map((c) => (c.id === cartId ? { ...c, status: "Reminder Sent" } : c))
     );
@@ -1736,11 +2038,29 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Notifications & Templates
-  const markNotificationRead = (id: string) => {
+  const markNotificationRead = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      await markNotificationReadInDB(id);
+      const dbNotifs = await fetchNotificationsFromDB();
+      if (dbNotifs.length > 0) setNotifications(dbNotifs);
+      return;
+    }
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
   };
 
-  const updateEmailTemplate = (id: string, updates: Partial<EmailTemplate>) => {
+  const updateEmailTemplate = async (id: string, updates: Partial<EmailTemplate>) => {
+    if (isSupabaseConfigured()) {
+      const existing = emailTemplates.find((t) => t.id === id);
+      const ok = await saveEmailTemplateToDB({ ...existing, ...updates, id });
+      if (!ok) {
+        showToast("error", "Failed to update template.");
+        return;
+      }
+      const dbTemplates = await fetchEmailTemplatesFromDB();
+      if (dbTemplates.length > 0) setEmailTemplates(dbTemplates);
+      showToast("success", "Notification template updated.");
+      return;
+    }
     setEmailTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
     showToast("success", "Notification template updated.");
   };
@@ -1797,12 +2117,32 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Store Settings & SEO
-  const updateStoreSettings = (updates: Partial<StoreSettings>) => {
-    setStoreSettings((prev) => ({ ...prev, ...updates }));
+  const updateStoreSettings = async (updates: Partial<StoreSettings>) => {
+    const merged = { ...storeSettings, ...updates };
+    if (isSupabaseConfigured()) {
+      const ok = await saveStoreSettingsToDB(merged);
+      if (!ok) {
+        showToast("error", "Failed to save store settings to database.");
+        return;
+      }
+    }
+    setStoreSettings(merged);
     showToast("success", "Store settings saved.");
   };
 
-  const updateSeoEntry = (id: string, updates: Partial<SeoEntry>) => {
+  const updateSeoEntry = async (id: string, updates: Partial<SeoEntry>) => {
+    if (isSupabaseConfigured()) {
+      const existing = seoEntries.find((s) => s.id === id);
+      const ok = await saveSeoEntryToDB({ ...existing, ...updates, id });
+      if (!ok) {
+        showToast("error", "Failed to save SEO entry.");
+        return;
+      }
+      const dbSeo = await fetchSeoEntriesFromDB();
+      if (dbSeo.length > 0) setSeoEntries(dbSeo);
+      showToast("success", "SEO metadata updated.");
+      return;
+    }
     setSeoEntries((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
     showToast("success", "SEO metadata updated.");
   };
@@ -1821,6 +2161,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         shippingMethods,
         reviews,
         homepageConfig,
+        homepageConfigPersisted,
         campaigns,
         notifications,
         emailTemplates,

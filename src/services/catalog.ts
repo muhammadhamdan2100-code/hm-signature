@@ -156,7 +156,7 @@ export async function getCatalogProducts(): Promise<Product[]> {
       .select(`
         *,
         categories (id, name, slug),
-        collections (id, name, slug),
+        collections!products_collection_id_fkey (id, name, slug),
         product_images (id, image_url, alt_text, display_order, is_primary),
         product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active),
         product_fragrance_notes (note_type, fragrance_notes (id, name))
@@ -207,7 +207,7 @@ export async function getCatalogProductBySlug(
       .select(`
         *,
         categories (id, name, slug),
-        collections (id, name, slug),
+        collections!products_collection_id_fkey (id, name, slug),
         product_images (id, image_url, alt_text, display_order, is_primary),
         product_variants (id, size, sku, price, sale_price, stock, low_stock_threshold, active),
         product_fragrance_notes (note_type, fragrance_notes (id, name))
@@ -237,6 +237,69 @@ export async function getCatalogProductBySlug(
     console.error(`Error fetching product '${slug}':`, err);
     return getStaticProductBySlug(slug) || null;
   }
+}
+
+/**
+ * Fetch approved reviews for a product from Supabase (public storefront)
+ */
+export async function getProductReviews(
+  productId: string
+): Promise<{ name: string; text: string; rating: number; verified: boolean }[]> {
+  if (!isSupabaseConfigured() || !productId) return [];
+  try {
+    const { data, error } = await supabase
+      .from("reviews")
+      .select("customer_name, comment, rating, verified_purchase")
+      .eq("product_id", productId)
+      .eq("status", "Approved")
+      .order("created_at", { ascending: false });
+    if (error || !data) return [];
+    return data.map((r: any) => ({
+      name: r.customer_name || "Verified Client",
+      text: r.comment,
+      rating: Number(r.rating),
+      verified: Boolean(r.verified_purchase),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Submit a customer review (lands Pending until admin approval)
+ */
+export async function submitProductReview(input: {
+  productId: string;
+  rating: number;
+  title: string;
+  comment: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "Reviews are unavailable right now." };
+  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Please sign in to write a review." };
+  }
+  const { error } = await supabase.from("reviews").insert([
+    {
+      product_id: input.productId,
+      user_id: user.id,
+      customer_name:
+        (user as any).user_metadata?.full_name || user.email?.split("@")[0] || "Client",
+      customer_email: user.email || "customer@example.com",
+      rating: input.rating,
+      title: input.title || null,
+      comment: input.comment,
+      status: "Pending",
+    },
+  ]);
+  if (error) {
+    return { success: false, error: "Could not submit your review. Please try again." };
+  }
+  return { success: true };
 }
 
 /**

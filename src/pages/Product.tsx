@@ -8,7 +8,8 @@ import {
   generateDefaultVariants,
   type Product,
 } from "../data/products";
-import { getCatalogProductBySlug, getCatalogProducts } from "../services/catalog";
+import { getCatalogProductBySlug, getCatalogProducts, getProductReviews, submitProductReview } from "../services/catalog";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import TexturePanel from "../components/TexturePanel";
@@ -32,6 +33,30 @@ export default function ProductPage() {
   const [activeImage, setActiveImage] = useState(0);
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState<(typeof tabs)[number]>("DESCRIPTION");
+
+  interface UiReview { name: string; text: string; rating: number; verified: boolean }
+  const [dbReviews, setDbReviews] = useState<UiReview[]>([]);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const isUuidId = !!product && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id);
+
+  useSeoMeta(
+    `/product/${slug}`,
+    product ? `${product.name} — HM Signature` : "HM Signature",
+    product?.description
+  );
+
+  useEffect(() => {
+    setDbReviews([]);
+    setReviewMessage(null);
+    if (product?.id && isUuidId) {
+      getProductReviews(product.id).then(setDbReviews);
+    }
+  }, [product?.id]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -325,6 +350,22 @@ export default function ProductPage() {
             )}
             {tab === "REVIEWS" && (
               <div className="space-y-6">
+                {dbReviews.length === 0 && product.reviews.length === 0 && (
+                  <p className="text-xs text-muted italic">No reviews yet. Be the first to share your impression.</p>
+                )}
+                {dbReviews.map((r, i) => (
+                  <div key={`db-${i}`} className="border-b border-gold/10 pb-5">
+                    <div className="flex gap-1 mb-2">
+                      {Array.from({ length: 5 }).map((_, s) => (
+                        <Star key={s} size={12} fill={s < r.rating ? "#E0C27A" : "none"} color="#E0C27A" />
+                      ))}
+                    </div>
+                    <p className="text-ivory/90 mb-2">&ldquo;{r.text}&rdquo;</p>
+                    <div className="text-xs">
+                      {r.name} {r.verified && <span className="text-goldLight">· Verified Purchase</span>}
+                    </div>
+                  </div>
+                ))}
                 {product.reviews.map((r, i) => (
                   <div key={i} className="border-b border-gold/10 pb-5">
                     <div className="flex gap-1 mb-2">
@@ -338,6 +379,75 @@ export default function ProductPage() {
                     </div>
                   </div>
                 ))}
+
+                {isUuidId && (
+                  <form
+                    className="pt-6 space-y-3 border-t border-gold/15"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!product || reviewComment.trim().length < 5) {
+                        setReviewMessage({ ok: false, text: "Please write a few words about the fragrance." });
+                        return;
+                      }
+                      setReviewBusy(true);
+                      setReviewMessage(null);
+                      const res = await submitProductReview({
+                        productId: product.id,
+                        rating: reviewRating,
+                        title: reviewTitle,
+                        comment: reviewComment.trim(),
+                      });
+                      setReviewBusy(false);
+                      if (res.success) {
+                        setReviewTitle("");
+                        setReviewComment("");
+                        setReviewMessage({ ok: true, text: "Thank you — your review is awaiting approval." });
+                      } else {
+                        setReviewMessage({ ok: false, text: res.error || "Could not submit your review." });
+                      }
+                    }}
+                  >
+                    <h4 className="text-xs tracking-[2px] text-goldLight">WRITE A REVIEW</h4>
+                    <div className="flex gap-1">
+                      {Array.from({ length: 5 }).map((_, s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setReviewRating(s + 1)}
+                          aria-label={`Rate ${s + 1} stars`}
+                        >
+                          <Star size={16} fill={s < reviewRating ? "#E0C27A" : "none"} color="#E0C27A" />
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={reviewTitle}
+                      onChange={(e) => setReviewTitle(e.target.value)}
+                      placeholder="Title (optional)"
+                      className="w-full bg-transparent border border-gold/25 rounded-sm px-3 py-2 text-sm text-ivory placeholder:text-muted/60 focus:outline-none focus:border-gold"
+                    />
+                    <textarea
+                      value={reviewComment}
+                      onChange={(e) => setReviewComment(e.target.value)}
+                      placeholder="Share your impression of this fragrance…"
+                      rows={3}
+                      className="w-full bg-transparent border border-gold/25 rounded-sm px-3 py-2 text-sm text-ivory placeholder:text-muted/60 focus:outline-none focus:border-gold"
+                    />
+                    {reviewMessage && (
+                      <p className={`text-xs ${reviewMessage.ok ? "text-goldLight" : "text-rose-300"}`}>
+                        {reviewMessage.text}
+                      </p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={reviewBusy}
+                      className="btn-gold text-xs px-6 py-2 disabled:opacity-40"
+                    >
+                      {reviewBusy ? "SUBMITTING…" : "SUBMIT REVIEW"}
+                    </button>
+                  </form>
+                )}
               </div>
             )}
           </div>

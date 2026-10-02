@@ -11,12 +11,20 @@ import Newsletter from "../components/Newsletter";
 import ProductCard from "../components/ProductCard";
 import { products as fallbackProducts, type Product } from "../data/products";
 import { getCatalogProducts } from "../services/catalog";
+import { useAdminData } from "../admin/context/AdminDataContext";
+import { Link as RouterLink } from "react-router-dom";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 
 export default function Home() {
   const [featuredList, setFeaturedList] = useState<Product[]>(
     () => fallbackProducts.filter((p) => p.featured)
   );
   const [searchParams] = useSearchParams();
+  const { homepageConfig, homepageConfigPersisted } = useAdminData();
+  useSeoMeta("/", "HM Signature — Haute Parfumerie", "Luxury extrait de parfum crafted in small batches.");
+  const announcement = homepageConfigPersisted
+    ? homepageConfig.announcementBar
+    : { enabled: false, text: "", link: "" };
 
   useEffect(() => {
     let mounted = true;
@@ -44,6 +52,15 @@ export default function Home() {
   return (
     <>
       <Hero />
+
+      {announcement.enabled && announcement.text && (
+        <RouterLink
+          to={announcement.link || "/collections"}
+          className="block bg-gold text-navy text-center text-[11px] tracking-[1.5px] py-2 font-sans uppercase"
+        >
+          {announcement.text}
+        </RouterLink>
+      )}
 
       <section className="py-28" style={{ background: "linear-gradient(160deg, #2A0D13 0%, #3A1118 100%)" }}>
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10">

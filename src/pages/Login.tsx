@@ -5,12 +5,14 @@ import { Eye, EyeOff, Lock, Mail, User, AlertCircle, CheckCircle2, ArrowRight } 
 import { useAuth, isStaffRole } from "../context/AuthContext";
 
 export default function Login() {
-  const { user, login, signup, isLoading } = useAuth();
+  const { user, login, signup, forgotPassword, completePasswordReset, isLoading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   // Next param redirection destination
   const nextParam = searchParams.get("next");
+  // Recovery mode: arriving from a password-reset email link (?reset=1)
+  const resetMode = searchParams.get("reset") === "1";
 
   // Mode: 'signin' or 'signup'
   const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
@@ -29,10 +31,12 @@ export default function Login() {
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetSuccess, setResetSuccess] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
 
-  // Auto-redirect if already authenticated
+  // Auto-redirect if already authenticated (except while completing a password reset)
   useEffect(() => {
-    if (user) {
+    if (user && !resetMode) {
       if (isStaffRole(user.role)) {
         const target = nextParam && nextParam.startsWith("/admin") ? nextParam : "/admin";
         navigate(target, { replace: true });
@@ -41,7 +45,15 @@ export default function Login() {
         navigate(target, { replace: true });
       }
     }
-  }, [user, navigate, nextParam]);
+  }, [user, navigate, nextParam, resetMode]);
+
+  // Open the recovery modal automatically when arriving from the reset email
+  useEffect(() => {
+    if (resetMode) {
+      setIsResetOpen(true);
+      setResetSuccess(false);
+    }
+  }, [resetMode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +93,11 @@ export default function Login() {
         return;
       }
 
+      if (result.needsEmailConfirmation) {
+        setSuccessMessage("Account created. Please check your inbox to confirm your email, then sign in.");
+        return;
+      }
+
       setSuccessMessage("Account created successfully. Welcome to HM Signature.");
       setTimeout(() => {
         navigate("/account", { replace: true });
@@ -88,15 +105,38 @@ export default function Login() {
     }
   };
 
-  const handleForgotPasswordSubmit = (e: React.FormEvent) => {
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetEmail) return;
+
+    if (resetMode) {
+      // Completing reset: session already established via the emailed link
+      setResetBusy(true);
+      const res = await completePasswordReset(newPassword);
+      setResetBusy(false);
+      if (!res.success) {
+        setErrorMessage(res.error || "Could not reset password.");
+        return;
+      }
+      setSuccessMessage("Password updated. You are signed in.");
+      setTimeout(() => {
+        setIsResetOpen(false);
+        navigate("/account", { replace: true });
+      }, 1200);
+      return;
+    }
+
+    const res = await forgotPassword(resetEmail);
+    if (!res.success) {
+      setErrorMessage(res.error || "Could not send reset instructions.");
+      return;
+    }
     setResetSuccess(true);
     setTimeout(() => {
       setIsResetOpen(false);
       setResetSuccess(false);
       setResetEmail("");
-    }, 2500);
+    }, 3500);
   };
 
   return (
@@ -330,20 +370,42 @@ export default function Login() {
                 </div>
               ) : (
                 <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
-                  <p className="text-xs text-muted">
-                    Enter the email address associated with your account and we will send you instructions to reset your password.
-                  </p>
-                  <div>
-                    <label className="block text-xs text-ivory mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      value={resetEmail}
-                      onChange={(e) => setResetEmail(e.target.value)}
-                      placeholder="name@domain.com"
-                      className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
-                    />
-                  </div>
+                  {resetMode ? (
+                    <>
+                      <p className="text-xs text-muted">
+                        Your reset link was verified. Choose a new password for your account.
+                      </p>
+                      <div>
+                        <label className="block text-xs text-ivory mb-1">New Password</label>
+                        <input
+                          type="password"
+                          required
+                          minLength={6}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted">
+                        Enter the email address associated with your account and we will send you instructions to reset your password.
+                      </p>
+                      <div>
+                        <label className="block text-xs text-ivory mb-1">Email Address</label>
+                        <input
+                          type="email"
+                          required
+                          value={resetEmail}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          placeholder="name@domain.com"
+                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+                        />
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-end space-x-2 pt-2">
                     <button
                       type="button"
@@ -354,9 +416,10 @@ export default function Login() {
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight"
+                      disabled={resetBusy}
+                      className="px-4 py-2 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-50"
                     >
-                      Send Instructions
+                      {resetMode ? "Set New Password" : "Send Instructions"}
                     </button>
                   </div>
                 </form>

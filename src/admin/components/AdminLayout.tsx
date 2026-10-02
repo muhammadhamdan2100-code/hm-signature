@@ -17,11 +17,6 @@ export const AdminLayout: React.FC = () => {
 
   const currentStaff = getCurrentStaff();
 
-  // Route & Session Guard: Redirect to /admin/login if not signed in
-  if (!currentStaff) {
-    return <Navigate to="/admin/login" replace />;
-  }
-
   // Scroll to top on route change inside admin
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -45,6 +40,11 @@ export const AdminLayout: React.FC = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  // Route & Session Guard: Redirect to /admin/login if not signed in
+  if (!currentStaff) {
+    return <Navigate to="/admin/login" replace />;
+  }
 
   // Route-Level Permission Check
   const requiredPermission = ROUTE_PERMISSIONS[location.pathname];

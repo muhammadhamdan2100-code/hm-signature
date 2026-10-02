@@ -107,9 +107,16 @@ export const sendTransactionalEmail = async (payload: EmailPayload): Promise<boo
       }),
     });
 
-    return response.ok;
-  } catch (error) {
-    console.warn("Transactional email fallback notification:", payload.subject);
-    return true;
+    if (!response.ok) return false;
+    try {
+      const result = await response.json();
+      return Boolean(result && result.success === true);
+    } catch {
+      // Non-JSON response (e.g. SPA fallback HTML) — treat as not delivered
+      return false;
+    }
+  } catch {
+    console.warn("Transactional email unavailable:", payload.subject);
+    return false;
   }
 };

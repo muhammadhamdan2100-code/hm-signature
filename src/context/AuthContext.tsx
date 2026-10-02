@@ -34,8 +34,10 @@ interface AuthContextType {
   isAdmin: boolean;
   isCustomer: boolean;
   login: (email: string, password?: string, rememberMe?: boolean) => Promise<{ success: boolean; role?: UserRole; error?: string }>;
-  signup: (email: string, password: string, fullName: string) => Promise<{ success: boolean; role?: UserRole; error?: string }>;
+  signup: (email: string, password: string, fullName: string) => Promise<{ success: boolean; role?: UserRole; error?: string; needsEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
+  forgotPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  completePasswordReset: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
   addAddress: (address: Omit<UserAddress, "id">) => void;
   removeAddress: (id: string) => void;
@@ -232,8 +234,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (isSupabaseConfigured()) {
       setIsLoading(true);
 
+      // PKCE password-recovery links arrive as /login?code=... — exchange before reading session
+      const bootParams = new URLSearchParams(window.location.search);
+      const authCode = bootParams.get("code");
+      const codeExchange = authCode
+        ? supabase.auth
+            .exchangeCodeForSession(authCode)
+            .then(() => {
+              window.history.replaceState({}, "", "/login?reset=1");
+            })
+            .catch((err) => console.error("Auth code exchange failed:", err))
+        : Promise.resolve();
+
       // Restore session on boot/refresh
-      supabase.auth.getSession().then(async ({ data: { session } }) => {
+      codeExchange.then(() => supabase.auth.getSession()).then(async ({ data: { session } }) => {
         try {
           if (session) {
             await syncUserFromSession(session);
@@ -377,7 +391,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     email: string,
     password: string,
     fullName: string
-  ): Promise<{ success: boolean; role?: UserRole; error?: string }> => {
+  ): Promise<{ success: boolean; role?: UserRole; error?: string; needsEmailConfirmation?: boolean }> => {
     setIsLoading(true);
     try {
       if (isSupabaseConfigured()) {
@@ -394,6 +408,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return { success: false, error: error.message };
         }
 
+        if (!data.session) {
+          // Email confirmation is enabled — user must verify before login
+          setIsLoading(false);
+          return { success: true, needsEmailConfirmation: true };
+        }
+
         if (data.user) {
           await dbService.createOrUpdateProfile({
             id: data.user.id,
@@ -401,6 +421,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             full_name: fullName,
             role: "customer",
           });
+          const syncedUser = await syncUserFromSession(data.session);
+          setIsLoading(false);
+          return { success: true, role: syncedUser?.role || "customer" };
         }
       }
 
@@ -419,6 +442,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsLoading(false);
       return { success: false, error: e.message || "Sign up failed." };
     }
+  };
+
+  const forgotPassword = async (
+    email: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: "Password reset requires Supabase to be configured." };
+    }
+    const redirectTo = `${window.location.origin}/login?reset=1`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo,
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  };
+
+  const completePasswordReset = async (
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured()) return { success: false, error: "Not connected." };
+    if (newPassword.length < 6) {
+      return { success: false, error: "Password must be at least 6 characters." };
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
   };
 
   const logout = async () => {
@@ -495,6 +546,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isCustomer: isCustomerRole(user?.role),
         login,
         signup,
+        forgotPassword,
+        completePasswordReset,
         logout,
         updateProfile,
         addAddress,
