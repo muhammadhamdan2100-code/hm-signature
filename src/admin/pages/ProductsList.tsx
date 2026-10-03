@@ -97,7 +97,7 @@ export const ProductsList: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Stock",
+      header: "Stock (lowest size)",
       accessor: (p) => {
         const isLow = p.stock <= p.lowStockThreshold;
         return (

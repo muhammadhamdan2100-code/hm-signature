@@ -52,7 +52,6 @@ const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
 
   // Blocked / negative
   cancelled: { label: "Cancelled", tone: "danger" },
-  canceled: { label: "Canceled", tone: "danger" },
   "out of stock": { label: "Out of Stock", tone: "danger" },
   rejected: { label: "Rejected", tone: "danger" },
   inactive: { label: "Inactive", tone: "danger" },
@@ -62,6 +61,8 @@ const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
 
   // Neutral / informational
   ended: { label: "Ended", tone: "neutral" },
+  expired: { label: "Expired", tone: "neutral" },
+  sending: { label: "Sending", tone: "brand" },
   draft: { label: "Draft", tone: "neutral" },
   new: { label: "New", tone: "neutral" },
   returning: { label: "Returning", tone: "neutral" },

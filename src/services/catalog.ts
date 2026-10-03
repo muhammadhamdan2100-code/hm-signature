@@ -156,14 +156,11 @@ export function mapDBProductToUI(
     topNotes,
     heartNotes,
     baseNotes,
-    ingredients:
-      dbProduct.ingredients ||
-      "Alcohol Denat., Parfum (Fragrance), Aqua, Essential Botanicals.",
+    // Ingredients and concentration are declared or they are not: nothing here
+    // is invented, the product page renders an honest empty state instead.
+    ingredients: dbProduct.ingredients || "",
     size: "50ml",
-    concentration:
-      dbProduct.concentration ||
-      dbProduct.fragrance_type ||
-      "Extrait de Parfum",
+    concentration: dbProduct.concentration || dbProduct.fragrance_type || "",
     // Ratings come only from approved reviews; never a placeholder number.
     rating: reviewStats?.rating ?? 0,
     reviewCount: reviewStats?.count ?? 0,
@@ -181,7 +178,18 @@ export function mapDBProductToUI(
 }
 
 // Approved-review aggregates in one round trip, so cards show real ratings.
-async function fetchApprovedReviewStats(): Promise<Map<string, { rating: number; count: number }>> {
+/**
+ * The storefront requests the same catalogue from several components during one
+ * page load, so a short-lived promise cache keeps that to a single round trip.
+ */
+const CATALOG_CACHE_MS = 4000;
+let reviewStatsCache: {
+  at: number;
+  value: Promise<Map<string, { rating: number; count: number }>>;
+} | null = null;
+let catalogCache: { at: number; value: Promise<Product[]> } | null = null;
+
+async function loadApprovedReviewStats(): Promise<Map<string, { rating: number; count: number }>> {
   const map = new Map<string, { rating: number; count: number }>();
   const { data } = await supabase
     .from("reviews")
@@ -202,10 +210,32 @@ async function fetchApprovedReviewStats(): Promise<Map<string, { rating: number;
   return map;
 }
 
+function fetchApprovedReviewStats() {
+  const now = Date.now();
+  if (reviewStatsCache && now - reviewStatsCache.at < CATALOG_CACHE_MS) return reviewStatsCache.value;
+  const value = loadApprovedReviewStats();
+  reviewStatsCache = { at: now, value };
+  value.catch(() => {
+    if (reviewStatsCache?.value === value) reviewStatsCache = null;
+  });
+  return value;
+}
+
 /**
  * Fetch all active catalog products from Supabase with safe static fallback
  */
-export async function getCatalogProducts(): Promise<Product[]> {
+export function getCatalogProducts(): Promise<Product[]> {
+  const now = Date.now();
+  if (catalogCache && now - catalogCache.at < CATALOG_CACHE_MS) return catalogCache.value;
+  const value = loadCatalogProducts();
+  catalogCache = { at: now, value };
+  value.catch(() => {
+    if (catalogCache?.value === value) catalogCache = null;
+  });
+  return value;
+}
+
+async function loadCatalogProducts(): Promise<Product[]> {
   if (!isSupabaseConfigured()) {
     return staticProducts;
   }
@@ -342,6 +372,9 @@ export async function submitProductReview(input: {
   if (!user) {
     return { success: false, error: "Please sign in to write a review." };
   }
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
+    return { success: false, error: "Please choose a rating between 1 and 5 stars." };
+  }
   const { error } = await supabase.from("reviews").insert([
     {
       product_id: input.productId,
@@ -356,6 +389,13 @@ export async function submitProductReview(input: {
     },
   ]);
   if (error) {
+    // One review per signed-in customer per fragrance (uniq_review_customer_product).
+    if (error.code === "23505") {
+      return { success: false, error: "You have already reviewed this fragrance." };
+    }
+    if (error.code === "42501" || /row-level security/i.test(error.message)) {
+      return { success: false, error: "Please sign in to write a review." };
+    }
     return { success: false, error: "Could not submit your review. Please try again." };
   }
   return { success: true };

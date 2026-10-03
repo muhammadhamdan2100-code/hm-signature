@@ -109,6 +109,31 @@ export function autoPriceFor(basePrice50ml: number, size: string): number {
   return Math.round((basePrice50ml / 50) * ml);
 }
 
+// Two bottle sizes are the same size whatever case or spacing the form used.
+export function hasDuplicateSize(
+  list: { size: string }[],
+  label: string,
+  exceptIndex = -1
+): boolean {
+  const target = normalizeSizeLabel(label);
+  return list.some((v, i) => i !== exceptIndex && normalizeSizeLabel(v.size) === target);
+}
+
+// "hm qvf" must not become "HM QVF-75ML": a size code is alphanumerics and dashes.
+export function sanitizeSkuCode(code: string): string {
+  return String(code || "").toUpperCase().replace(/[^A-Z0-9-]/g, "");
+}
+
+// A variant code is derived from the base code unless someone wrote their own.
+// The "HM-PRD-<ml>ML" ladder that a blank product starts with is always replaced.
+export function deriveVariantSku(baseSku: string, size: string, existingSku?: string): string {
+  const seed = sanitizeSkuCode(baseSku) || "HM-PRD";
+  const ml = normalizeSizeLabel(size).toUpperCase();
+  const current = String(existingSku || "").trim();
+  if (!current || /^HM-PRD-\d+ML$/i.test(current)) return `${seed}-${ml}`;
+  return current;
+}
+
 export function generateDefaultVariants(
   basePrice: number,
   baseSku: string = "HM-PRD",
@@ -183,13 +208,11 @@ export const products: Product[] = [
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Oud Extract, Amber Resinoid, Vanillin.",
     size: "50ml",
     concentration: "Extrait de Parfum",
-    rating: 4.8,
-    reviewCount: 214,
-    reviews: [
-      { name: "Amara K.", rating: 5, verified: true, text: "Deep, smoky, and it lasts all day. Compliments everywhere I go." },
-      { name: "Farhan S.", rating: 5, verified: true, text: "The most sophisticated oud I've worn. Worth every rupee." },
-      { name: "Layla M.", rating: 4, verified: true, text: "Strong projection — a little goes a long way." },
-    ],
+    // Offline demo fixtures carry no ratings and no client reviews — those are
+    // earned only from approved review rows.
+    rating: 0,
+    reviewCount: 0,
+    reviews: [],
     stock: 42,
     featured: true,
     bestseller: true,
@@ -213,12 +236,9 @@ export const products: Product[] = [
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Vetiver Oil, Musk Blend, Ambroxan.",
     size: "50ml",
     concentration: "Extrait de Parfum",
-    rating: 4.6,
-    reviewCount: 156,
-    reviews: [
-      { name: "Bilal R.", rating: 5, verified: true, text: "My everyday scent now. Clean but never boring." },
-      { name: "Noah T.", rating: 4, verified: true, text: "Great office scent, subtle projection." },
-    ],
+    rating: 0,
+    reviewCount: 0,
+    reviews: [],
     stock: 65,
     featured: true,
     bestseller: false,
@@ -242,13 +262,9 @@ export const products: Product[] = [
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Jasmine Absolute, Amber Resinoid, Sandalwood Oil.",
     size: "50ml",
     concentration: "Extrait de Parfum",
-    rating: 4.9,
-    reviewCount: 301,
-    reviews: [
-      { name: "Sana J.", rating: 5, verified: true, text: "Romantic without being overpowering. My signature scent." },
-      { name: "Priya D.", rating: 5, verified: true, text: "Received so many compliments at my engagement." },
-      { name: "Meera V.", rating: 5, verified: true, text: "Beautiful bottle, even more beautiful scent." },
-    ],
+    rating: 0,
+    reviewCount: 0,
+    reviews: [],
     stock: 38,
     featured: true,
     bestseller: true,
@@ -272,11 +288,9 @@ export const products: Product[] = [
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Tobacco Absolute, Tonka Bean, Amber Resinoid.",
     size: "50ml",
     concentration: "Extrait de Parfum",
-    rating: 4.7,
-    reviewCount: 98,
-    reviews: [
-      { name: "Zayn H.", rating: 5, verified: true, text: "Evening scent perfection. Gets attention immediately." },
-    ],
+    rating: 0,
+    reviewCount: 0,
+    reviews: [],
     stock: 51,
     featured: false,
     bestseller: true,
@@ -300,11 +314,9 @@ export const products: Product[] = [
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Rose Absolute, Peony Extract, Musk Blend.",
     size: "50ml",
     concentration: "Extrait de Parfum",
-    rating: 4.8,
-    reviewCount: 176,
-    reviews: [
-      { name: "Hina A.", rating: 5, verified: true, text: "Elegant rose, not the powdery old-lady kind." },
-    ],
+    rating: 0,
+    reviewCount: 0,
+    reviews: [],
     stock: 47,
     featured: false,
     bestseller: true,
@@ -328,11 +340,9 @@ export const products: Product[] = [
     ingredients: "Alcohol Denat., Parfum (Fragrance), Aqua, Vanilla Absolute, Amber Resinoid, Tonka Bean.",
     size: "50ml",
     concentration: "Extrait de Parfum",
-    rating: 4.7,
-    reviewCount: 132,
-    reviews: [
-      { name: "Omar F.", rating: 5, verified: true, text: "Unisex done right. My wife and I share this bottle." },
-    ],
+    rating: 0,
+    reviewCount: 0,
+    reviews: [],
     stock: 59,
     featured: false,
     bestseller: false,

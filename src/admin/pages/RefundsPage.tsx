@@ -4,6 +4,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { StatCard } from "../components/StatCard";
 import { ArrowLeftRight, Banknote, RotateCcw, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
+import { formatPKR } from "../../utils/currency";
 
 export const RefundsPage: React.FC = () => {
   const { refunds, payments } = useAdminData();
@@ -42,7 +43,7 @@ export const RefundsPage: React.FC = () => {
         return (
           <div>
             <span className="font-mono text-[11px] text-ivory block">
-              Rs. {(p?.amount ?? 0).toLocaleString()}
+              {formatPKR(p?.amount ?? 0)}
             </span>
             <span className="text-[10px] text-muted">{p?.method || "—"}</span>
           </div>
@@ -53,7 +54,8 @@ export const RefundsPage: React.FC = () => {
       header: "Refund Amount",
       accessor: (r) => (
         <span className="font-mono font-bold text-rose-300 text-xs">
-          − Rs. {r.amount.toLocaleString()} {r.currency}
+          − {formatPKR(r.amount)}
+          {r.currency && r.currency !== "PKR" ? ` ${r.currency}` : ""}
         </span>
       ),
       sortable: true,
@@ -136,7 +138,7 @@ export const RefundsPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           title="Total Refunded"
-          value={`Rs. ${totalRefunded.toLocaleString()}`}
+          value={formatPKR(totalRefunded)}
           subtitle="Processed refunds"
           icon={Wallet}
           accent={true}
@@ -164,7 +166,7 @@ export const RefundsPage: React.FC = () => {
           </p>
         </div>
       ) : (
-        <DataTable columns={columns} data={refunds} keyExtractor={(r) => r.id} searchPlaceholder="Search refunds by order, client or reference..." />
+        <DataTable columns={columns} data={refunds} keyExtractor={(r) => r.id} searchPlaceholder="Search refunds by order, client or reference…" />
       )}
     </div>
   );

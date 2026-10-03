@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAdminData, type ShippingMethod } from "../context/AdminDataContext";
 import { Modal } from "../components/Modal";
+import { formatPKR } from "../../utils/currency";
 import { Truck, Edit } from "lucide-react";
 
 export const ShippingPage: React.FC = () => {
@@ -11,7 +12,7 @@ export const ShippingPage: React.FC = () => {
   const [description, setDescription] = useState("");
   const [charge, setCharge] = useState<number>(0);
   const [freeThreshold, setFreeThreshold] = useState<number>(5000);
-  const [estimatedDelivery, setEstimatedDelivery] = useState("2 - 3 Business Days");
+  const [estimatedDelivery, setEstimatedDelivery] = useState("2–3 business days");
   const [active, setActive] = useState(true);
 
   const handleOpenEdit = (m: ShippingMethod) => {
@@ -44,13 +45,14 @@ export const ShippingPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            EXPRESS BOUTIQUE LOGISTICS
+            DELIVERY PRICING RECORDS
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
             Shipping Charges & Delivery Rates
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Configure white-glove courier methods, free shipping order thresholds, and estimated transit times.
+            Delivery pricing records (not shown to clients). Rates and transit times here are stored for
+            reference; the charges applied at checkout come from the delivery pricing rules in Settings.
           </p>
         </div>
       </div>
@@ -87,13 +89,13 @@ export const ShippingPage: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-muted">Rate Charge:</span>
                   <span className="text-gold font-bold">
-                    {m.charge === 0 ? "Complimentary (Rs. 0)" : `Rs. ${m.charge}`}
+                    {m.charge === 0 ? `Complimentary (${formatPKR(0)})` : formatPKR(m.charge)}
                   </span>
                 </div>
 
                 <div className="flex justify-between">
                   <span className="text-muted">Free Threshold:</span>
-                  <span className="text-ivory">Above Rs. {m.freeThreshold.toLocaleString()}</span>
+                  <span className="text-ivory">Above {formatPKR(m.freeThreshold)}</span>
                 </div>
 
                 <div className="flex justify-between">
@@ -183,7 +185,7 @@ export const ShippingPage: React.FC = () => {
                 type="text"
                 value={estimatedDelivery}
                 onChange={(e) => setEstimatedDelivery(e.target.value)}
-                placeholder="2 - 3 Business Days"
+                placeholder="2–3 business days"
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
               />
             </div>

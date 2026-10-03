@@ -5,11 +5,12 @@ import { getDefaultPermissionsForRole } from "../../services/staff";
 import { DataTable, type Column } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal, ConfirmDialog } from "../components/Modal";
+import { PrimaryAdminSecurityCard } from "../components/PrimaryAdminSecurityCard";
 import { Plus, Trash2, KeyRound, ShieldCheck, Users, UserCheck, ShieldAlert, Award, Ban, CheckCircle2 } from "lucide-react";
 
 export const PERMISSION_KEYS = [
   { key: "products", label: "Products Management" },
-  { key: "orders", label: "Orders & Fulfillment" },
+  { key: "orders", label: "Orders & Fulfilment" },
   { key: "customers", label: "Client Records" },
   { key: "inventory", label: "Inventory Control" },
   { key: "coupons", label: "Coupons & Discounts" },
@@ -278,6 +279,9 @@ export const StaffPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Primary Super Admin account security — visible to that account only */}
+      <PrimaryAdminSecurityCard />
+
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
@@ -315,7 +319,7 @@ export const StaffPage: React.FC = () => {
         columns={columns}
         data={staffMembers}
         keyExtractor={(st) => st.id}
-        searchPlaceholder="Search staff by name, email, or role..."
+        searchPlaceholder="Search staff by name, email, or role…"
         emptyMessage="No staff members found"
       />
 
@@ -357,7 +361,7 @@ export const StaffPage: React.FC = () => {
               onChange={(e) => setRole(e.target.value as StaffRole)}
               className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="Order Manager">Order Manager (Fulfillment & Tracking)</option>
+              <option value="Order Manager">Order Manager (Fulfilment & Tracking)</option>
               <option value="Content Manager">Content Manager (Catalog & CMS)</option>
               <option value="Manager">Manager (Boutique Store Operations)</option>
               <option value="Super Admin">Super Admin (Full Governance Access)</option>

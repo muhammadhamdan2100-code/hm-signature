@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { Search, Package, ShoppingBag, Users, Tag, ChevronRight, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { formatPKR } from "../../utils/currency";
 
 interface AdminSearchModalProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products, SKUs, orders, customers, coupons..."
+              placeholder="Search products, SKUs, orders, customers, coupons…"
               className="w-full bg-transparent pl-10 pr-10 text-sm font-sans text-ivory placeholder-muted focus:outline-none"
             />
             <button
@@ -104,7 +105,7 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                             </span>
                           </div>
                           <div className="flex items-center space-x-2 text-muted">
-                            <span>Rs. {p.price.toLocaleString()}</span>
+                            <span>{formatPKR(p.price)}</span>
                             <ChevronRight className="w-4 h-4 text-gold" />
                           </div>
                         </div>
@@ -132,7 +133,7 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                             <span className="text-muted ml-2">— {o.customerName}</span>
                           </div>
                           <div className="flex items-center space-x-2 text-muted">
-                            <span>Rs. {o.total.toLocaleString()}</span>
+                            <span>{formatPKR(o.total)}</span>
                             <ChevronRight className="w-4 h-4 text-gold" />
                           </div>
                         </div>

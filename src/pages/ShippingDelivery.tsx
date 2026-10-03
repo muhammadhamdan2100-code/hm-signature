@@ -42,7 +42,7 @@ export default function ShippingDelivery() {
     {
       icon: PackageCheck,
       title: "Shipping Costs",
-      text: `Free shipping on orders over ${formatPKR(shipping.freeThreshold)}. Below that threshold, a flat delivery fee of ${formatPKR(shipping.standardCost)} applies.`,
+      text: `Free shipping on orders of ${formatPKR(shipping.freeThreshold)} or more. Below that threshold, a flat delivery fee of ${formatPKR(shipping.standardCost)} applies.`,
     },
   ];
 

@@ -44,13 +44,18 @@ const SourceChips: React.FC<{ sources: ConciergeSource[] }> = ({ sources }) => {
   return (
     <div className="flex flex-wrap gap-1.5 pt-2">
       {[...unique.values()].slice(0, 3).map((s) => (
-        <Link
-          key={`${s.slug}-${s.label}`}
-          to={`/product/${s.slug}`}
-          className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded border border-gold/30 text-gold hover:bg-gold hover:text-navy transition-colors"
-        >
-          {s.label}
-        </Link>
+        <div key={`${s.slug}-${s.label}`} className="flex flex-col gap-0.5">
+          <Link
+            to={`/product/${s.slug}`}
+            className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded border border-gold/30 text-gold hover:bg-gold hover:text-navy transition-colors"
+          >
+            {s.label}
+          </Link>
+          {/* The reason is written by the server from stored attributes only. */}
+          {s.why && (
+            <span className="text-[9px] font-light text-muted leading-snug max-w-[240px]">{s.why}</span>
+          )}
+        </div>
       ))}
     </div>
   );

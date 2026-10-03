@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { getCurrentStaff, hasPermission } from "../../services/auth";
 import { useAuth } from "../../context/AuthContext";
@@ -38,6 +38,18 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
   const currentStaff = getCurrentStaff();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  useEffect(() => {
+    if (!showNotifications && !showProfileMenu && !showQuickActions) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setShowNotifications(false);
+      setShowProfileMenu(false);
+      setShowQuickActions(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showNotifications, showProfileMenu, showQuickActions]);
+
   const staffName = currentStaff?.name || "Muhammad Hamdan";
   const staffEmail = currentStaff?.email || "muhammadhamdan2100@gmail.com";
   const staffRole = currentStaff?.role || "Super Admin";
@@ -64,10 +76,11 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
   return (
     <header className="h-16 bg-navy2/95 border-b border-gold/20 px-6 md:px-8 flex items-center justify-between sticky top-0 z-20 backdrop-blur-md">
       {/* Left: Mobile Toggle & Quick Search */}
-      <div className="flex items-center space-x-3 flex-1 max-w-md">
+      <div className="flex items-center space-x-3 flex-1 max-w-md min-w-0">
         <button
           onClick={onOpenMobileSidebar}
-          className="lg:hidden p-2 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
+          aria-label="Open navigation menu"
+          className="lg:hidden inline-flex items-center justify-center min-h-11 min-w-11 rounded text-muted hover:text-gold hover:bg-navy transition-colors shrink-0"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -75,20 +88,20 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
         {/* Global Search Button */}
         <button
           onClick={onOpenSearch}
-          className="w-full flex items-center space-x-3 bg-navy/80 border border-gold/20 rounded px-3 py-1.5 text-xs text-muted hover:border-gold/40 hover:text-ivory transition-colors cursor-pointer group"
+          className="w-full min-w-0 flex items-center space-x-3 bg-navy/80 border border-gold/20 rounded px-3 min-h-11 text-xs text-muted hover:border-gold/40 hover:text-ivory transition-colors cursor-pointer group"
         >
-          <Search className="w-4 h-4 text-gold group-hover:text-goldLight" />
+          <Search className="w-4 h-4 text-gold group-hover:text-goldLight shrink-0" />
           <span className="truncate font-sans font-light">
             Search products, orders, customers (Ctrl+K)...
           </span>
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-mono bg-navy border border-gold/20 rounded text-gold">
+          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-mono bg-navy border border-gold/20 rounded text-gold shrink-0">
             /
           </kbd>
         </button>
       </div>
 
       {/* Right: Quick Actions, Store Status, Notifications, Profile */}
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-3 shrink-0">
         {/* Store Status Toggle (Only visible if has settings permission) */}
         {canManageSettings && (
           <div className="hidden sm:flex items-center space-x-2 bg-navy/60 border border-gold/20 px-3 py-1 rounded">
@@ -104,7 +117,7 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
             </span>
             <button
               onClick={handleToggleStoreStatus}
-              className={`text-[11px] font-sans font-bold uppercase tracking-wider ${
+              className={`px-1.5 py-2 -my-2 rounded text-[11px] font-sans font-bold uppercase tracking-wider ${
                 storeSettings.storeStatus === "Live"
                   ? "text-emerald-300 hover:text-emerald-200"
                   : "text-amber-300 hover:text-amber-200"
@@ -124,6 +137,9 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
                 setShowNotifications(false);
                 setShowProfileMenu(false);
               }}
+              aria-label="Quick actions"
+              aria-haspopup="true"
+              aria-expanded={showQuickActions}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs transition-colors shadow"
             >
               <Plus className="w-4 h-4" />
@@ -181,7 +197,10 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
               setShowQuickActions(false);
               setShowProfileMenu(false);
             }}
-            className="relative p-2 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
+            aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
+            aria-haspopup="true"
+            aria-expanded={showNotifications}
+            className="relative inline-flex items-center justify-center min-h-11 min-w-11 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
           >
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
@@ -203,10 +222,11 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
               </div>
               <div className="max-h-64 overflow-y-auto divide-y divide-gold/10">
                 {notifications.map((n) => (
-                  <div
+                  <button
                     key={n.id}
+                    type="button"
                     onClick={() => markNotificationRead(n.id)}
-                    className={`p-3 hover:bg-navy transition-colors cursor-pointer ${
+                    className={`w-full text-left p-3 hover:bg-navy transition-colors ${
                       !n.read ? "bg-navy/60" : ""
                     }`}
                   >
@@ -217,7 +237,7 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
                     <p className="text-[11px] text-muted mt-1 leading-relaxed line-clamp-2">
                       {n.message}
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
               <div className="p-2 border-t border-gold/15 text-center bg-navy/40">
@@ -226,7 +246,7 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
                     navigate("/admin/notifications");
                     setShowNotifications(false);
                   }}
-                  className="text-[11px] text-gold hover:underline uppercase tracking-wider"
+                  className="px-2 py-2 -mx-2 -my-2 rounded text-[11px] text-gold hover:underline uppercase tracking-wider"
                 >
                   View Notifications
                 </button>
@@ -243,6 +263,9 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
               setShowQuickActions(false);
               setShowNotifications(false);
             }}
+            aria-label="Account menu"
+            aria-haspopup="true"
+            aria-expanded={showProfileMenu}
             className="flex items-center space-x-2 p-1.5 rounded hover:bg-navy transition-colors border border-gold/20"
           >
             <div className="w-7 h-7 rounded-full bg-gold/20 border border-gold flex items-center justify-center text-gold font-serif font-bold text-xs">

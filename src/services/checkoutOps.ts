@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { formatPKR } from "../utils/currency";
 
 export interface PlaceOrderItem {
   variant_id: string;
@@ -139,7 +140,7 @@ export async function previewCoupon(code: string, subtotal: number): Promise<Cou
     return { code, valid: false, reason: `The promotion ${data.code} has reached its usage limit.` };
   }
   if (data.min_spend != null && subtotal < Number(data.min_spend)) {
-    return { code, valid: false, reason: `A minimum spend of Rs. ${Number(data.min_spend).toLocaleString()} applies to ${data.code}.` };
+    return { code, valid: false, reason: `A minimum spend of ${formatPKR(Number(data.min_spend))} applies to ${data.code}.` };
   }
 
   return {

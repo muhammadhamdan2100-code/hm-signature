@@ -3,9 +3,10 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAdminData } from "../context/AdminDataContext";
 import { getCurrentStaff, hasPermission } from "../../services/auth";
 import { useAuth } from "../../context/AuthContext";
-import { ROUTE_PERMISSIONS } from "../../types/staff";
+import { resolveRequiredPermission } from "../../types/staff";
 import {
   LayoutDashboard,
+  Scale,
   Package,
   Layers,
   ShoppingBag,
@@ -28,6 +29,7 @@ import {
   Sparkles,
   CreditCard,
   ArrowLeftRight,
+  Zap,
   LogOut,
 } from "lucide-react";
 
@@ -77,6 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Homepage CMS", path: "/admin/homepage", icon: Globe },
       { label: "Marketing", path: "/admin/marketing", icon: Megaphone },
       { label: "Notifications", path: "/admin/notifications", icon: Bell },
+      { label: "Automations", path: "/admin/automations", icon: Zap },
     ],
   },
   {
@@ -84,6 +87,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Payments", path: "/admin/payments", icon: CreditCard },
       { label: "Refunds", path: "/admin/payments/refunds", icon: ArrowLeftRight },
+      { label: "Reconciliation", path: "/admin/payments/reconciliation", icon: Scale },
       { label: "Abandoned Carts", path: "/admin/abandoned-carts", icon: ShoppingCart },
     ],
   },
@@ -137,7 +141,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   const filteredNavGroups = NAV_GROUPS.map((group) => {
     const allowedItems = group.items.filter((item) => {
       if (item.path === "/admin/dashboard") return true;
-      const requiredPerm = ROUTE_PERMISSIONS[item.path];
+      const requiredPerm = resolveRequiredPermission(item.path);
       return !requiredPerm || hasPermission(currentStaff, requiredPerm);
     });
     return { ...group, items: allowedItems };

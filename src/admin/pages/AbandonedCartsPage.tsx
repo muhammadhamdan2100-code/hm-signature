@@ -4,32 +4,41 @@ import { DataTable, type Column } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal } from "../components/Modal";
 import { ShoppingCart, Send, DollarSign } from "lucide-react";
+import { formatPKR } from "../../utils/currency";
 
 export const AbandonedCartsPage: React.FC = () => {
-  const { abandonedCarts, sendCartRecoveryReminder } = useAdminData();
+  const { abandonedCarts, sendCartRecoveryReminder, markCartRecovered, clearCartRecoveryState } =
+    useAdminData();
 
   const [selectedCart, setSelectedCart] = useState<AbandonedCart | null>(null);
   const [customNote, setCustomNote] = useState(
-    "Dear Client, we noticed you left your signature extraits in your boutique bag. Enjoy complimentary express delivery on your order today."
+    "Dear Client, we noticed you left your signature extraits in your boutique bag. Complete your order at your convenience."
   );
-  const [discountCode, setDiscountCode] = useState("WELCOME15");
+  const [discountCode, setDiscountCode] = useState("");
 
   const [filterType, setFilterType] = useState("all");
 
   const filteredCarts = [...abandonedCarts].filter((c) => {
     if (filterType === "high") return c.cartValue >= 5000;
     if (filterType === "pending") return c.status === "Pending";
+    if (filterType === "reminder") return c.status === "Reminder Sent";
+    if (filterType === "recovered") return c.status === "Recovered";
     return true;
   });
 
-  const totalAbandonedValue = abandonedCarts.reduce((acc, c) => acc + c.cartValue, 0);
+  const unrecoveredValue = abandonedCarts
+    .filter((c) => c.status !== "Recovered")
+    .reduce((acc, c) => acc + c.cartValue, 0);
 
   const handleSendReminder = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCart) return;
-    sendCartRecoveryReminder(selectedCart.id, `${customNote} (Voucher Code: ${discountCode})`);
+    sendCartRecoveryReminder(selectedCart.id);
     setSelectedCart(null);
   };
+
+  const fmtStamp = (iso?: string | null) =>
+    iso ? String(iso).replace("T", " ").slice(0, 16) : "";
 
   const columns: Column<AbandonedCart>[] = [
     {
@@ -48,7 +57,7 @@ export const AbandonedCartsPage: React.FC = () => {
         <div className="space-y-0.5">
           {c.items.map((item, idx) => (
             <span key={idx} className="text-xs text-ivory block font-medium">
-              {item.quantity}x {item.productName} (Rs. {item.price.toLocaleString()})
+              {item.quantity}x {item.productName} ({formatPKR(item.price)})
             </span>
           ))}
         </div>
@@ -58,7 +67,7 @@ export const AbandonedCartsPage: React.FC = () => {
       header: "Cart Value",
       accessor: (c) => (
         <span className="font-mono font-bold text-gold text-xs">
-          Rs. {c.cartValue.toLocaleString()}
+          {formatPKR(c.cartValue)}
         </span>
       ),
       sortable: true,
@@ -70,22 +79,49 @@ export const AbandonedCartsPage: React.FC = () => {
     },
     {
       header: "Status",
-      accessor: (c) => <StatusBadge status={c.status} />,
+      accessor: (c) => (
+        <div className="space-y-1">
+          <StatusBadge status={c.status} />
+          {c.reminderSentAt && (
+            <span className="block text-[10px] font-mono text-muted">Reminded {fmtStamp(c.reminderSentAt)}</span>
+          )}
+          {c.recoveredAt && (
+            <span className="block text-[10px] font-mono text-muted">Recovered {fmtStamp(c.recoveredAt)}</span>
+          )}
+        </div>
+      ),
       sortable: true,
     },
     {
       header: "Recovery Action",
       accessor: (c) => (
-        <div className="flex items-center justify-end">
-          <button
-            onClick={() => {
-              setSelectedCart(c);
-            }}
-            className="px-3 py-1.5 rounded bg-gold hover:bg-goldLight text-navy font-semibold text-xs font-sans uppercase tracking-wider flex items-center space-x-1"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Send Reminder</span>
-          </button>
+        <div className="flex flex-col items-end gap-1.5">
+          {c.status === "Recovered" ? (
+            <button
+              onClick={() => clearCartRecoveryState(c.id)}
+              className="px-3 py-1.5 rounded border border-gold/20 text-[11px] font-sans text-muted hover:text-ivory uppercase tracking-wider"
+            >
+              Reopen Bag
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setSelectedCart(c);
+                }}
+                className="px-3 py-1.5 rounded bg-gold hover:bg-goldLight text-navy font-semibold text-xs font-sans uppercase tracking-wider flex items-center space-x-1"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Record Reminder</span>
+              </button>
+              <button
+                onClick={() => markCartRecovered(c.id)}
+                className="px-3 py-1.5 rounded border border-gold/30 text-[11px] font-sans text-gold hover:bg-gold/10 uppercase tracking-wider"
+              >
+                Mark Recovered
+              </button>
+            </>
+          )}
         </div>
       ),
       className: "text-right",
@@ -117,7 +153,7 @@ export const AbandonedCartsPage: React.FC = () => {
               Total Unrecovered Value
             </span>
             <span className="text-2xl font-serif text-gold font-bold block mt-1">
-              Rs. {totalAbandonedValue.toLocaleString()}
+              {formatPKR(unrecoveredValue)}
             </span>
           </div>
           <ShoppingCart className="w-6 h-6 text-gold" />
@@ -138,7 +174,7 @@ export const AbandonedCartsPage: React.FC = () => {
         <div className="bg-navy2/90 border border-gold/20 p-5 rounded-lg flex items-center justify-between">
           <div>
             <span className="text-[10px] font-mono text-gold uppercase tracking-widest block">
-              High Value Carts (&gt; Rs.5k)
+              High Value Carts (&gt; {formatPKR(5000)})
             </span>
             <span className="text-2xl font-serif text-emerald-300 font-bold block mt-1">
               {abandonedCarts.filter((c) => c.cartValue >= 5000).length}
@@ -153,7 +189,7 @@ export const AbandonedCartsPage: React.FC = () => {
         columns={columns}
         data={filteredCarts}
         keyExtractor={(c) => c.id}
-        searchPlaceholder="Search client name, email..."
+        searchPlaceholder="Search client name, email…"
         emptyMessage="No abandoned carts"
         filterControls={
           <select
@@ -162,17 +198,19 @@ export const AbandonedCartsPage: React.FC = () => {
             className="bg-navy border border-gold/20 rounded px-3 py-1.5 text-xs text-ivory focus:outline-none focus:border-gold"
           >
             <option value="all">All Carts</option>
-            <option value="high">High Value (&gt; Rs. 5,000)</option>
+            <option value="high">High Value (&gt; {formatPKR(5000)})</option>
             <option value="pending">Pending Reminder</option>
+            <option value="reminder">Reminder Recorded</option>
+            <option value="recovered">Recovered</option>
           </select>
         }
       />
 
-      {/* Send Recovery Reminder Modal */}
+      {/* Record Recovery Reminder Modal */}
       <Modal
         isOpen={selectedCart !== null}
         onClose={() => setSelectedCart(null)}
-        title={`Send Cart Recovery Reminder — ${selectedCart?.customerName || ""}`}
+        title={`Record Cart Recovery Reminder — ${selectedCart?.customerName || ""}`}
       >
         {selectedCart && (
           <form onSubmit={handleSendReminder} className="space-y-4">
@@ -184,14 +222,20 @@ export const AbandonedCartsPage: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-muted">Cart Value:</span>
                 <span className="text-ivory font-mono font-bold">
-                  Rs. {selectedCart.cartValue.toLocaleString()}
+                  {formatPKR(selectedCart.cartValue)}
                 </span>
               </div>
             </div>
 
+            <p className="text-[11px] font-sans text-muted leading-relaxed border-l-2 border-gold/30 pl-3">
+              Nothing is emailed from this screen — the mail service is not configured, so no client is
+              contacted. Recording stamps this bag as reminded, which is what stops the same prompt being
+              issued twice before the client changes it.
+            </p>
+
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Personalised Concierge Message
+                Concierge Message Draft
               </label>
               <textarea
                 rows={4}
@@ -204,13 +248,13 @@ export const AbandonedCartsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Attach Incentive Voucher Code
+                Voucher Code To Quote Later
               </label>
               <input
                 type="text"
                 value={discountCode}
                 onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-                placeholder="WELCOME15"
+                placeholder="None"
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-gold font-mono font-bold uppercase focus:outline-none focus:border-gold"
               />
             </div>
@@ -228,7 +272,7 @@ export const AbandonedCartsPage: React.FC = () => {
                 className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Dispatch Email Reminder</span>
+                <span>Record Reminder</span>
               </button>
             </div>
           </form>

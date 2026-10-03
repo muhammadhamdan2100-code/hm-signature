@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, useLocation, Navigate, useNavigate } from "react-router-dom";
 import { getCurrentStaff, hasPermission } from "../../services/auth";
-import { ROUTE_PERMISSIONS } from "../../types/staff";
+import { resolveRequiredPermission } from "../../types/staff";
 import { AdminSidebar } from "./AdminSidebar";
 import { AdminTopbar } from "./AdminTopbar";
 import { AdminSearchModal } from "./AdminSearchModal";
@@ -47,7 +47,7 @@ export const AdminLayout: React.FC = () => {
   }
 
   // Route-Level Permission Check
-  const requiredPermission = ROUTE_PERMISSIONS[location.pathname];
+  const requiredPermission = resolveRequiredPermission(location.pathname);
   const isAuthorized = !requiredPermission || hasPermission(currentStaff, requiredPermission);
 
   if (!isAuthorized) {
@@ -89,6 +89,10 @@ export const AdminLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-navy text-ivory font-sans relative">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
+
       {/* Toast System Container */}
       <ToastContainer />
 
@@ -113,7 +117,11 @@ export const AdminLayout: React.FC = () => {
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 p-6 md:p-8 max-w-[1400px] w-full mx-auto space-y-8">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 p-6 md:p-8 max-w-[1400px] w-full mx-auto space-y-8 focus:outline-none"
+        >
           <Outlet />
         </main>
       </div>

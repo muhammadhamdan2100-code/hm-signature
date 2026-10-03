@@ -50,7 +50,7 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
   {
     id: "JazzCash",
     label: "JazzCash Mobile Wallet",
-    description: "Instant mobile wallet transfer",
+    description: "Wallet transfer — verified by our team, usually within one working day.",
     enabled: true,
     requiresReference: true,
     requiresProof: true,
@@ -65,7 +65,7 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
   {
     id: "Raast",
     label: "Raast Instant Transfer",
-    description: "State Bank zero-fee Raast ID",
+    description: "Wallet transfer — verified by our team, usually within one working day.",
     enabled: true,
     requiresReference: true,
     requiresProof: true,
@@ -99,7 +99,7 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
 export const DEFAULT_SHIPPING_CONFIG: ShippingConfig = {
   freeThreshold: 10000,
   standardCost: 250,
-  estimatedDays: "2 - 3 Business Days",
+  estimatedDays: "2–3 business days",
 };
 
 async function readSetting(key: string): Promise<any | null> {

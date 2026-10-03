@@ -50,7 +50,7 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
       <div className="flex items-center justify-between border-b border-gold/15 pb-4">
         <div>
           <h4 className="font-serif text-base font-bold text-ivory tracking-wide">
-            Order Fulfillment Pipeline
+            Order Fulfilment Pipeline
           </h4>
           <p className="text-xs text-muted">
             Live lifecycle history from reception to customer delivery.

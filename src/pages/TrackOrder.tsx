@@ -134,7 +134,7 @@ export default function TrackOrder() {
     }
   }, []);
 
-  // Deep link support: /track-order?id=HMS-2026-000001 looks up once on mount.
+  // Deep link support: /track-order?id=HMS-20261002-4173 looks up once on mount.
   useEffect(() => {
     if (didRunDeepLink.current) return;
     didRunDeepLink.current = true;
@@ -266,7 +266,7 @@ export default function TrackOrder() {
                     setLookupValue(e.target.value);
                     if (fieldErrors.lookup) setFieldErrors((prev) => ({ ...prev, lookup: undefined }));
                   }}
-                  placeholder="HMS-2026-000001 or HMS-TRK-8F42A91"
+                  placeholder="HMS-20261002-4173 or HMS-TRK-8F42A91"
                   autoComplete="off"
                   spellCheck={false}
                   aria-invalid={fieldErrors.lookup ? true : undefined}
@@ -276,7 +276,7 @@ export default function TrackOrder() {
                   }`}
                 />
                 <p id="order-reference-help" className="text-[10px] text-muted font-light mt-1.5 leading-relaxed">
-                  Found in your order confirmation email.
+                  Shown on your confirmation page and in your account orders.
                 </p>
                 {fieldErrors.lookup && (
                   <p
@@ -346,7 +346,7 @@ export default function TrackOrder() {
               ) : (
                 <>
                   <Search className="w-4 h-4" aria-hidden="true" />
-                  <span>Track My Order</span>
+                  <span>Track Order</span>
                 </>
               )}
             </button>
@@ -391,7 +391,7 @@ export default function TrackOrder() {
               </p>
               <ul className="text-xs text-muted font-light space-y-2 max-w-md mx-auto text-left">
                 {[
-                  "Order numbers look like HMS-2026-000001 — watch for a missing digit or an extra space.",
+                  "Order numbers look like HMS-20261002-4173 — watch for a missing digit or an extra space.",
                   "Tracking IDs are only issued once your parcel leaves the atelier, so a dispatch reference may not exist yet.",
                   "For guest checkouts, enter the email address used at checkout as well — it confirms the order belongs to you.",
                   "If you signed in at checkout, your full order history is on your account page.",
@@ -492,7 +492,7 @@ export default function TrackOrder() {
                   Courier & Tracking
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Detail label="Courier Service" value={result.courier || "HM Signature Concierge Delivery"} icon={Truck} />
+                  <Detail label="Courier Service" value={result.courier || "our delivery team"} icon={Truck} />
                   {result.trackingId ? (
                     <div className="p-3.5 rounded-xl bg-navy/60 border border-gold/15 min-w-0">
                       <span className="text-[10px] font-mono uppercase tracking-wider text-muted block mb-1">
@@ -597,7 +597,7 @@ export default function TrackOrder() {
                     </p>
                   ) : (
                     <p className="text-[11px] text-muted font-light">
-                      Your extraits will arrive in the atelier gift box with a hand-tied gold ribbon.
+                      Your order is marked for gift presentation. The atelier confirms what can be included before dispatch.
                     </p>
                   )}
                 </div>
@@ -629,7 +629,7 @@ export default function TrackOrder() {
                               {item.name}
                             </h3>
                             <p className="text-[11px] text-muted flex flex-wrap gap-x-2">
-                              <span className="font-mono text-gold">{item.size || "50ML"}</span>
+                              <span className="font-mono text-gold">{item.size || "Size not recorded"}</span>
                               <span aria-hidden="true">•</span>
                               <span>Qty {item.quantity}</span>
                               <span aria-hidden="true">•</span>

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAdminData, type Campaign } from "../context/AdminDataContext";
+import { useAdminData, campaignDisplayState, type Campaign } from "../context/AdminDataContext";
 import { Modal, ConfirmDialog } from "../components/Modal";
 import { StatusBadge } from "../components/StatusBadge";
 import { Plus, Edit, Trash2, Calendar } from "lucide-react";
@@ -18,7 +18,7 @@ export const MarketingPage: React.FC = () => {
   const [endDate, setEndDate] = useState("2026-10-15");
   const [discountPercentage, setDiscountPercentage] = useState<number>(15);
   const [bannerImage, setBannerImage] = useState("texture-wood");
-  const [status, setStatus] = useState<Campaign["status"]>("Scheduled");
+  const [status, setStatus] = useState<Campaign["status"]>("Draft");
 
   const handleOpenAdd = () => {
     setEditingCampaign(null);
@@ -27,7 +27,7 @@ export const MarketingPage: React.FC = () => {
     setEndDate("2026-10-15");
     setDiscountPercentage(15);
     setBannerImage("texture-wood");
-    setStatus("Scheduled");
+    setStatus("Draft");
     setIsModalOpen(true);
   };
 
@@ -88,7 +88,9 @@ export const MarketingPage: React.FC = () => {
 
       {/* Campaign Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {campaigns.map((c) => (
+        {campaigns.map((c) => {
+          const state = campaignDisplayState(c);
+          return (
           <div
             key={c.id}
             className="bg-navy2/90 border border-gold/20 rounded-lg overflow-hidden shadow-xl hover:border-gold/40 transition-all group flex flex-col justify-between"
@@ -97,10 +99,12 @@ export const MarketingPage: React.FC = () => {
               {/* Banner Texture Header */}
               <div className={`h-28 w-full ${c.bannerImage} relative p-4 flex flex-col justify-between`}>
                 <div className="flex items-center justify-between">
-                  <StatusBadge status={c.status} />
-                  <span className="text-xs font-mono font-bold text-navy bg-gold px-2.5 py-0.5 rounded shadow">
-                    {c.discountPercentage}% OFF
-                  </span>
+                  <StatusBadge status={state.label} />
+                  {state.live && (
+                    <span className="text-xs font-mono font-bold text-navy bg-gold px-2.5 py-0.5 rounded shadow">
+                      {c.discountPercentage}% OFF
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -114,6 +118,11 @@ export const MarketingPage: React.FC = () => {
                     {c.startDate} to {c.endDate}
                   </span>
                 </div>
+                {!state.live && c.status === "Sending" && (
+                  <p className="text-[11px] text-muted font-sans">
+                    Recorded as sending but outside its date window — not presented as an offer.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -134,7 +143,8 @@ export const MarketingPage: React.FC = () => {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Add/Edit Modal */}
@@ -203,15 +213,23 @@ export const MarketingPage: React.FC = () => {
               </label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
+                onChange={(e) => setStatus(e.target.value as Campaign["status"])}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
               >
-                <option value="Active">Active Now</option>
-                <option value="Scheduled">Scheduled</option>
-                <option value="Ended">Ended</option>
+                <option value="Draft">Draft — not presented anywhere</option>
+                <option value="Scheduled">Scheduled — starts on its start date</option>
+                <option value="Sending">Sending — live inside its date window</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
               </select>
             </div>
           </div>
+
+          <p className="text-[11px] font-sans text-muted leading-relaxed border-l-2 border-gold/30 pl-3">
+            Coupons are the only thing that changes a price. A campaign recorded here is an
+            internal plan: it does not discount a product until a matching coupon is created in
+            Coupons, and checkout totals are always recalculated server-side.
+          </p>
 
           <div>
             <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">

@@ -46,7 +46,7 @@ export default function BrandStory() {
           className="order-1 lg:order-2"
         >
           <div className="aspect-[4/5] border border-gold/25 overflow-hidden">
-            <img src="/products/brand-signature-box.jpg" alt="HM Signature" className="w-full h-full object-cover" />
+            <img src="/products/brand-signature-box.jpg" alt="HM Signature" className="w-full h-full object-cover" loading="lazy" decoding="async" />
           </div>
         </motion.div>
       </div>

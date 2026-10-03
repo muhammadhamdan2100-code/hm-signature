@@ -1,12 +1,20 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import GoldLeafBranch from "./GoldLeafBranch";
+import type { HomepageConfig } from "../admin/context/AdminDataContext";
 
-export default function Hero() {
+const splitLines = (value: string) =>
+  value
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [slide, setSlide] = useState(0);
+  const headingLines = splitLines(hero.heading);
+  const descriptionLines = splitLines(hero.description);
 
   const onMouseMove = (e: React.MouseEvent) => {
     if (!ref.current) return;
@@ -38,7 +46,7 @@ export default function Hero() {
       <div className="max-w-[1400px] mx-auto w-full grid lg:grid-cols-2 gap-14 items-center relative">
         <div>
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.8 }} className="eyebrow mb-6">
-            HAUTE PARFUMERIE
+            {hero.subheading}
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 22 }}
@@ -46,9 +54,18 @@ export default function Hero() {
             transition={{ delay: 0.35, duration: 0.9 }}
             className="font-serif text-[42px] sm:text-[54px] lg:text-[68px] leading-[1.05] mb-6"
           >
-            THE SIGNATURE OF
-            <br />
-            WHO <span className="text-goldLight italic">YOU ARE</span>
+            {headingLines.map((line, i) => (
+              <Fragment key={i}>
+                {i > 0 && <br />}
+                {line}
+              </Fragment>
+            ))}
+            {hero.headingAccent && (
+              <>
+                {headingLines.length > 0 && " "}
+                <span className="text-goldLight italic">{hero.headingAccent}</span>
+              </>
+            )}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 18 }}
@@ -56,9 +73,12 @@ export default function Hero() {
             transition={{ delay: 0.5, duration: 0.9 }}
             className="text-muted text-base leading-[1.8] max-w-sm mb-10 tracking-wide"
           >
-            DISCOVER YOUR
-            <br />
-            SIGNATURE SCENT.
+            {descriptionLines.map((line, i) => (
+              <Fragment key={i}>
+                {i > 0 && <br />}
+                {line}
+              </Fragment>
+            ))}
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -66,8 +86,8 @@ export default function Hero() {
             transition={{ delay: 0.65, duration: 0.9 }}
             className="flex flex-wrap items-center gap-8"
           >
-            <Link to="/collections" className="btn-gold-fill">
-              SHOP NOW →
+            <Link to={hero.ctaLink || "/collections"} className="btn-gold-fill">
+              {hero.ctaText}
             </Link>
             <Link to="/?section=about" className="link-underline">
               DISCOVER HM SIGNATURE
@@ -97,20 +117,9 @@ export default function Hero() {
             transition={{ type: "spring", stiffness: 60, damping: 14 }}
             className="relative z-10 w-[230px] h-[230px] lg:w-[330px] lg:h-[330px] rounded-full overflow-hidden border border-gold/30 shadow-2xl"
           >
-            <img src="/products/mystic-oud-1.jpg" alt="HM Signature — Mystic Oud" className="w-full h-full object-cover" />
+            <img src={hero.image} alt={hero.imageAlt} fetchPriority="high" className="w-full h-full object-cover" />
           </motion.div>
         </div>
-      </div>
-
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2">
-        {[0, 1, 2, 3].map((i) => (
-          <button
-            key={i}
-            onClick={() => setSlide(i)}
-            className={`h-[2px] transition-all duration-300 ${slide === i ? "w-8 bg-gold" : "w-4 bg-gold/25"}`}
-            aria-label={`Slide ${i + 1}`}
-          />
-        ))}
       </div>
     </header>
   );

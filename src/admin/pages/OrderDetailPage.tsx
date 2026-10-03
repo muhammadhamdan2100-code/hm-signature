@@ -505,7 +505,7 @@ export const OrderDetailPage: React.FC = () => {
                   Transaction / Reference ID
                 </span>
                 <span className="font-mono text-xs text-gold bg-navy px-2.5 py-1.5 rounded border border-gold/20 block truncate">
-                  {order.paymentReference || "N/A"}
+                  {order.paymentReference || "—"}
                 </span>
               </div>
 
@@ -558,7 +558,7 @@ export const OrderDetailPage: React.FC = () => {
                     <div className="p-3 bg-navy rounded border border-gold/10 text-center">
                       <span className="text-[11px] text-muted italic font-mono block">
                         {order.paymentProofUrl
-                          ? "Loading signed screenshot URL..."
+                          ? "Loading signed screenshot URL…"
                           : "No screenshot attached for this transaction."}
                       </span>
                     </div>
@@ -605,7 +605,7 @@ export const OrderDetailPage: React.FC = () => {
                   Payment Transfer Screenshot Proof
                 </h3>
                 <span className="text-xs font-mono text-gold">
-                  Order #{order.orderNumber} • Reference: {order.paymentReference || "N/A"}
+                  Order #{order.orderNumber} • Reference: {order.paymentReference || "—"}
                 </span>
               </div>
               <button

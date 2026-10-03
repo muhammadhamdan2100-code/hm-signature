@@ -29,6 +29,10 @@ import {
   type CustomerAggregateRow,
   type RefundRecord,
 } from "../../services/adminOps";
+import {
+  fetchSavedAddressesForCustomer,
+  type AddressRecord,
+} from "../../services/customerAddresses";
 import type { Order, PaymentRecord, ReviewItem } from "../context/AdminDataContext";
 import { formatPKR } from "../../utils/currency";
 
@@ -169,13 +173,16 @@ export const CustomerDetailPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [customers, allOrders, allPayments, allRefunds, allReviews] = await Promise.all([
+      const [customers, allOrders, allPayments, allRefunds, allReviews, savedAddresses] = await Promise.all([
         fetchAdminCustomerAggregatesFromDB(),
         fetchAdminOrdersFromDB(),
         fetchAdminPaymentsFromDB(),
         fetchRefundsFromDB(),
         fetchAdminReviewsFromDB(),
+        fetchSavedAddressesForCustomer(id || ""),
       ]);
+
+      setSavedAddressBook(savedAddresses || []);
 
       const row = customers.find((c) => c.id === id) ?? null;
       if (!row) {
@@ -224,6 +231,7 @@ export const CustomerDetailPage: React.FC = () => {
   }, [load]);
 
   const { row, orders, payments, refunds, reviews } = data;
+  const [savedAddressBook, setSavedAddressBook] = useState<AddressRecord[]>([]);
 
   const addresses = useMemo<DerivedAddress[]>(() => {
     const map = new Map<string, DerivedAddress>();
@@ -670,9 +678,42 @@ export const CustomerDetailPage: React.FC = () => {
       {/* Addresses */}
       {section === "addresses" && (
         <div role="tabpanel" id="panel-addresses" aria-labelledby="tab-addresses">
+          {savedAddressBook.length > 0 && (
+            <Panel
+              title="Saved address book"
+              subtitle="Addresses the client saved to their account. Read-only for staff, and only visible here because staff policies grant SELECT on the address table."
+            >
+              <ul className="space-y-3">
+                {savedAddressBook.map((a) => (
+                  <li key={a.id} className={rowClass}>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="p-2 rounded bg-gold/10 border border-gold/20 text-gold shrink-0">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 space-y-1 text-xs">
+                        <p className="text-ivory font-medium break-words">
+                          {[a.label, a.isDefault ? "Default" : null].filter(Boolean).join(" · ")}
+                        </p>
+                        <p className="text-muted break-words">
+                          {[a.fullName, a.phone].filter(Boolean).join(" · ") || "No recipient recorded"}
+                        </p>
+                        <p className="text-ivory break-words">
+                          {[a.addressLine1, a.addressLine2].filter(Boolean).join(", ")}
+                        </p>
+                        <p className="text-gold font-mono text-[11px] uppercase">
+                          {[a.city, a.state, a.postalCode, a.country].filter(Boolean).join(", ")}
+                        </p>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+
           <Panel
             title="Addresses used on orders"
-            subtitle="Derived from the shipping address on this client's orders. HM Signature does not expose a saved address book to the admin, so these are not verified or preferred addresses."
+            subtitle="Derived from the shipping address on this client's orders. These are the destinations actually used at checkout, which can differ from the saved address book above."
           >
             {addresses.length === 0 ? (
               <NotAvailable

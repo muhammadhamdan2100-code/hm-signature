@@ -10,6 +10,8 @@ export interface ConciergeSource {
   id: string;
   label: string;
   slug?: string;
+  /** A short line naming only the stored attributes behind a recommendation. */
+  why?: string;
 }
 
 export interface ConciergeReply {
@@ -27,6 +29,37 @@ const ENDPOINT = "/api/ai-chat";
 // just after it: the platform's own structured error is what reaches the user,
 // and only a hung connection is caught here.
 const REQUEST_TIMEOUT_MS = 34000;
+// The same bounds the concierge core applies, so a pasted brochure is trimmed here
+// instead of costing a round trip to be refused there.
+const MAX_TURNS = 12;
+const MAX_CHARS = 900;
+
+export function prepareHistory(history: ConciergeMessage[]): ConciergeMessage[] {
+  return (Array.isArray(history) ? history : [])
+    .filter(
+      (m) =>
+        m &&
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string" &&
+        m.content.trim().length > 0
+    )
+    .slice(-MAX_TURNS)
+    .map((m) => ({ role: m.role, content: m.content.trim().slice(0, MAX_CHARS) }));
+}
+
+function normaliseSources(value: unknown): ConciergeSource[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((s) => s && typeof s === "object" && typeof s.label === "string")
+    .slice(0, 8)
+    .map((s: any) => ({
+      type: String(s.type || "product"),
+      id: String(s.id ?? s.slug ?? s.label),
+      label: String(s.label).slice(0, 120),
+      ...(typeof s.slug === "string" ? { slug: s.slug.slice(0, 120) } : {}),
+      ...(typeof s.why === "string" ? { why: s.why.slice(0, 200) } : {}),
+    }));
+}
 
 // The browser never learns the provider key. It forwards only its own session
 // token, and the server reads data under the same row-level security rules the
@@ -35,11 +68,17 @@ export async function askConcierge(history: ConciergeMessage[]): Promise<Concier
   const fallback: ConciergeReply = {
     ok: false,
     configured: false,
-    degraded: true,
+    // "degraded" means the assistant failed but recorded data still reached the
+    // customer. An error, a rate limit or an unconfigured provider returns no
+    // records at all, so the panel must not claim otherwise.
+    degraded: false,
     authenticated: false,
     reply: "",
     sources: [],
   };
+
+  const sent = prepareHistory(history);
+  if (!sent.length) return { ...fallback, error: "Ask a question first." };
 
   let token: string | null = null;
   try {
@@ -59,7 +98,7 @@ export async function askConcierge(history: ConciergeMessage[]): Promise<Concier
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ messages: history.slice(-12) }),
+      body: JSON.stringify({ messages: sent }),
       signal: controller.signal,
     });
 
@@ -71,6 +110,7 @@ export async function askConcierge(history: ConciergeMessage[]): Promise<Concier
     }
 
     if (res.status === 501) {
+      // Not configured: the panel hands the customer to a human, and says so.
       return {
         ...fallback,
         configured: false,
@@ -91,8 +131,8 @@ export async function askConcierge(history: ConciergeMessage[]): Promise<Concier
       configured: true,
       degraded: Boolean(payload?.degraded),
       authenticated: Boolean(payload?.authenticated),
-      reply: String(payload?.reply || ""),
-      sources: Array.isArray(payload?.sources) ? payload.sources : [],
+      reply: String(payload?.reply || "").slice(0, 2400),
+      sources: normaliseSources(payload?.sources),
     };
   } catch (err: any) {
     return {
@@ -110,6 +150,10 @@ export interface InsightsResult {
   insight: string | null;
   error?: string;
   generatedAt?: string;
+  /** The server labels its own output: this is a reading of the panels, not a fact. */
+  kind?: string;
+  basis?: string;
+  caveat?: string;
 }
 
 export async function requestBusinessInsights(): Promise<InsightsResult> {
@@ -141,6 +185,9 @@ export async function requestBusinessInsights(): Promise<InsightsResult> {
       configured: true,
       insight: payload?.insight || null,
       generatedAt: payload?.generatedAt,
+      kind: typeof payload?.kind === "string" ? payload.kind : undefined,
+      basis: typeof payload?.basis === "string" ? payload.basis : undefined,
+      caveat: typeof payload?.caveat === "string" ? payload.caveat : undefined,
     };
   } catch {
     return { ok: false, configured: true, insight: null, error: "Insights are unavailable right now." };

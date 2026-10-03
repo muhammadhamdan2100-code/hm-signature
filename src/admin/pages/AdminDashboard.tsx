@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAdminData } from "../context/AdminDataContext";
+import { useAdminData, campaignDisplayState, ORDER_STATUS_ORDER } from "../context/AdminDataContext";
 import { getCurrentStaff } from "../../services/auth";
 import { toDisplayRole } from "../../types/staff";
 import { StatCard } from "../components/StatCard";
@@ -84,7 +84,7 @@ const OrderManagerDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-navy2 via-navy2 to-sky-950/40 p-6 rounded-xl border border-gold/30 shadow-2xl">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-sky-400 font-semibold">
-            ORDER FULFILLMENT & DISPATCH CONCIERGE
+            ORDER FULFILMENT & DISPATCH CONCIERGE
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
             {greetingFor()}, {currentStaff?.name || "Order Manager"} — Order Operations
@@ -167,7 +167,7 @@ const OrderManagerDashboard: React.FC = () => {
           <div className="flex items-center justify-between border-b border-gold/15 pb-3">
             <div>
               <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-                Recent Orders Requiring Fulfillment
+                Recent Orders Requiring Fulfilment
               </h3>
               <p className="text-xs text-muted font-light">
                 Monitor status transitions, courier dispatch, and tracking IDs
@@ -219,7 +219,7 @@ const OrderManagerDashboard: React.FC = () => {
                         onClick={() => navigate(`/admin/orders/${o.id}`)}
                         className="px-3 py-1 bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory rounded text-[11px] font-sans transition-colors"
                       >
-                        Fulfill →
+                        Fulfil →
                       </button>
                     </td>
                   </tr>
@@ -298,7 +298,7 @@ const ContentManagerDashboard: React.FC = () => {
 
   const activeProducts = products.filter((p) => p.active);
   const pendingReviews = reviews.filter((r) => r.status === "Pending");
-  const activeCampaigns = campaigns.filter((c) => c.status === "Active");
+  const activeCampaigns = campaigns.filter((c) => campaignDisplayState(c).live);
 
   return (
     <div className="space-y-8 animate-fade-in font-sans">
@@ -427,7 +427,7 @@ const ContentManagerDashboard: React.FC = () => {
                     </td>
                     <td className="py-3 px-3 font-mono text-gold num-lining">{p.sku}</td>
                     <td className="py-3 px-3">{p.category}</td>
-                    <td className="py-3 px-3 font-mono num-lining">Rs. {p.price.toLocaleString()}</td>
+                    <td className="py-3 px-3 font-mono num-lining">{formatPKR(p.price)}</td>
                     <td className="py-3 px-3 text-right">
                       <button
                         onClick={() => navigate(`/admin/products/${p.id}`)}
@@ -599,7 +599,7 @@ const ManagerDashboard: React.FC = () => {
             {greetingFor()}, {currentStaff?.name || "Store Manager"} — Boutique Overview
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
-            Store operations overview, inventory telemetry, client order fulfillment, and sales reports.
+            Store operations overview, inventory telemetry, client order fulfilment, and sales reports.
           </p>
         </div>
       </div>
@@ -608,7 +608,7 @@ const ManagerDashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           title="Total Revenue"
-          value={`Rs. ${totalRevenue.toLocaleString()}`}
+          value={formatPKR(totalRevenue)}
           icon={DollarSign}
           accent={true}
           onClick={() => navigate("/admin/analytics")}
@@ -706,15 +706,19 @@ const FullAdminDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const today = localDay();
+  // Cancelled orders are excluded from every revenue figure on this page, so today's
+  // revenue follows the same rule as total revenue. Order counts still show what was
+  // received, with the cancelled share called out rather than silently priced in.
   const totalRevenue = orders.filter((o) => o.status !== "Cancelled").reduce((acc, o) => acc + o.total, 0);
   const todaysOrders = orders.filter((o) => o.createdAt === today);
-  const todaysRevenue = todaysOrders.reduce((acc, o) => acc + o.total, 0);
+  const todaysLiveOrders = todaysOrders.filter((o) => o.status !== "Cancelled");
+  const todaysRevenue = todaysLiveOrders.reduce((acc, o) => acc + o.total, 0);
 
   const pendingOrders = orders.filter((o) => o.status === "Pending");
   const processingOrders = orders.filter((o) => o.status === "Processing");
   const deliveredOrders = orders.filter((o) => o.status === "Delivered");
-  const shippedOrders = orders.filter((o) => o.status === "Shipped");
 
+  const activeProducts = products.filter((p) => p.active);
   const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
 
   const totalOrdersCount = orders.length;
@@ -758,15 +762,21 @@ const FullAdminDashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           title="Total Revenue"
-          value={`Rs. ${totalRevenue.toLocaleString()}`}
+          value={formatPKR(totalRevenue)}
           icon={DollarSign}
           accent={true}
           onClick={() => navigate("/admin/analytics")}
         />
         <StatCard
           title="Today's Revenue"
-          value={`Rs. ${todaysRevenue.toLocaleString()}`}
-          subtitle={`${todaysOrders.length} orders today`}
+          value={formatPKR(todaysRevenue)}
+          subtitle={`${todaysLiveOrders.length} of ${todaysOrders.length} orders today${
+            todaysOrders.length - todaysLiveOrders.length === 1
+              ? " (1 cancelled)"
+              : todaysOrders.length - todaysLiveOrders.length > 1
+              ? ` (${todaysOrders.length - todaysLiveOrders.length} cancelled)`
+              : ""
+          }`}
           icon={TrendingUp}
         />
         <StatCard
@@ -803,7 +813,7 @@ const FullAdminDashboard: React.FC = () => {
         />
         <StatCard
           title="Total Fragrances"
-          value={products.length}
+          value={activeProducts.length}
           subtitle="Active catalog SKUs"
           icon={Package}
           onClick={() => navigate("/admin/products")}
@@ -856,31 +866,55 @@ const FullAdminDashboard: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {[
-              { label: "Delivered", count: deliveredOrdersCount, color: "bg-emerald-400" },
-              { label: "Processing", count: processingOrders.length, color: "bg-amber-400" },
-              { label: "Pending", count: pendingOrders.length, color: "bg-sky-400" },
-              { label: "Shipped", count: shippedOrders.length, color: "bg-indigo-400" },
-            ].map((item) => {
-              const pct = totalOrdersCount > 0 ? Math.round((item.count / totalOrdersCount) * 100) : 0;
+            {(() => {
+              // Every status the store actually has is shown. Listing four fixed
+              // buckets used to hide Confirmed and Cancelled orders entirely, so the
+              // chart could read 0% everywhere while two orders existed.
+              const TONE: Record<string, string> = {
+                Pending: "bg-sky-400",
+                Confirmed: "bg-gold",
+                Processing: "bg-amber-400",
+                Shipped: "bg-indigo-400",
+                "Out for Delivery": "bg-goldLight",
+                Delivered: "bg-emerald-400",
+                Cancelled: "bg-rose-400",
+                Returned: "bg-rose-300",
+              };
+              const pipeline = ORDER_STATUS_ORDER.map((label) => ({
+                label,
+                count: orders.filter((o) => o.status === label).length,
+                color: TONE[label] || "bg-gold",
+              })).filter((item) => item.count > 0);
 
-              return (
-                <div key={item.label} className="space-y-1.5 font-sans">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-ivory font-medium">{item.label}</span>
-                    <span className="text-gold font-mono num-lining">
-                      {item.count} orders ({pct}%)
-                    </span>
+              if (pipeline.length === 0) {
+                return (
+                  <p className="text-xs text-muted font-sans">
+                    No orders have been placed yet, so there is nothing to distribute.
+                  </p>
+                );
+              }
+
+              return pipeline.map((item) => {
+                const pct = totalOrdersCount > 0 ? Math.round((item.count / totalOrdersCount) * 100) : 0;
+
+                return (
+                  <div key={item.label} className="space-y-1.5 font-sans">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-ivory font-medium">{item.label}</span>
+                      <span className="text-gold font-mono num-lining">
+                        {item.count} orders ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-navy rounded-full overflow-hidden border border-gold/10">
+                      <div
+                        style={{ width: `${pct}%` }}
+                        className={`h-full ${item.color} transition-all duration-500`}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-navy rounded-full overflow-hidden border border-gold/10">
-                    <div
-                      style={{ width: `${pct}%` }}
-                      className={`h-full ${item.color} transition-all duration-500`}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
 
           <div className="p-4 rounded bg-navy/60 border border-gold/15 text-xs text-muted leading-relaxed">
@@ -933,7 +967,7 @@ const FullAdminDashboard: React.FC = () => {
                     </td>
                     <td className="py-3 px-3">{o.customerName}</td>
                     <td className="py-3 px-3 font-mono num-lining font-medium">
-                      Rs. {o.total.toLocaleString()}
+                      {formatPKR(o.total)}
                     </td>
                     <td className="py-3 px-3">
                       <StatusBadge status={o.status} />
@@ -992,7 +1026,7 @@ const FullAdminDashboard: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-xs font-mono text-gold font-semibold num-lining">
-                  Rs. {Math.round(tp.revenue).toLocaleString()}
+                  {formatPKR(Math.round(tp.revenue))}
                 </span>
               </div>
               );

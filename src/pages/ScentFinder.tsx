@@ -618,7 +618,7 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
               onClick={() => addToCart(product, size.size, 1, size.price, size.sku)}
               className="btn-gold-fill flex-1 text-center min-h-[48px] disabled:opacity-40"
             >
-              ADD TO CART ({size.size})
+              ADD TO BAG ({size.size})
             </button>
             <Link to={`/product/${product.slug}`} className="btn-gold flex-1 text-center min-h-[48px]">
               VIEW DETAILS

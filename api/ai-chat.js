@@ -4,10 +4,11 @@
 // the caller's own Supabase access token, so row-level security decides what
 // the assistant can read; there is no service-role path in this file.
 import { runConcierge, runInsights } from "../server/aiCore.js";
+import { withRequestId } from "./_config.js";
 
 export const maxDuration = 30;
 
-export default async function handler(req, res) {
+const handler = async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });
     return;
@@ -26,12 +27,14 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const result =
       body.mode === "insights"
-        ? await runInsights({ accessToken, ip })
-        : await runConcierge({ messages: body.messages, accessToken, ip });
+        ? await runInsights({ accessToken, ip, log: req.log })
+        : await runConcierge({ messages: body.messages, accessToken, ip, log: req.log });
 
     res.status(result.status).json(result.body);
   } catch (error) {
-    console.error("AI concierge function error:", error?.message);
+    req.log?.error("AI concierge function error", { detail: error?.message });
     res.status(500).json({ error: "The concierge is unavailable right now. Please try again shortly." });
   }
-}
+};
+
+export default withRequestId(handler);

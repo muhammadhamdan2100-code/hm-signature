@@ -19,6 +19,46 @@ h1, h2, h3, h4, .font-serif { font-family: 'Cormorant Garamond', serif; }
 
 ::selection { background: #C8A96B; color: #08111C; }
 
+/* !important is required: most controls opt out of the default ring with Tailwind's focus:outline-none. */
+:where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [role="button"], [role="link"]):focus-visible {
+  outline: 2px solid #C8A96B !important;
+  outline-offset: 2px;
+}
+
+.skip-link:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+.skip-link:focus {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  width: auto;
+  height: auto;
+  margin: 0;
+  clip: auto;
+  overflow: visible;
+  padding: 12px 20px;
+  background: #C8A96B;
+  color: #08111C;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
 .eyebrow {
   font-size: 12px;
   letter-spacing: 3px;

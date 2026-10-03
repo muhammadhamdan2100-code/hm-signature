@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Clock, MessageCircle } from "lucide-react";
-import { sendTransactionalEmail } from "../services/emailService";
+import { sendContactEnquiry } from "../services/emailService";
+import { useAuth } from "../context/AuthContext";
 
 const WHATSAPP_NUMBER = "923218602034";
 const ATELIER_EMAIL = "xeltriotechnologies@gmail.com";
@@ -37,18 +39,24 @@ const info = [
 export default function Contact() {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const { user } = useAuth();
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const submitMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("sending");
-    const delivered = await sendTransactionalEmail({
-      to: ATELIER_EMAIL,
-      subject: `Website enquiry — ${form.subject || "General"}`,
-      template: "contact_enquiry",
-      data: { name: form.name, email: form.email, subject: form.subject, message: form.message },
-    });
+    // The server composes the body and decides the recipient (the configured
+    // atelier inbox); a session is required so this form cannot be pointed at
+    // somebody else's address.
+    const delivered = user
+      ? await sendContactEnquiry({
+          name: form.name,
+          email: form.email,
+          subject: form.subject,
+          message: form.message,
+        })
+      : false;
     setStatus(delivered ? "sent" : "failed");
   };
 
@@ -82,8 +90,9 @@ export default function Contact() {
               <div className="border border-gold/25 p-10 text-center">
                 <p className="text-goldLight font-serif text-xl mb-3">Not sent</p>
                 <p className="text-muted mb-6">
-                  Email delivery is not available right now, so your message has not been sent. Open WhatsApp to send
-                  it to the atelier.
+                  Your message was not sent. This form forwards through the atelier inbox and needs you to be signed in,
+                  and it stays unavailable while this deployment has no email service configured. Open WhatsApp to reach
+                  us, or sign in and try again.
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-8">
                   <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-gold-fill">
@@ -111,6 +120,15 @@ export default function Contact() {
                     className="w-full bg-transparent border border-gold/25 px-4 py-3 text-sm focus:outline-none focus:border-gold resize-none"
                   />
                 </label>
+                {!user && (
+                  <p className="text-[11px] text-muted leading-relaxed">
+                    Signing in lets this form reach the atelier inbox.{" "}
+                    <Link to="/login" className="text-goldLight underline underline-offset-4">
+                      Sign in
+                    </Link>{" "}
+                    — or use WhatsApp and the details above, which work without an account.
+                  </p>
+                )}
                 <button type="submit" className="btn-gold-fill" disabled={status === "sending"}>
                   {status === "sending" ? "SENDING…" : "SEND MESSAGE →"}
                 </button>

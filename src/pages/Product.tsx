@@ -188,7 +188,7 @@ export default function ProductPage() {
     return (
       <div className="pt-40 pb-32 flex flex-col items-center justify-center min-h-[50vh] bg-navy">
         <div className="w-10 h-10 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-xs font-mono uppercase tracking-[2px] text-gold">Loading Atelier Creation...</p>
+        <p className="text-xs font-mono uppercase tracking-[2px] text-gold">Loading Atelier Creation…</p>
       </div>
     );
   }
@@ -483,7 +483,14 @@ export default function ProductPage() {
           </div>
           <div className="max-w-2xl text-sm text-muted leading-[1.9]">
             {tab === "DESCRIPTION" && <p>{product.description}</p>}
-            {tab === "INGREDIENTS" && <p>{product.ingredients}</p>}
+            {tab === "INGREDIENTS" &&
+              (product.ingredients && product.ingredients.trim() ? (
+                <p>{product.ingredients}</p>
+              ) : (
+                <p className="italic">
+                  The full ingredient declaration for this fragrance is being prepared by the atelier.
+                </p>
+              ))}
             {tab === "HOW TO WEAR" && (
               <p>
                 Apply to pulse points — wrists, neck and behind the ears — after showering, when skin is

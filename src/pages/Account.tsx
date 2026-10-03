@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { submitPaymentProofRpc } from "../services/checkoutOps";
@@ -10,6 +10,8 @@ import {
   type CustomerOrderView,
 } from "../services/customerOrders";
 import { saveCustomerOrderNotes } from "../services/tracking";
+import AddressBook from "../components/AddressBook";
+import CommunicationPreferences from "../components/CommunicationPreferences";
 import {
   Package,
   LogOut,
@@ -217,7 +219,8 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
       const { data: userData } = await supabase.auth.getUser();
       const authorId = userData.user?.id;
       if (!authorId) {
-        throw new Error("Your session has expired. Please sign in again to submit your payment proof.");
+        setErrorMsg("Your session has expired. Please sign in again to submit your payment proof.");
+        return;
       }
 
       const proofPath = `proofs/${authorId}/${Date.now()}-${fileName}`;
@@ -226,9 +229,9 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
         .upload(proofPath, selectedFile, { upsert: false, contentType: selectedFile.type });
 
       if (uploadError) {
-        throw new Error(
-          `Your payment screenshot could not be uploaded (${uploadError.message}). Please try again.`
-        );
+        console.error("Payment screenshot upload failed:", uploadError.message);
+        setErrorMsg("Your payment screenshot could not be uploaded. Please try again.");
+        return;
       }
 
       const submitted = await submitPaymentProofRpc(order.id, {
@@ -237,22 +240,22 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
       });
 
       if (!submitted.success) {
-        throw new Error(
-          submitted.error ||
-            "The screenshot was uploaded but could not be attached to your order. Please try again."
+        console.error("Payment proof could not be attached:", submitted.error);
+        setErrorMsg(
+          "The screenshot was uploaded but could not be attached to your order. Please try again."
         );
+        return;
       }
 
       setSelectedFile(null);
       setLocalPreviewUrl(null);
       setSuccessMsg(
-        `Payment proof submitted${
-          submitted.paymentStatus ? ` (${submitted.paymentStatus})` : ""
-        }! Our finance team is reviewing your transaction.`
+        "Your payment screenshot is with us. The atelier confirms receipt once it has been reviewed."
       );
       onSubmitted();
-    } catch (err: any) {
-      setErrorMsg(err?.message || "Failed to upload payment proof.");
+    } catch (err) {
+      console.error("Payment proof submission failed:", err);
+      setErrorMsg("Your payment screenshot could not be submitted. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -281,7 +284,7 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
         <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-lg text-amber-200 text-xs flex items-center space-x-2">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
           <span>
-            {successMsg || "Payment proof submitted! Our finance team is reviewing your transaction."}
+            {successMsg || "Your payment screenshot is with us. The atelier confirms receipt once it has been reviewed."}
           </span>
         </div>
       )}
@@ -442,6 +445,8 @@ const OrderNotesAndActions: React.FC<{
 export default function Account() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isAddressesView = location.pathname.endsWith("/addresses");
   const [clientOrders, setClientOrders] = useState<CustomerOrderView[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
@@ -555,6 +560,34 @@ export default function Account() {
           </div>
         </div>
 
+        {/* Account sections */}
+        <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider font-sans">
+          <Link
+            to="/account/orders"
+            className={`px-3.5 py-2.5 rounded-lg border transition-colors min-h-11 ${
+              isAddressesView
+                ? "border-gold/25 text-muted hover:text-ivory"
+                : "border-gold/60 text-navy bg-gold font-semibold"
+            }`}
+          >
+            Orders
+          </Link>
+          <Link
+            to="/account/addresses"
+            className={`px-3.5 py-2.5 rounded-lg border transition-colors min-h-11 ${
+              isAddressesView
+                ? "border-gold/60 text-navy bg-gold font-semibold"
+                : "border-gold/25 text-muted hover:text-ivory"
+            }`}
+          >
+            Saved addresses
+          </Link>
+        </div>
+
+        {isAddressesView ? (
+          <AddressBook />
+        ) : (
+        <>
         {/* Customer Fragrance Order Portal */}
         <div className="space-y-6">
           <div className="flex items-center justify-between border-b border-gold/20 pb-4">
@@ -752,7 +785,7 @@ export default function Account() {
                           </p>
                           <p className="text-xs text-rose-300/80 font-light">
                             {order.status === "Cancelled"
-                              ? "This order acquisition was cancelled. Please contact atelier concierge for refunds or assistance."
+                              ? "This order was cancelled. Please contact atelier concierge for refunds or assistance."
                               : "Items from this order were returned and processed at our atelier."}
                           </p>
                         </div>
@@ -917,6 +950,10 @@ export default function Account() {
             </div>
           )}
         </div>
+
+        <CommunicationPreferences />
+        </>
+        )}
       </div>
     </div>
   );

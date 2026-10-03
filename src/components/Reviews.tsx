@@ -15,16 +15,16 @@ interface WallReview {
 // never fabricated quotes or ratings.
 const HOUSE_NOTES = [
   {
-    title: "On Composition",
-    text: "Each extrait is built in small batches and rests for weeks before bottling, so the accord settles into skin rather than shouts on first spray.",
+    title: "On Opening",
+    text: "We write about a fragrance as it behaves on skin: how it unfolds in the first minutes, and how the top notes give way rather than simply disappearing.",
   },
   {
-    title: "On Materials",
-    text: "We source absolutes and essential oils from growers we visit — rose from Bulgaria, oud from certified houses, amber resins weighed by hand.",
+    title: "On Heart and Drydown",
+    text: "The same scent reads differently from person to person, so our notes follow the heart as it settles and the drydown that remains hours later.",
   },
   {
     title: "On Wearing",
-    text: "Two sprays at the pulse points are enough. An extrait de parfum is meant to be discovered at a distance, not announced across a room.",
+    text: "Two sprays at the pulse points are enough. A fragrance is meant to be discovered at a distance, not announced across a room.",
   },
 ];
 

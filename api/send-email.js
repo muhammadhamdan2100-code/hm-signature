@@ -1,10 +1,23 @@
 // Vercel serverless function — POST /api/send-email
 //
-// Guards, in order: shared-secret-free session auth, recipient allowlist,
-// template allowlist, per-IP rate limit. The browser cannot supply arbitrary
-// HTML: the body is rendered here from an approved template id plus data.
-// Returns 501 {configured:false} when SMTP is unset, so the client degrades
-// honestly instead of reporting a delivery that never happened.
+// The direct path for the one message type that is not tied to an order: a website
+// enquiry. Guards, in order: session required, template allowlist, recipient forced
+// to the configured staff inbox (the browser cannot choose who gets mailed), length
+// caps, per-IP rate limit. Returns 501 {configured:false} when SMTP is unset, so the
+// client degrades honestly instead of claiming a delivery that never happened.
+//
+// Everything order-related is queued by the database triggers and drained by
+// /api/email-worker — this file cannot be used to send those.
+import { renderEmail } from "./_email-templates.js";
+import {
+  appBaseUrl,
+  redactEmail,
+  storeContactEmail,
+  supabasePublishableKey,
+  supabaseUrl,
+  withRequestId,
+} from "./_config.js";
+
 let mailTransport = null;
 
 const WINDOW_MS = 60 * 1000;
@@ -36,56 +49,26 @@ async function getMailer() {
   return mailTransport;
 }
 
-const escape = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-function renderTemplate(template, data) {
-  const brand = '<p style="font-family:serif;letter-spacing:3px;color:#C8A96B;">HM SIGNATURE</p>';
-  switch (template) {
-    case "order_confirmation":
-      return `<div style="font-family:sans-serif">${brand}
-        <h2>Your order has been received</h2>
-        <p>Order reference: <strong>${escape(data.orderNumber)}</strong></p>
-        <p>Total: ${escape(data.total)} · Payment method: ${escape(data.paymentMethod)}</p>
-        <p>Delivery city: ${escape(data.shippingCity)}</p>
-        <p>We will email you again when your parcel is dispatched, with tracking.</p></div>`;
-    case "shipping_update":
-      return `<div style="font-family:sans-serif">${brand}
-        <h2>${escape(data.title || "Delivery update")}</h2>
-        <p>${escape(data.message || "")}</p>
-        <p>Order: <strong>${escape(data.orderNumber)}</strong>${data.trackingId ? ` · Tracking: ${escape(data.trackingId)}` : ""}</p></div>`;
-    case "general":
-      return `<div style="font-family:sans-serif">${brand}
-        <h2>${escape(data.subject || "Message from HM Signature")}</h2>
-        <p>${escape(data.message || "")}</p></div>`;
-    default:
-      return null;
-  }
-}
-
 async function callerEmail(req) {
   const header = String(req.headers.authorization || "");
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-  const url = process.env.VITE_SUPABASE_URL;
-  const anon = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const url = supabaseUrl();
+  const anon = supabasePublishableKey();
   if (!token || !url || !anon) return null;
   try {
     const res = await fetch(`${url}/auth/v1/user`, {
       headers: { Authorization: `Bearer ${token}`, apikey: anon },
     });
     if (!res.ok) return null;
-    const user = await res.json();
-    return user?.email || null;
+    return (await res.json())?.email || null;
   } catch {
     return null;
   }
 }
 
-export default async function handler(req, res) {
+const ALLOWED_TEMPLATES = ["contact_enquiry"];
+
+const handler = async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });
     return;
@@ -98,31 +81,39 @@ export default async function handler(req, res) {
       return;
     }
 
-    const { to, subject, template, data } = req.body || {};
-    const allowedTemplates = ["order_confirmation", "shipping_update", "general"];
-    if (!allowedTemplates.includes(String(template))) {
-      res.status(400).json({ error: "Unsupported email template." });
+    const { template, data } = req.body || {};
+    if (!ALLOWED_TEMPLATES.includes(String(template))) {
+      res.status(400).json({ error: "Unsupported message type." });
       return;
     }
 
-    const email = await callerEmail(req);
-    if (!email) {
-      res.status(401).json({ error: "Sign in before sending email." });
+    const sender = await callerEmail(req);
+    if (!sender) {
+      res.status(401).json({ error: "Please sign in before sending a message." });
       return;
     }
 
-    // Recipients are limited to the signed-in customer and the atelier inbox,
-    // so this endpoint can never be pointed at third parties.
-    const inbox = process.env.STORE_CONTACT_EMAIL || process.env.SMTP_USER;
-    const requested = String(to || "").trim().toLowerCase();
-    if (requested !== email.toLowerCase() && requested !== String(inbox || "").toLowerCase()) {
-      res.status(403).json({ error: "That recipient is not allowed." });
+    const inbox = storeContactEmail();
+    if (!inbox) {
+      req.log?.warn("enquiry refused", { reason: "no staff inbox configured" });
+      res.status(503).json({ error: "This deployment has no enquiry inbox configured." });
       return;
     }
 
-    const html = renderTemplate(String(template), data || {});
-    if (!html) {
-      res.status(400).json({ error: "Could not render the message." });
+    const payload = {
+      name: String(data?.name || "").slice(0, 120),
+      email: String(data?.email || sender).slice(0, 160),
+      subject: String(data?.subject || "General").slice(0, 120),
+      message: String(data?.message || "").slice(0, 4000),
+    };
+    if (!payload.message.trim() || !payload.name.trim()) {
+      res.status(400).json({ error: "Please include your name and a message." });
+      return;
+    }
+
+    const rendered = renderEmail("contact_enquiry", payload, { origin: appBaseUrl() });
+    if (!rendered) {
+      res.status(400).json({ error: "Could not compose the message." });
       return;
     }
 
@@ -132,16 +123,22 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Recipient is decided here, never by the caller.
     await mailer.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: requested,
-      subject: String(subject || "HM Signature").slice(0, 150),
-      html,
+      to: inbox,
+      replyTo: payload.email,
+      subject: `[enquiry] ${payload.subject}`.slice(0, 150),
+      html: rendered.html,
+      text: rendered.text,
     });
 
+    req.log?.info("enquiry forwarded", { from: redactEmail(payload.email) });
     res.status(200).json({ success: true, configured: true });
   } catch (error) {
-    console.error("Email function error:", error?.message);
-    res.status(500).json({ error: "Email delivery failed." });
+    req.log?.error("enquiry delivery failed", { detail: error?.message });
+    res.status(500).json({ error: "Message delivery failed." });
   }
 }
+
+export default withRequestId(handler);

@@ -1,152 +1,106 @@
-import { formatPKR } from "../utils/currency";
+// Browser side of the email system. Deliberately thin:
+//  - the browser never renders or authorises an email body (that lives in
+//    api/_email-templates.js), it only asks for its own queued mail to be sent;
+//  - delivery capability is read from the server rather than assumed, so page
+//    copy can only promise what this deployment can actually do.
+import { supabase } from "../lib/supabase";
 
-export interface EmailPayload {
-  to: string;
-  subject: string;
-  template:
-    | "welcome"
-    | "order_confirmation"
-    | "payment_confirmation"
-    | "order_status"
-    | "abandoned_cart"
-    | "password_reset"
-    | "contact_enquiry";
-  data: Record<string, any>;
+async function sessionToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
-// Canonical contact details, kept in step with the Contact page.
-const ATELIER_LOCATION = "Rahim Yar Khan, Pakistan";
-const ATELIER_EMAIL = "xeltriotechnologies@gmail.com";
-const ATELIER_PHONE = "+92 321 8602034";
+export type ServiceCapabilities = {
+  email: boolean;
+  concierge: boolean;
+  payfast: boolean;
+  serverDatabase: boolean;
+  automations: boolean;
+};
 
-// Links are resolved when the email is built, not at build time, so they point
-// at wherever the storefront is actually running.
-const siteOrigin = (): string => (typeof window !== "undefined" ? window.location.origin : "");
+let cachedCapabilities: ServiceCapabilities | null = null;
 
-export const generateEmailHTML = (template: EmailPayload["template"], data: Record<string, any>): string => {
-  const origin = siteOrigin();
+export async function fetchServiceCapabilities(): Promise<ServiceCapabilities> {
+  const fallback: ServiceCapabilities = {
+    email: false,
+    concierge: false,
+    payfast: false,
+    serverDatabase: false,
+    automations: false,
+  };
+  if (cachedCapabilities) return cachedCapabilities;
+  try {
+    const res = await fetch("/api/health", { headers: { Accept: "application/json" } });
+    if (!res.ok) return fallback;
+    const body = (await res.json()) as { capabilities?: Partial<ServiceCapabilities> };
+    const capabilities = { ...fallback, ...(body.capabilities || {}) };
+    cachedCapabilities = capabilities;
+    return capabilities;
+  } catch {
+    return fallback;
+  }
+}
 
-  const brandHeader = `
-    <div style="background-color: #08111C; padding: 24px; text-align: center; border-bottom: 2px solid #C8A96B;">
-      <h1 style="color: #C8A96B; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 26px; letter-spacing: 4px; margin: 0;">HM SIGNATURE</h1>
-      <p style="color: #A0B2C6; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px;">Luxury Fragrance Atelier</p>
-    </div>
-  `;
+/** Re-reads the server instead of using the cached answer — used by the automation
+ * dashboard, which must not report a stale capability after credentials change. */
+export async function refreshServiceCapabilities(): Promise<ServiceCapabilities> {
+  cachedCapabilities = null;
+  return fetchServiceCapabilities();
+}
 
-  const brandFooter = `
-    <div style="background-color: #08111C; padding: 20px; text-align: center; border-top: 1px solid #10283D; font-family: sans-serif; font-size: 11px; color: #6B7C93;">
-      <p style="margin: 0; color: #C8A96B;">HM SIGNATURE ATELIER • ${ATELIER_LOCATION.toUpperCase()}</p>
-      <p style="margin: 6px 0 0 0;">For assistance: ${ATELIER_EMAIL} | ${ATELIER_PHONE}</p>
-    </div>
-  `;
+export type EnquiryPayload = {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+};
 
-  switch (template) {
-    case "order_confirmation":
-      return `
-        <div style="font-family: sans-serif; background-color: #08111C; color: #F4F6F9; padding: 20px;">
-          <div style="max-w: 600px; margin: 0 auto; background-color: #10283D; border: 1px solid #C8A96B; border-radius: 8px; overflow: hidden;">
-            ${brandHeader}
-            <div style="padding: 30px;">
-              <h2 style="font-family: serif; color: #F4F6F9; font-size: 22px; margin-top: 0;">Order received — ${data.orderNumber}</h2>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6;">Dear ${data.customerName},</p>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6;">Thank you for selecting HM Signature. We have received your order and it is awaiting payment confirmation. Preparation begins once the payment is confirmed, and a tracking reference is assigned when the order is dispatched.</p>
-              
-              <div style="background-color: #08111C; border: 1px solid rgba(200, 169, 107, 0.3); padding: 16px; border-radius: 6px; margin: 20px 0;">
-                <p style="color: #C8A96B; font-weight: bold; margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase;">ORDER SUMMARY</p>
-                <p style="color: #F4F6F9; margin: 4px 0; font-size: 14px;"><strong>Total payable:</strong> ${formatPKR(Number(data.total) || 0)}</p>
-                <p style="color: #F4F6F9; margin: 4px 0; font-size: 14px;"><strong>Payment method:</strong> ${data.paymentMethod || "Manual payment"}</p>
-                <p style="color: #F4F6F9; margin: 4px 0; font-size: 14px;"><strong>Delivery city:</strong> ${data.shippingCity}, Pakistan</p>
-              </div>
-
-              <a href="${origin}/account/orders" style="display: inline-block; background-color: #C8A96B; color: #08111C; padding: 12px 24px; text-decoration: none; font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; border-radius: 4px;">View order status</a>
-            </div>
-            ${brandFooter}
-          </div>
-        </div>
-      `;
-
-    case "order_status":
-      return `
-        <div style="font-family: sans-serif; background-color: #08111C; color: #F4F6F9; padding: 20px;">
-          <div style="max-w: 600px; margin: 0 auto; background-color: #10283D; border: 1px solid #C8A96B; border-radius: 8px; overflow: hidden;">
-            ${brandHeader}
-            <div style="padding: 30px;">
-              <h2 style="font-family: serif; color: #F4F6F9; font-size: 22px; margin-top: 0;">Order status update: ${data.status}</h2>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6;">Dear ${data.customerName},</p>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6;">Your order <strong>${data.orderNumber}</strong> status has been updated to <strong style="color: #C8A96B;">${data.status}</strong>.</p>
-              
-              ${
-                data.trackingNumber
-                  ? `<p style="color: #F4F6F9; font-size: 14px; background: #08111C; padding: 12px; border-radius: 4px; border: 1px solid #C8A96B;">
-                      Courier: <strong>${data.courier}</strong><br/>
-                      Tracking reference: <strong style="color: #C8A96B;">${data.trackingNumber}</strong>
-                    </p>`
-                  : ""
-              }
-
-              <a href="${origin}/account/orders" style="display: inline-block; background-color: #C8A96B; color: #08111C; padding: 12px 24px; text-decoration: none; font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; border-radius: 4px;">Track in account</a>
-            </div>
-            ${brandFooter}
-          </div>
-        </div>
-      `;
-
-    case "contact_enquiry":
-      return `
-        <div style="font-family: sans-serif; background-color: #08111C; color: #F4F6F9; padding: 20px;">
-          <div style="max-w: 600px; margin: 0 auto; background-color: #10283D; border: 1px solid #C8A96B; border-radius: 8px; overflow: hidden;">
-            ${brandHeader}
-            <div style="padding: 30px;">
-              <h2 style="font-family: serif; color: #F4F6F9; font-size: 22px; margin-top: 0;">Website enquiry — ${data.subject || "General"}</h2>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6;">From <strong style="color: #F4F6F9;">${data.name}</strong> (${data.email})</p>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${data.message}</p>
-              <p style="color: #6B7C93; font-size: 12px; line-height: 1.6;">Reply to the address above.</p>
-            </div>
-            ${brandFooter}
-          </div>
-        </div>
-      `;
-
-    default:
-      return `
-        <div style="font-family: sans-serif; background-color: #08111C; color: #F4F6F9; padding: 20px;">
-          <div style="max-w: 600px; margin: 0 auto; background-color: #10283D; border: 1px solid #C8A96B; border-radius: 8px; overflow: hidden;">
-            ${brandHeader}
-            <div style="padding: 30px;">
-              <h2 style="font-family: serif; color: #F4F6F9; font-size: 22px; margin-top: 0;">${data.title || "HM Signature Concierge"}</h2>
-              <p style="color: #A0B2C6; font-size: 14px; line-height: 1.6;">${data.message || "Thank you for connecting with HM Signature."}</p>
-            </div>
-            ${brandFooter}
-          </div>
-        </div>
-      `;
+/**
+ * Forwards a contact enquiry to the atelier inbox through the server function.
+ * A session is required, and the recipient is chosen by the server — the browser
+ * sends data, never HTML and never an address to mail.
+ */
+export const sendContactEnquiry = async (payload: EnquiryPayload): Promise<boolean> => {
+  const token = await sessionToken();
+  if (!token) return false;
+  try {
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ template: "contact_enquiry", data: { ...payload } }),
+    });
+    if (!res.ok) return false;
+    const result = (await res.json().catch(() => null)) as { success?: boolean } | null;
+    return Boolean(result?.success);
+  } catch {
+    return false;
   }
 };
 
-export const sendTransactionalEmail = async (payload: EmailPayload): Promise<boolean> => {
+/**
+ * Asks the worker to deliver anything already queued for this customer (order
+ * confirmation, payment notice). Requires a session; without SMTP configured the
+ * server answers 503 and nothing is claimed.
+ */
+export const drainOwnEmailQueue = async (): Promise<number> => {
+  const token = await sessionToken();
+  if (!token) return 0;
   try {
-    const response = await fetch("/api/send-email", {
+    const res = await fetch("/api/email-worker", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: payload.to,
-        subject: payload.subject,
-        template: payload.template,
-        html: generateEmailHTML(payload.template, payload.data),
-        data: payload.data,
-      }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
     });
-
-    if (!response.ok) return false;
-    try {
-      const result = await response.json();
-      return Boolean(result && result.success === true);
-    } catch {
-      // Non-JSON response (e.g. SPA fallback HTML) — treat as not delivered
-      return false;
-    }
+    if (!res.ok) return 0;
+    const result = (await res.json().catch(() => null)) as { sent?: number } | null;
+    return Number(result?.sent || 0);
   } catch {
-    console.warn("Transactional email unavailable:", payload.subject);
-    return false;
+    return 0;
   }
 };

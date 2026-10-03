@@ -6,7 +6,7 @@ import { useCart } from "../context/CartContext";
 import { useAdminData, type PaymentMethod } from "../admin/context/AdminDataContext";
 import ProductVisual from "../components/ProductVisual";
 import { formatPKR } from "../utils/currency";
-import { sendTransactionalEmail } from "../services/emailService";
+import { drainOwnEmailQueue, fetchServiceCapabilities } from "../services/emailService";
 import { supabase } from "../lib/supabase";
 import {
   fetchPaymentMethodsConfig,
@@ -52,11 +52,21 @@ export default function Checkout() {
   const [orderError, setOrderError] = useState<string | null>(null);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string>("");
   const [placedTotal, setPlacedTotal] = useState<number>(0);
+  const [emailDelivered, setEmailDelivered] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [placedOrderId, setPlacedOrderId] = useState<string>("");
+  const [hostedPaymentError, setHostedPaymentError] = useState<string | null>(null);
+  const [hostedPaymentBusy, setHostedPaymentBusy] = useState(false);
+  // PayFast is only ever offered when the deployment really has merchant
+  // credentials, a settlement currency and a conversion rate configured.
+  const [payfastReady, setPayfastReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
+    fetchServiceCapabilities().then((caps) => {
+      if (mounted) setPayfastReady(caps.payfast);
+    });
     fetchPaymentMethodsConfig()
       .then((methods) => {
         if (!mounted) return;
@@ -75,6 +85,59 @@ export default function Checkout() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const visiblePaymentConfigs = paymentConfigs.filter(
+    (m) => m.id !== "PayFast" || payfastReady
+  );
+
+  // PayFast's documented Custom Integration is a form the browser posts; fetch
+  // cannot complete it. The field set, including the signature, is built on the
+  // server from the stored order total.
+  const startHostedPayment = async () => {
+    if (!placedOrderId) return;
+    setHostedPaymentBusy(true);
+    setHostedPaymentError(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch("/api/payfast-start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ orderId: placedOrderId }),
+      });
+      const payload = (await res.json().catch(() => null)) as
+        | { endpoint?: string; fields?: Record<string, string> }
+        | null;
+      if (!res.ok || !payload?.endpoint || !payload.fields) {
+        setHostedPaymentError(
+          res.status === 503
+            ? "Online card payment is not available on this store yet. Choose another payment method or contact the atelier."
+            : "The payment page could not be opened. Please try again or choose another payment method."
+        );
+        return;
+      }
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = payload.endpoint;
+      form.acceptCharset = "UTF-8";
+      for (const [name, value] of Object.entries(payload.fields)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = String(value ?? "");
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    } catch {
+      setHostedPaymentError("The payment page could not be opened. Please try again.");
+    } finally {
+      setHostedPaymentBusy(false);
+    }
+  };
 
   const activeMethodConfig = paymentConfigs.find((m) => m.id === selectedMethod);
 
@@ -171,7 +234,8 @@ export default function Checkout() {
           .upload(filePath, paymentProofFile, { upsert: false });
 
         if (uploadErr || !uploadData) {
-          setProofError(`Your payment screenshot could not be uploaded (${uploadErr?.message || "storage unavailable"}). Please try again.`);
+          console.error("Payment screenshot upload failed:", uploadErr?.message || "storage unavailable");
+          setProofError("Your payment screenshot could not be uploaded. Please try again.");
           setIsProcessing(false);
           return;
         }
@@ -197,12 +261,14 @@ export default function Checkout() {
 
       if (!placed.success || !placed.orderId) {
         // Nothing was reserved and nothing was written: keep the bag intact.
-        setOrderError(placed.error || "Your order could not be registered. Please try again.");
+        console.error("Order could not be registered:", placed.error);
+        setOrderError("Your order could not be registered. Please try again.");
         setIsProcessing(false);
         return;
       }
 
       setPlacedOrderNumber(placed.orderNumber || "");
+      setPlacedOrderId(placed.orderId || "");
       setPlacedTotal(placed.total ?? total);
 
       if (uploadedProofPath || form.paymentReference) {
@@ -212,8 +278,9 @@ export default function Checkout() {
           note: cfg?.instructionHeading,
         });
         if (!proof.success) {
+          console.error("Payment evidence could not be attached:", proof.error);
           setOrderError(
-            `${placed.orderNumber} was registered, but your payment evidence was not attached (${proof.error}). Please send it to the concierge.`
+            `${placed.orderNumber} was registered, but your payment evidence was not attached. Please send it to the concierge.`
           );
         }
       }
@@ -221,8 +288,9 @@ export default function Checkout() {
       if (authUser && (isGiftWrap || giftMessage.trim())) {
         const gift = await setOrderGiftOptionsRpc(placed.orderId, isGiftWrap, giftMessage);
         if (!gift.success) {
+          console.error("Gift presentation request could not be saved:", gift.error);
           setOrderError(
-            `${placed.orderNumber} was registered, but the gift presentation was not saved (${gift.error}). Please tell the concierge so it can be added before dispatch.`
+            `${placed.orderNumber} was registered, but the gift presentation was not saved. Please tell the concierge so it can be added before dispatch.`
           );
         }
       }
@@ -230,8 +298,9 @@ export default function Checkout() {
       if (authUser && deliveryNotes.trim()) {
         const notes = await saveCustomerOrderNotes(placed.orderId, deliveryNotes.trim());
         if (!notes.success) {
+          console.error("Delivery note could not be saved:", notes.error);
           setOrderError(
-            `${placed.orderNumber} was registered, but your delivery note was not saved (${notes.error}).`
+            `${placed.orderNumber} was registered, but your delivery note was not saved.`
           );
         }
       }
@@ -281,24 +350,18 @@ export default function Checkout() {
         })),
       } as any);
 
-      await sendTransactionalEmail({
-        to: form.email,
-        subject: `HM Signature Order Placed #${placed.orderNumber}`,
-        template: "order_confirmation",
-        data: {
-          orderNumber: placed.orderNumber || "",
-          customerName: form.name,
-          total: placed.total ?? total,
-          paymentMethod: selectedMethod,
-          shippingCity: form.city,
-        },
-      });
+      // Order confirmations are queued by the database when the order is created.
+      // Asking the worker to drain this customer's queue delivers them straight
+      // away when SMTP is configured; nothing here claims a send that did not
+      // happen.
+      const delivered = await drainOwnEmailQueue();
+      setEmailDelivered(delivered > 0);
 
       clearCart();
       setStep("CONFIRMATION");
     } catch (error: any) {
       console.error("Order processing error:", error);
-      setOrderError(error?.message || "Your order could not be placed. Please try again.");
+      setOrderError("Your order could not be placed. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -361,8 +424,10 @@ export default function Checkout() {
             <h1 className="font-serif text-3xl font-bold mb-4">Acquisition Confirmed</h1>
             <p className="text-muted leading-relaxed text-sm mb-2">Thank you, {form.name || "valued client"}.</p>
             <p className="text-muted leading-relaxed text-xs mb-8">
-              Your order <span className="text-gold font-mono font-bold">#{placedOrderNumber}</span> has been placed. A receipt has
-              been sent to {form.email || "your email"}.
+              Your order <span className="text-gold font-mono font-bold">#{placedOrderNumber}</span> has been placed.{" "}
+              {emailDelivered
+                ? `A receipt has been sent to ${form.email || "your email"}.`
+                : `Email delivery is not available on this store yet, so no receipt was sent — keep this reference and follow the order from your account or with the tracking page.`}
             </p>
 
             <div className="border border-gold/25 p-6 text-left mb-8 bg-navy2 rounded-lg space-y-3 font-sans text-xs">
@@ -379,10 +444,26 @@ export default function Checkout() {
             </p>
 
             <div className="flex items-center justify-center space-x-4">
-              <Link to="/account/orders" className="btn-gold-fill font-sans text-xs">
-                TRACK IN MY ACCOUNT →
+              {selectedMethod === "PayFast" && (
+                <button
+                  type="button"
+                  onClick={startHostedPayment}
+                  disabled={hostedPaymentBusy || !placedOrderId}
+                  className="btn-gold-fill font-sans text-xs disabled:opacity-50"
+                >
+                  {hostedPaymentBusy ? "OPENING…" : "CONTINUE TO SECURE PAYMENT →"}
+                </button>
+              )}
+              <Link to="/account/orders" className="btn-gold font-sans text-xs">
+                TRACK ORDER →
               </Link>
             </div>
+
+            {selectedMethod === "PayFast" && hostedPaymentError && (
+              <p role="alert" className="text-[11px] text-rose-300 mt-4 max-w-md mx-auto leading-relaxed">
+                {hostedPaymentError}
+              </p>
+            )}
           </motion.div>
         ) : (
           <div className="grid lg:grid-cols-[1fr_380px] gap-16">
@@ -414,7 +495,7 @@ export default function Checkout() {
                       <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">STEP 2 OF 3</span>
                       <h2 className="font-serif text-2xl text-ivory font-bold">Boutique Delivery Address</h2>
                     </div>
-                    <Field label="Street Address" value={form.address} onChange={(v) => update("address", v)} required placeholder="Residence, House / Apartment No..." />
+                    <Field label="Street Address" value={form.address} onChange={(v) => update("address", v)} required placeholder="Residence, House / Apartment No…" />
                     <div className="grid sm:grid-cols-2 gap-6">
                       <Field label="City" value={form.city} onChange={(v) => update("city", v)} required />
                       <Field label="Postal Code" value={form.postalCode} onChange={(v) => update("postalCode", v)} required />
@@ -432,7 +513,7 @@ export default function Checkout() {
                         <span className="font-sans">
                           <span className="block text-xs text-ivory font-medium">Present it as a gift</span>
                           <span className="block text-[11px] text-muted font-light leading-relaxed">
-                            Hand-tied ribbon with a note card, at no additional charge.
+                            Request a gift note and the atelier will confirm what it can do before dispatch.
                           </span>
                         </span>
                       </label>
@@ -448,7 +529,7 @@ export default function Checkout() {
                             onChange={(e) => setGiftMessage(e.target.value)}
                             rows={3}
                             maxLength={500}
-                            placeholder="Written by hand on our presentation card."
+                            placeholder="Write the message you would like the atelier to include."
                             className="w-full bg-navy border border-gold/25 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold font-sans"
                           />
                           <p className="text-[10px] text-muted font-mono text-right">{giftMessage.length}/500</p>
@@ -486,7 +567,7 @@ export default function Checkout() {
 
                     {/* Payment Method Selector Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans" role="radiogroup" aria-label="Payment method">
-                      {paymentConfigs.map((m) => {
+                      {visiblePaymentConfigs.map((m) => {
                         const Icon =
                           m.id === "JazzCash" ? Smartphone
                           : m.id === "Raast" ? Banknote
@@ -664,7 +745,7 @@ export default function Checkout() {
                     disabled={isProcessing || paymentConfigs.length === 0}
                     className="btn-gold-fill flex-1 text-center font-sans text-xs font-bold uppercase tracking-wider py-3 shadow-lg disabled:opacity-50"
                   >
-                    {isProcessing ? "PROCESSING ORDER..." : step === "PAYMENT" ? `CONFIRM ${selectedMethod.toUpperCase()} ORDER →` : "CONTINUE →"}
+                    {isProcessing ? "PROCESSING ORDER…" : step === "PAYMENT" ? `CONFIRM ${selectedMethod.toUpperCase()} ORDER →` : "CONTINUE →"}
                   </button>
                 </div>
               </motion.form>
@@ -704,7 +785,7 @@ export default function Checkout() {
                     <span className="font-mono">- {formatPKR(promoDiscountAmount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-muted"><span>Boutique Shipping</span><span className="text-ivory font-mono">{shipping === 0 ? "Complimentary" : formatPKR(shipping)}</span></div>
+                <div className="flex justify-between text-muted"><span>Shipping</span><span className="text-ivory font-mono">{shipping === 0 ? "Complimentary" : formatPKR(shipping)}</span></div>
                 <div className="flex justify-between pt-3 border-t border-gold/15 text-sm">
                   <span className="font-serif font-bold text-ivory">Total Amount</span>
                   <span className="font-mono font-bold text-gold">{formatPKR(total)}</span>

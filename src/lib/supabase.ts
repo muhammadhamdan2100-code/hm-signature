@@ -11,6 +11,8 @@ export interface DBProfile {
   avatar_url?: string;
   role: "customer" | "super_admin" | "admin" | "manager" | "order_manager" | "content_manager" | "support" | string;
   status: "active" | "inactive" | "suspended" | string;
+  /** Authoritative marker for the single protected primary Super Admin. */
+  is_primary_admin?: boolean;
   last_sign_in_at?: string;
   created_at?: string;
   updated_at?: string;
@@ -236,24 +238,6 @@ export const dbService = {
       if (!error && data) return data as DBOrder[];
     }
     return [];
-  },
-
-  async createOrder(orderPayload: Partial<DBOrder>): Promise<DBOrder | null> {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase.from("orders").insert([orderPayload]).select().single();
-      if (!error && data) return data as DBOrder;
-    }
-    return null;
-  },
-
-  async updateOrderStatus(id: string, status: DBOrder["status"], shippingStatus?: string): Promise<boolean> {
-    if (isSupabaseConfigured()) {
-      const payload: Partial<DBOrder> = { status };
-      if (shippingStatus) payload.shipping_status = shippingStatus;
-      const { error } = await supabase.from("orders").update(payload).eq("id", id);
-      return !error;
-    }
-    return true;
   },
 
   // REVIEWS

@@ -24,10 +24,23 @@ export interface StaffMember {
   permissions: Record<string, boolean>;
 }
 
-export function isPrimaryAdmin(user: { email: string } | string | null | undefined): boolean {
+/**
+ * Recognises the single protected primary Super Admin.
+ *
+ * `isPrimaryAdmin` (mirrored from profiles.is_primary_admin) is authoritative: it
+ * survives a change of login email and cannot be claimed by whoever happens to own an
+ * address. PRIMARY_ADMIN_EMAIL remains only as a fallback for sessions established
+ * before that column existed, and the database guard matches both for the same reason.
+ */
+export function isPrimaryAdmin(
+  user: { email?: string; isPrimaryAdmin?: boolean } | string | null | undefined
+): boolean {
   if (!user) return false;
-  const email = typeof user === "string" ? user : user.email;
-  return email?.toLowerCase().trim() === PRIMARY_ADMIN_EMAIL.toLowerCase();
+  if (typeof user === "string") {
+    return user.toLowerCase().trim() === PRIMARY_ADMIN_EMAIL.toLowerCase();
+  }
+  if (user.isPrimaryAdmin === true) return true;
+  return user.email?.toLowerCase().trim() === PRIMARY_ADMIN_EMAIL.toLowerCase();
 }
 
 export function toDisplayRole(role: string): StaffRole {
@@ -159,9 +172,26 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   "/admin/marketing": "content.manage",
   "/admin/notifications": "orders.view",
   "/admin/payments": "payments.view",
+  "/admin/payments/refunds": "payments.manage",
+  "/admin/payments/reconciliation": "payments.view",
   "/admin/abandoned-carts": "orders.view",
+  "/admin/automations": "settings.manage",
   "/admin/staff": "staff.manage",
   "/admin/seo": "content.manage",
   "/admin/analytics": "reports.view",
   "/admin/settings": "settings.manage",
 };
+
+/**
+ * Child routes must not inherit "no requirement" just because the map lists their
+ * parent. The longest matching prefix wins, so /admin/orders/123 is governed by
+ * /admin/orders and a new sub-page can never be accidentally public.
+ */
+export function resolveRequiredPermission(pathname: string): string | undefined {
+  let bestPath: string | null = null;
+  for (const path of Object.keys(ROUTE_PERMISSIONS)) {
+    const matches = pathname === path || pathname.startsWith(`${path}/`);
+    if (matches && (bestPath === null || path.length > bestPath.length)) bestPath = path;
+  }
+  return bestPath ? ROUTE_PERMISSIONS[bestPath] : undefined;
+}

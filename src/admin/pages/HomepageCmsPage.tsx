@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
+import { ImageUploader } from "../components/ImageUploader";
 import { Save, Eye, ArrowUp, ArrowDown } from "lucide-react";
 
 export const HomepageCmsPage: React.FC = () => {
@@ -7,9 +8,11 @@ export const HomepageCmsPage: React.FC = () => {
 
   // Hero Form State
   const [heroHeading, setHeroHeading] = useState(homepageConfig.hero.heading);
+  const [heroAccent, setHeroAccent] = useState(homepageConfig.hero.headingAccent);
   const [heroSubheading, setHeroSubheading] = useState(homepageConfig.hero.subheading);
   const [heroDescription, setHeroDescription] = useState(homepageConfig.hero.description);
-  const heroImage = homepageConfig.hero.image;
+  const [heroImage, setHeroImage] = useState<string[]>([homepageConfig.hero.image]);
+  const [heroImageAlt, setHeroImageAlt] = useState<string[]>([homepageConfig.hero.imageAlt]);
   const [heroCtaText, setHeroCtaText] = useState(homepageConfig.hero.ctaText);
   const [heroCtaLink, setHeroCtaLink] = useState(homepageConfig.hero.ctaLink);
 
@@ -26,6 +29,25 @@ export const HomepageCmsPage: React.FC = () => {
 
   // Sections Order & Toggle
   const [sections, setSections] = useState(homepageConfig.sections);
+
+  // The panel mounts before the async hydrate resolves, so re-seed every field when
+  // the stored record actually arrives — otherwise the form edits defaults.
+  useEffect(() => {
+    setHeroHeading(homepageConfig.hero.heading);
+    setHeroAccent(homepageConfig.hero.headingAccent);
+    setHeroSubheading(homepageConfig.hero.subheading);
+    setHeroDescription(homepageConfig.hero.description);
+    setHeroImage([homepageConfig.hero.image]);
+    setHeroImageAlt([homepageConfig.hero.imageAlt]);
+    setHeroCtaText(homepageConfig.hero.ctaText);
+    setHeroCtaLink(homepageConfig.hero.ctaLink);
+    setAnnouncementEnabled(homepageConfig.announcementBar.enabled);
+    setAnnouncementText(homepageConfig.announcementBar.text);
+    setAnnouncementLink(homepageConfig.announcementBar.link);
+    setSections(homepageConfig.sections);
+  }, [homepageConfig]);
+
+  const heroImageValue = heroImage[heroImage.length - 1] ?? "";
 
   const handleToggleSection = (id: string) => {
     setSections((prev) =>
@@ -52,9 +74,11 @@ export const HomepageCmsPage: React.FC = () => {
     updateHomepageConfig({
       hero: {
         heading: heroHeading,
+        headingAccent: heroAccent,
         subheading: heroSubheading,
         description: heroDescription,
-        image: heroImage,
+        image: heroImageValue || homepageConfig.hero.image,
+        imageAlt: heroImageAlt[heroImageAlt.length - 1] || homepageConfig.hero.imageAlt,
         ctaText: heroCtaText,
         ctaLink: heroCtaLink,
       },
@@ -156,7 +180,7 @@ export const HomepageCmsPage: React.FC = () => {
                     type="text"
                     value={heroSubheading}
                     onChange={(e) => setHeroSubheading(e.target.value)}
-                    placeholder="HM SIGNATURE ATELIER"
+                    placeholder="HAUTE PARFUMERIE"
                     className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-gold uppercase tracking-widest focus:outline-none focus:border-gold"
                   />
                 </div>
@@ -169,8 +193,28 @@ export const HomepageCmsPage: React.FC = () => {
                     type="text"
                     value={heroHeading}
                     onChange={(e) => setHeroHeading(e.target.value)}
-                    placeholder="Extrait de Parfum Collection"
+                    placeholder="THE SIGNATURE OF|WHO"
                     className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-serif font-bold focus:outline-none focus:border-gold"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] font-sans text-muted -mt-2">
+                A vertical bar <span className="text-gold font-mono">|</span> in the title or body copy
+                starts a new line on the storefront, exactly where the headline currently breaks.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
+                    Title Accent (gold italic)
+                  </label>
+                  <input
+                    type="text"
+                    value={heroAccent}
+                    onChange={(e) => setHeroAccent(e.target.value)}
+                    placeholder="YOU ARE"
+                    className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-goldLight italic font-serif focus:outline-none focus:border-gold"
                   />
                 </div>
               </div>
@@ -183,9 +227,31 @@ export const HomepageCmsPage: React.FC = () => {
                   rows={3}
                   value={heroDescription}
                   onChange={(e) => setHeroDescription(e.target.value)}
-                  placeholder="Rare botanical extraits aged in dark oak casks..."
+                  placeholder="DISCOVER YOUR|SIGNATURE SCENT."
                   className="w-full bg-navy border border-gold/30 rounded p-3 text-xs text-ivory focus:outline-none focus:border-gold"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-sans text-muted mb-2 uppercase tracking-wider">
+                  Hero Image
+                </label>
+                <ImageUploader
+                  images={heroImage}
+                  onChange={(next) => {
+                    setHeroImage(next);
+                    setHeroImageAlt((alts) => {
+                      const nextAlts = next.map((_, i) => alts[i] ?? alts[alts.length - 1] ?? "");
+                      return nextAlts.length ? nextAlts : [""];
+                    });
+                  }}
+                  altTexts={heroImageAlt}
+                  onAltTextsChange={setHeroImageAlt}
+                />
+                <p className="text-[11px] font-sans text-muted mt-2">
+                  The most recently added image is the one shown in the hero circle. Leave this untouched to
+                  keep the current photography.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -301,9 +367,10 @@ export const HomepageCmsPage: React.FC = () => {
                 {heroSubheading}
               </span>
               <h4 className="font-serif text-lg font-bold text-ivory leading-tight">
-                {heroHeading}
+                {heroHeading.split("|").join(" ")}{" "}
+                <span className="text-goldLight italic">{heroAccent}</span>
               </h4>
-              <p className="text-[10px] text-muted line-clamp-2">{heroDescription}</p>
+              <p className="text-[10px] text-muted line-clamp-2">{heroDescription.split("|").join(" ")}</p>
               <div className="pt-2">
                 <span className="inline-block px-3 py-1.5 border border-gold text-gold text-[9px] font-mono tracking-widest uppercase rounded">
                   {heroCtaText}

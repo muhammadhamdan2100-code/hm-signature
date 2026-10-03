@@ -129,7 +129,7 @@ export default function OrderConfirmation() {
                 <span className="font-mono">- {formatPKR(order.discount)}</span>
               </div>
             )}
-            <div className="flex justify-between text-muted"><span>Shipping Charge</span><span className="font-mono text-ivory">{order.shippingFee === 0 ? "Complimentary" : formatPKR(order.shippingFee)}</span></div>
+            <div className="flex justify-between text-muted"><span>Shipping</span><span className="font-mono text-ivory">{order.shippingFee === 0 ? "Complimentary" : formatPKR(order.shippingFee)}</span></div>
             <div className="flex justify-between pt-3 border-t border-gold/15 font-serif text-base font-bold">
               <span className="text-ivory">Total Amount Paid / Payable</span>
               <span className="text-gold font-mono">{formatPKR(order.total)}</span>

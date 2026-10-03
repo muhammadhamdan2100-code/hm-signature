@@ -45,6 +45,16 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 const STORAGE_KEY = "hm-signature-cart";
+const PROMO_KEY = "hm-signature-promo";
+
+function readStoredPromo(): string {
+  try {
+    const raw = localStorage.getItem(PROMO_KEY);
+    return typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  } catch {
+    return "";
+  }
+}
 
 function readStoredCart(): CartItem[] {
   try {
@@ -71,7 +81,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [items, setItems] = useState<CartItem[]>(readStoredCart);
   const [isOpen, setIsOpen] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
+  const [promoCode, setPromoCode] = useState(readStoredPromo);
   const [promoPercentage, setPromoPercentage] = useState(0);
   const [fixedDiscount, setFixedDiscount] = useState(0);
   const [promoError, setPromoError] = useState("");
@@ -93,6 +103,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
       /* storage may be unavailable in private mode */
     }
   }, [items]);
+
+  // Only the code is remembered, never its money value — that is recomputed from the
+  // catalogue on arrival, so an edited or expired coupon cannot survive a refresh.
+  useEffect(() => {
+    try {
+      if (promoCode) localStorage.setItem(PROMO_KEY, promoCode);
+      else localStorage.removeItem(PROMO_KEY);
+    } catch {
+      /* storage may be unavailable in private mode */
+    }
+  }, [promoCode]);
 
   // Signed-in: pull the server bag once per session, then push changes to it.
   useEffect(() => {
@@ -232,12 +253,24 @@ export function CartProvider({ children }: { children: ReactNode }) {
     promoCheckedFor.current = fingerprint;
 
     let mounted = true;
-    previewCoupon(promoCode, rawSubtotal)
-      .then((result) => {
+    previewCoupon(promoCode, rawSubtotal)      .then((result) => {
         if (!mounted) return;
-        if (!result.valid) {
+        if (!result.valid || !result.type) {
           resetPromo();
           setPromoError(result.reason || `${promoCode} no longer applies to this bag.`);
+          return;
+        }
+        // Only the code survives a refresh, so the money value is re-derived here with
+        // the same maths applyPromo uses. Writing the same numbers back is a no-op, so
+        // this also keeps the discount honest whenever the bag changes size.
+        if (result.type === "percentage") {
+          let discount = Math.round(rawSubtotal * ((result.value || 0) / 100));
+          if (result.maxDiscount != null) discount = Math.min(discount, result.maxDiscount);
+          setPromoPercentage(rawSubtotal > 0 && discount > 0 ? discount / rawSubtotal : 0);
+          setFixedDiscount(0);
+        } else {
+          setFixedDiscount(Math.min(result.value || 0, rawSubtotal));
+          setPromoPercentage(0);
         }
       })
       .catch(() => {
@@ -245,6 +278,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
       });
     return () => {
       mounted = false;
+      // StrictMode mounts, cleans up and mounts again. Without releasing the guard the
+      // second pass would skip the check whose result the first pass threw away, and a
+      // restored discount would silently compute to nothing.
+      if (promoCheckedFor.current === fingerprint) promoCheckedFor.current = "";
     };
   }, [promoCode, rawSubtotal]);
 

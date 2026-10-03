@@ -1,11 +1,56 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAdminData, type EmailTemplate } from "../context/AdminDataContext";
 import { Modal } from "../components/Modal";
-import { Bell, Mail, Edit, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
+import {
+  fetchEmailQueueFromDB,
+  fetchEmailQueueStatsFromDB,
+  runEmailWorkerNow,
+  type EmailQueueRow,
+} from "../../services/adminContent";
+import { fetchServiceCapabilities } from "../../services/emailService";
+import { Bell, Mail, Edit, CheckCircle, AlertCircle, Sparkles, Send, RefreshCw } from "lucide-react";
 
 export const NotificationsPage: React.FC = () => {
   const { notifications, emailTemplates, updateEmailTemplate, markNotificationRead } =
     useAdminData();
+
+  const [queue, setQueue] = useState<EmailQueueRow[]>([]);
+  const [queueCounts, setQueueCounts] = useState<{ status: string; count: number }[]>([]);
+  const [emailReady, setEmailReady] = useState<boolean | null>(null);
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queueNote, setQueueNote] = useState("");
+
+  const loadQueue = useCallback(async () => {
+    const [rows, counts, capabilities] = await Promise.all([
+      fetchEmailQueueFromDB(12),
+      fetchEmailQueueStatsFromDB(),
+      fetchServiceCapabilities(),
+    ]);
+    setQueue(rows);
+    setQueueCounts(counts);
+    setEmailReady(capabilities.email);
+  }, []);
+
+  useEffect(() => {
+    loadQueue();
+  }, [loadQueue]);
+
+  const handleDrain = async () => {
+    setQueueBusy(true);
+    setQueueNote("");
+    const result = await runEmailWorkerNow();
+    if (!result) {
+      setQueueNote("Email delivery is not configured on this deployment, so nothing was sent.");
+    } else {
+      // A browser session can only claim rows addressed to the signed-in account;
+      // staff copies and scheduled reminders stay queued for the server worker.
+      setQueueNote(
+        `Sent ${result.sent}, failed ${result.failed}, skipped ${result.skipped} — from this account's own queued messages. Staff copies wait for the scheduler.`
+      );
+    }
+    await loadQueue();
+    setQueueBusy(false);
+  };
 
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [subject, setSubject] = useState("");
@@ -32,13 +77,13 @@ export const NotificationsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            SYSTEM NOTIFICATIONS & AUTOMATED TEMPLATES
+            SYSTEM NOTIFICATIONS & MESSAGE DRAFTS
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Notifications & Client Email Templates
+            Notifications & Message Drafts
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manage system activity logs and customize transaction email notifications.
+            Manage system activity logs and message drafts. Customer email is not sent from these.
           </p>
         </div>
       </div>
@@ -80,12 +125,120 @@ export const NotificationsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Transactional message queue */}
+      <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
+          <div className="flex items-center space-x-2">
+            <Send className="w-4 h-4 text-gold" />
+            <h3 className="font-serif text-base font-bold text-ivory">
+              Outbound Message Queue
+            </h3>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={loadQueue}
+              className="px-3 py-1.5 rounded text-xs font-sans text-muted hover:text-gold border border-gold/20 hover:border-gold/40 flex items-center space-x-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={handleDrain}
+              disabled={queueBusy || emailReady === false}
+              className="px-3 py-1.5 rounded text-xs font-sans bg-gold hover:bg-goldLight text-navy font-bold uppercase tracking-wider disabled:opacity-40"
+            >
+              {queueBusy ? "SENDING…" : "Send queued now"}
+            </button>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-muted font-sans leading-relaxed">
+          {emailReady === null
+            ? "Checking whether this deployment can deliver email…"
+            : emailReady
+              ? "Order, payment and refund events are queued by the database and delivered by the server worker. A browser session can only claim messages addressed to its own account; staff copies and time-based reminders wait for the scheduler."
+              : "No email service is configured for this deployment, so queued messages stay recorded and nothing is sent. Delivery claims are never simulated."}
+        </p>
+
+        {queueCounts.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {queueCounts.map((c) => (
+              <span
+                key={c.status}
+                className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded border border-gold/20 bg-navy text-gold"
+              >
+                {c.status}: {c.count}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {queueNote && (
+          <p className="text-[11px] text-goldLight font-sans" role="status">
+            {queueNote}
+          </p>
+        )}
+
+        {queue.length === 0 ? (
+          <p className="text-xs text-muted font-sans py-3">
+            Nothing is queued. Messages appear here as soon as an order, payment or
+            refund event is recorded.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-sans">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-muted border-b border-gold/15">
+                  <th className="py-2 pr-3 font-mono">Event</th>
+                  <th className="py-2 pr-3 font-mono">Order</th>
+                  <th className="py-2 pr-3 font-mono">To</th>
+                  <th className="py-2 pr-3 font-mono">Status</th>
+                  <th className="py-2 pr-3 font-mono">Tries</th>
+                  <th className="py-2 font-mono">Recorded</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gold/10">
+                {queue.map((row) => (
+                  <tr key={row.id}>
+                    <td className="py-2 pr-3 text-ivory font-mono">{row.template}</td>
+                    <td className="py-2 pr-3 text-muted font-mono">{row.orderRef || "—"}</td>
+                    <td className="py-2 pr-3 text-muted">{row.recipientKind}</td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border ${
+                          row.status === "sent"
+                            ? "text-emerald-300 border-emerald-500/30 bg-emerald-950/40"
+                            : row.status === "failed"
+                              ? "text-rose-300 border-rose-500/30 bg-rose-950/40"
+                              : row.status === "skipped"
+                                ? "text-muted border-gold/20 bg-navy"
+                                : "text-gold border-gold/30 bg-navy"
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                      {row.lastError && (
+                        <span className="block text-[10px] text-rose-300/80 mt-1 max-w-[240px] truncate">
+                          {row.lastError}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-muted font-mono">{row.attempts}</td>
+                    <td className="py-2 text-muted font-mono">{row.sentAt || row.createdAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Email Templates Manager */}
       <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
         <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
           <Mail className="w-4 h-4 text-gold" />
           <h3 className="font-serif text-base font-bold text-ivory">
-            Automated Client Email Templates
+            Message Drafts — Stored For Reference
           </h3>
         </div>
 

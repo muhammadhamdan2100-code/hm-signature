@@ -48,6 +48,19 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Escape closes the account dropdown and the full-screen menu.
+  useEffect(() => {
+    if (!menuOpen && !userDropdownOpen && !searchOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMenuOpen(false);
+      setUserDropdownOpen(false);
+      setSearchOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen, userDropdownOpen, searchOpen]);
+
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
@@ -76,6 +89,7 @@ export default function Navbar() {
   return (
     <>
       <nav
+        aria-label="Main"
         className={`fixed top-0 left-0 right-0 z-40 border-b transition-all duration-300 ${
           scrolled
             ? "bg-navy/90 backdrop-blur-md py-3 border-gold/30"
@@ -103,7 +117,7 @@ export default function Navbar() {
           </div>
 
           <div className="flex items-center gap-3 lg:gap-4 xl:gap-5">
-            <button aria-label="Search" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={() => setSearchOpen((s) => !s)}>
+            <button aria-label="Search" aria-expanded={searchOpen} aria-controls="navbar-search" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={() => setSearchOpen((s) => !s)}>
               <Search size={18} strokeWidth={1.3} />
             </button>
             <Link to="/wishlist" aria-label="Wishlist" className="hidden sm:inline-flex items-center justify-center relative min-h-11 min-w-11 hover:text-goldLight transition-colors">
@@ -127,6 +141,8 @@ export default function Navbar() {
             <div className="relative hidden sm:block" ref={dropdownRef}>
               <button
                 aria-label="Account"
+                aria-haspopup="true"
+                aria-expanded={userDropdownOpen}
                 onClick={handleUserClick}
                 className="hover:text-goldLight transition-colors flex items-center justify-center space-x-1 min-h-11 px-1"
                 title={user ? `Logged in as ${user.fullName}` : "Account Sign In"}
@@ -212,7 +228,7 @@ export default function Navbar() {
                 </span>
               )}
             </button>
-            <button className="lg:hidden inline-flex items-center justify-center min-h-11 min-w-11" aria-label="Menu" onClick={() => setMenuOpen(true)}>
+            <button className="lg:hidden inline-flex items-center justify-center min-h-11 min-w-11" aria-label="Menu" aria-haspopup="dialog" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
               <Menu size={22} strokeWidth={1.3} />
             </button>
           </div>
@@ -225,10 +241,15 @@ export default function Navbar() {
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               onSubmit={submitSearch}
+              id="navbar-search"
               className="overflow-hidden border-t border-gold/20 mt-4"
             >
               <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-4">
+                <label htmlFor="navbar-search-input" className="sr-only">
+                  Search fragrances
+                </label>
                 <input
+                  id="navbar-search-input"
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -247,11 +268,19 @@ export default function Navbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Main menu"
             className="fixed inset-0 z-50 bg-navy flex flex-col"
           >
             <div className="flex justify-between items-center px-6 py-6 border-b border-gold/20">
               <img src="/logo.png" alt="HM Signature" className="h-9" />
-              <button onClick={() => setMenuOpen(false)} aria-label="Close menu">
+              <button
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close menu"
+                autoFocus
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-navy2 transition-colors"
+              >
                 <X size={24} />
               </button>
             </div>

@@ -3,6 +3,7 @@ import { products as initialProductsData, type ProductVariant, generateDefaultVa
 import { type StaffMember, type StaffStatus, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
 import { INITIAL_STAFF_MEMBERS } from "../../services/staff";
 import { isSupabaseConfigured, dbService, supabase } from "../../lib/supabase";
+import { isStaffRole } from "../../context/AuthContext";
 import {
   fetchAdminProductsFromDB,
   fetchAdminCategoriesFromDB,
@@ -59,7 +60,7 @@ import {
   fetchCampaignsFromDB,
   saveCampaignToDB,
   deleteCampaignFromDB,
-  markCartReminderSentInDB,
+  recordCartRecoveryInDB,
   fetchStaffMembersFromDB,
 } from "../../services/adminContent";
 
@@ -138,6 +139,18 @@ export type OrderStatus =
   | "Delivered"
   | "Cancelled"
   | "Returned";
+
+/** Lifecycle order, used wherever the full status vocabulary must be enumerated. */
+export const ORDER_STATUS_ORDER: OrderStatus[] = [
+  "Pending",
+  "Confirmed",
+  "Processing",
+  "Shipped",
+  "Out for Delivery",
+  "Delivered",
+  "Cancelled",
+  "Returned",
+];
 
 export type PaymentMethod = "Cash on Delivery" | "JazzCash" | "Raast" | "Bank Transfer" | "Credit Card" | "PayFast" | "payfast";
 
@@ -300,10 +313,14 @@ export interface HomepageSection {
 
 export interface HomepageConfig {
   hero: {
+    /** Line(s) before the gold accent. A "|" starts a new line. */
     heading: string;
+    /** Rendered in gold italic after the heading. */
+    headingAccent: string;
     subheading: string;
     description: string;
     image: string;
+    imageAlt: string;
     ctaText: string;
     ctaLink: string;
   };
@@ -322,8 +339,29 @@ export interface Campaign {
   endDate: string;
   discountPercentage: number;
   bannerImage: string;
-  status: "Active" | "Scheduled" | "Ended";
+  status: "Draft" | "Scheduled" | "Sending" | "Completed" | "Cancelled";
   targetProducts: string[];
+}
+
+/**
+ * The stored status says where the campaign is in the pipeline; the date window says
+ * whether it may be presented as a live offer. A finished window is never reported as
+ * live, so a stale "Sending" row cannot advertise an expired discount.
+ */
+export function campaignDisplayState(
+  campaign: Pick<Campaign, "status" | "startDate" | "endDate">,
+  today = new Date()
+): { label: string; live: boolean } {
+  const day = today.toISOString().slice(0, 10);
+  const started = !campaign.startDate || campaign.startDate <= day;
+  const finished = Boolean(campaign.endDate) && campaign.endDate < day;
+
+  if (campaign.status === "Cancelled") return { label: "Cancelled", live: false };
+  if (campaign.status === "Draft") return { label: "Draft", live: false };
+  if (campaign.status === "Completed") return { label: "Completed", live: false };
+  if (finished) return { label: "Expired", live: false };
+  if (campaign.status === "Sending") return { label: "Active", live: true };
+  return { label: started ? "Active" : "Scheduled", live: started };
 }
 
 export interface SystemNotification {
@@ -351,6 +389,8 @@ export interface AbandonedCart {
   items: { productName: string; quantity: number; price: number }[];
   abandonedDate: string;
   status: "Pending" | "Reminder Sent" | "Recovered";
+  reminderSentAt?: string | null;
+  recoveredAt?: string | null;
 }
 
 export interface StoreSettings {
@@ -1013,30 +1053,63 @@ const initialReviews: ReviewItem[] = [
   },
 ];
 
-const initialHomepageConfig: HomepageConfig = {
+// Mirrors the copy the storefront already renders, so saving the CMS panel for the
+// first time changes nothing on the customer site.
+export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   hero: {
-    heading: "Extrait de Parfum Collection",
-    subheading: "HM SIGNATURE ATELIER",
-    description: "Rare botanical extraits aged in dark oak casks, bottled in handcrafted obsidian crystal flacons.",
+    heading: "THE SIGNATURE OF|WHO",
+    headingAccent: "YOU ARE",
+    subheading: "HAUTE PARFUMERIE",
+    description: "DISCOVER YOUR|SIGNATURE SCENT.",
     image: "/products/mystic-oud-1.jpg",
-    ctaText: "DISCOVER THE COLLECTION",
+    imageAlt: "HM Signature — Mystic Oud",
+    ctaText: "SHOP NOW →",
     ctaLink: "/collections",
   },
   announcementBar: {
-    enabled: true,
-    text: "COMPLIMENTARY ENGRAVING & EXPRESS LUXURY SHIPPING ON ORDERS ABOVE PKR 5,000",
+    enabled: false,
+    text: "",
     link: "/collections",
   },
   sections: [
     { id: "hero", name: "Hero Banner", enabled: true, order: 1 },
-    { id: "featured", name: "Featured Fragrance Spotlight", enabled: true, order: 2 },
-    { id: "bestsellers", name: "Bestsellers Carousel", enabled: true, order: 3 },
-    { id: "collections", name: "Curated Collections Grid", enabled: true, order: 4 },
-    { id: "story", name: "Brand Heritage Story", enabled: true, order: 5 },
-    { id: "reviews", name: "Client Testimonials & Press", enabled: true, order: 6 },
-    { id: "newsletter", name: "Private Atelier Newsletter", enabled: true, order: 7 },
+    { id: "collections", name: "Scented Stories Collection Grid", enabled: true, order: 2 },
+    { id: "values", name: "House Values Panel", enabled: true, order: 3 },
+    { id: "story", name: "Brand Heritage Story", enabled: true, order: 4 },
+    { id: "spotlight", name: "Featured Fragrance Spotlight", enabled: true, order: 5 },
+    { id: "journal", name: "Journal & Notes Editor", enabled: true, order: 6 },
+    { id: "reviews", name: "Client Reviews", enabled: true, order: 7 },
+    { id: "newsletter", name: "Private Atelier Newsletter", enabled: true, order: 8 },
   ],
 };
+
+/** A saved record can pre-date any of these fields, or carry section ids that no
+ *  longer match a homepage block. The storefront always renders a complete config:
+ *  whatever the record omits falls back to the defaults above, and unknown ids are
+ *  dropped so a stale record cannot silently delete a block. */
+export function withHomepageDefaults(
+  raw: (Partial<HomepageConfig> & { sections?: Partial<HomepageSection>[] }) | null | undefined
+): HomepageConfig {
+  if (!raw) return DEFAULT_HOMEPAGE_CONFIG;
+  const storedSections = Array.isArray(raw.sections) ? raw.sections : [];
+  const merged = DEFAULT_HOMEPAGE_CONFIG.sections
+    .map((def) => {
+      const found = storedSections.find((s) => s?.id === def.id);
+      return {
+        ...def,
+        enabled: typeof found?.enabled === "boolean" ? found.enabled : def.enabled,
+        order: Number.isFinite(Number(found?.order)) ? Number(found?.order) : def.order,
+      };
+    })
+    .sort((a, b) => a.order - b.order)
+    .map((s, idx) => ({ ...s, order: idx + 1 }));
+
+  return {
+    hero: { ...DEFAULT_HOMEPAGE_CONFIG.hero, ...(raw.hero || {}) },
+    announcementBar: { ...DEFAULT_HOMEPAGE_CONFIG.announcementBar, ...(raw.announcementBar || {}) },
+    sections: merged,
+  };
+}
 
 const initialCampaigns: Campaign[] = [
   {
@@ -1056,7 +1129,7 @@ const initialCampaigns: Campaign[] = [
     endDate: "2026-09-30",
     discountPercentage: 10,
     bannerImage: "texture-velvet",
-    status: "Active",
+    status: "Sending",
     targetProducts: ["1"],
   },
 ];
@@ -1286,7 +1359,9 @@ interface AdminDataContextType {
   updateCampaign: (id: string, updates: Partial<Campaign>) => void;
   deleteCampaign: (id: string) => void;
 
-  sendCartRecoveryReminder: (cartId: string, customNote: string) => void;
+  sendCartRecoveryReminder: (cartId: string) => void;
+  markCartRecovered: (cartId: string) => void;
+  clearCartRecoveryState: (cartId: string) => void;
   
   markNotificationRead: (id: string) => void;
   updateEmailTemplate: (id: string, updates: Partial<EmailTemplate>) => void;
@@ -1324,7 +1399,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [coupons, setCoupons] = useState<Coupon[]>(seed(initialCoupons));
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>(seed(initialShippingMethods));
   const [reviews, setReviews] = useState<ReviewItem[]>(seed(initialReviews));
-  const [homepageConfig, setHomepageConfig] = useState<HomepageConfig>(initialHomepageConfig);
+  const [homepageConfig, setHomepageConfig] = useState<HomepageConfig>(DEFAULT_HOMEPAGE_CONFIG);
   const [homepageConfigPersisted, setHomepageConfigPersisted] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>(seed(initialCampaigns));
   const [notifications, setNotifications] = useState<SystemNotification[]>(seed(initialSystemNotifications));
@@ -1334,6 +1409,48 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(initialStoreSettings);
   const [seoEntries, setSeoEntries] = useState<SeoEntry[]>(seed(initialSeoEntries));
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Analytics, the customer directory and abandoned carts are staff RPCs. Loading
+  // them for a signed-in customer (or a visitor) only produced console errors, so
+  // the hydration pass asks Postgres who the caller is before calling them.
+  const [viewerIsStaff, setViewerIsStaff] = useState(() => !isSupabaseConfigured());
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let mounted = true;
+
+    const resolveStaffViewer = async () => {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user?.id;
+      if (!uid) return false;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", uid)
+        .maybeSingle();
+      return profile?.role ? isStaffRole(profile.role) : false;
+    };
+
+    const apply = () =>
+      resolveStaffViewer()
+        .then((staff) => {
+          if (mounted) setViewerIsStaff(Boolean(staff));
+        })
+        .catch(() => {
+          if (mounted) setViewerIsStaff(false);
+        });
+
+    apply();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") apply();
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   const showToast = (type: ToastMessage["type"], message: string) => {
     const id = "t-" + Date.now() + Math.random();
@@ -1347,98 +1464,61 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Initial Supabase Catalog & Inventory Hydration
+  // Hydration for every visitor: only the datasets the storefront itself renders.
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
     let isMounted = true;
-    async function loadAdminData() {
+    async function loadSharedData() {
       try {
-        const [dbProds, dbCats, dbCols, dbLogs] = await Promise.all([
+        const [dbProds, dbCats, dbCols] = await Promise.all([
           fetchAdminProductsFromDB(),
           fetchAdminCategoriesFromDB(),
           fetchAdminCollectionsFromDB(),
-          fetchAdminInventoryLogsFromDB(),
         ]);
 
         if (isMounted) {
           if (dbProds.length > 0) setProducts(dbProds);
           if (dbCats.length > 0) setCategories(dbCats);
           if (dbCols.length > 0) setCollections(dbCols);
-          if (dbLogs.length > 0) setInventoryLogs(dbLogs);
         }
 
-        const [dbOrders, dbPayments, dbCustomers, dbReviews, dbCoupons, dbShipping, dbRefunds, dbAggregates] = await Promise.all([
+        const [dbOrders, dbCoupons, dbShipping] = await Promise.all([
           fetchAdminOrdersFromDB(),
-          fetchAdminPaymentsFromDB(),
-          fetchAdminCustomersFromDB(),
-          fetchAdminReviewsFromDB(),
           fetchAdminCouponsFromDB(),
           fetchAdminShippingMethodsFromDB(),
-          fetchRefundsFromDB(),
-          fetchAdminCustomerAggregatesFromDB(),
         ]);
 
         if (isMounted) {
           setOrders(dbOrders);
-          setPayments(dbPayments);
-          setRefunds(dbRefunds);
-          // Server aggregates are authoritative for order counts and spend.
-          if (dbCustomers.length > 0 || dbAggregates.length > 0) {
-            const byId = new Map(dbAggregates.map((a) => [a.id, a]));
-            const merged = dbCustomers.map((c) => {
-              const agg = byId.get(c.id);
-              if (!agg) return c;
-              return {
-                ...c,
-                ordersCount: agg.ordersCount,
-                totalSpent: agg.totalSpent,
-                lastOrderDate: agg.lastOrderDate ? fmtOrderStamp(agg.lastOrderDate) : c.lastOrderDate,
-                status: agg.segment === "VIP" ? "VIP" : c.status,
-              } as Customer;
-            });
-            setCustomers(merged);
-          }
-          if (dbReviews.length > 0) setReviews(dbReviews);
           if (dbCoupons.length > 0) setCoupons(dbCoupons);
           if (dbShipping.length > 0) setShippingMethods(dbShipping);
         }
 
-        const [dbSettings, dbHomepage, dbSeo, dbNotifs, dbTemplates, dbCampaigns, dbCarts, dbStaff] = await Promise.all([
+        const [dbSettings, dbHomepage, dbSeo] = await Promise.all([
           fetchStoreSettingsFromDB(),
           fetchHomepageConfigFromDB(),
           fetchSeoEntriesFromDB(),
-          fetchNotificationsFromDB(),
-          fetchEmailTemplatesFromDB(),
-          fetchCampaignsFromDB(),
-          fetchAbandonedCartsAggFromDB(),
-          fetchStaffMembersFromDB(),
         ]);
 
         if (isMounted) {
           if (dbSettings) setStoreSettings(dbSettings);
           if (dbHomepage) {
-            setHomepageConfig(dbHomepage);
+            setHomepageConfig(withHomepageDefaults(dbHomepage));
             setHomepageConfigPersisted(true);
           }
           if (dbSeo.length > 0) setSeoEntries(dbSeo);
-          if (dbNotifs.length > 0) setNotifications(dbNotifs);
-          if (dbTemplates.length > 0) setEmailTemplates(dbTemplates);
-          if (dbCampaigns.length > 0) setCampaigns(dbCampaigns);
-          // Derived from real synced bags — never fall back to demo carts.
-          setAbandonedCarts(dbCarts);
-          if (dbStaff.length > 0) setStaffMembers(dbStaff);
         }
       } catch (err) {
-        console.error("Failed loading initial Supabase admin data:", err);
+        console.error("Failed loading initial Supabase catalogue data:", err);
       }
     }
 
-    loadAdminData();
+    loadSharedData();
 
     const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
-        loadAdminData();
+        loadSharedData();
       }
     });
 
@@ -1447,6 +1527,74 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       authSub.subscription.unsubscribe();
     };
   }, []);
+
+  // Staff datasets are requested only once the caller is known to be staff, so a
+  // shopper never triggers those queries at all.
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !viewerIsStaff) return;
+
+    let isMounted = true;
+    async function loadStaffData() {
+      try {
+        const [dbLogs, dbPayments, dbCustomers, dbReviews, dbRefunds, dbAggregates] = await Promise.all([
+          fetchAdminInventoryLogsFromDB(),
+          fetchAdminPaymentsFromDB(),
+          fetchAdminCustomersFromDB(),
+          fetchAdminReviewsFromDB(),
+          fetchRefundsFromDB(),
+          fetchAdminCustomerAggregatesFromDB(),
+        ]);
+
+        if (!isMounted) return;
+
+        if (dbLogs.length > 0) setInventoryLogs(dbLogs);
+        setPayments(dbPayments);
+        setRefunds(dbRefunds);
+        // Server aggregates are authoritative for order counts and spend.
+        if (dbCustomers.length > 0 || dbAggregates.length > 0) {
+          const byId = new Map(dbAggregates.map((a) => [a.id, a]));
+          const merged = dbCustomers.map((c) => {
+            const agg = byId.get(c.id);
+            if (!agg) return c;
+            return {
+              ...c,
+              ordersCount: agg.ordersCount,
+              totalSpent: agg.totalSpent,
+              lastOrderDate: agg.lastOrderDate ? fmtOrderStamp(agg.lastOrderDate) : c.lastOrderDate,
+              status: agg.segment === "VIP" ? "VIP" : c.status,
+            } as Customer;
+          });
+          setCustomers(merged);
+        }
+        if (dbReviews.length > 0) setReviews(dbReviews);
+
+        const [dbNotifs, dbTemplates, dbCampaigns, dbCarts, dbStaff] = await Promise.all([
+          fetchNotificationsFromDB(),
+          fetchEmailTemplatesFromDB(),
+          fetchCampaignsFromDB(),
+          fetchAbandonedCartsAggFromDB(),
+          fetchStaffMembersFromDB(),
+        ]);
+
+        if (!isMounted) return;
+
+        if (dbNotifs.length > 0) setNotifications(dbNotifs);
+        if (dbTemplates.length > 0) setEmailTemplates(dbTemplates);
+        if (dbCampaigns.length > 0) setCampaigns(dbCampaigns);
+        // Derived from real synced bags — never fall back to demo carts.
+        setAbandonedCarts(dbCarts);
+        if (dbStaff.length > 0) setStaffMembers(dbStaff);
+      } catch (err) {
+        console.error("Failed loading staff datasets:", err);
+      }
+    }
+
+    loadStaffData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [viewerIsStaff]);
 
   const refreshOrdersAndPayments = async () => {
     const [dbOrders, dbPayments, dbRefunds] = await Promise.all([
@@ -1483,13 +1631,15 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const updateProduct = async (id: string, updates: Partial<AdminProduct>): Promise<boolean> => {
     const existing = products.find((p) => p.id === id);
-    if (existing) {
-      const merged = { ...existing, ...updates };
-      const success = await saveProductToDB(merged);
-      if (!success) {
-        showToast("error", "Product could not be saved. Check the size, SKU and price values.");
-        return false;
-      }
+    // The store can be behind the route (a product created moments ago, or a
+    // direct visit to /admin/products/:id). Skipping the write because the cache
+    // missed used to be reported as a successful update, so the merged record now
+    // falls back to the route id and the save is always attempted.
+    const merged = { ...(existing ?? { id }), ...updates } as AdminProduct;
+    const success = await saveProductToDB(merged);
+    if (!success) {
+      showToast("error", "Product could not be saved. Check the size, SKU and price values.");
+      return false;
     }
     if (isSupabaseConfigured()) {
       const refreshed = await fetchAdminProductsFromDB();
@@ -1499,7 +1649,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
       );
     }
-    showToast("success", `${existing?.name || "Product"} updated.`);
+    showToast("success", `${existing?.name || updates.name || "Product"} updated.`);
     return true;
   };
 
@@ -2044,8 +2194,9 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Campaigns
   const refreshCampaigns = async () => {
-    const dbCampaigns = await fetchCampaignsFromDB();
-    if (dbCampaigns.length > 0) setCampaigns(dbCampaigns);
+    // Always adopt what the database returns. Keeping the previous rows when the
+    // result is empty made "delete the last campaign" look like it had failed.
+    setCampaigns(await fetchCampaignsFromDB());
   };
 
   const addCampaign = async (camp: Omit<Campaign, "id">) => {
@@ -2056,12 +2207,12 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return;
       }
       await refreshCampaigns();
-      showToast("success", `Marketing campaign "${camp.name}" launched.`);
+      showToast("success", `Marketing campaign "${camp.name}" saved as ${camp.status}.`);
       return;
     }
     const newCamp: Campaign = { ...camp, id: "camp-" + Date.now() };
     setCampaigns((prev) => [newCamp, ...prev]);
-    showToast("success", `Marketing campaign "${newCamp.name}" launched.`);
+    showToast("success", `Marketing campaign "${newCamp.name}" saved as ${newCamp.status}.`);
   };
 
   const updateCampaign = async (id: string, updates: Partial<Campaign>) => {
@@ -2082,7 +2233,11 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const deleteCampaign = async (id: string) => {
     if (isSupabaseConfigured()) {
-      await deleteCampaignFromDB(id);
+      const ok = await deleteCampaignFromDB(id);
+      if (!ok) {
+        showToast("error", "Failed to remove campaign.");
+        return;
+      }
       await refreshCampaigns();
       showToast("info", "Campaign removed.");
       return;
@@ -2091,24 +2246,53 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     showToast("info", "Campaign removed.");
   };
 
-  // Abandoned Carts
-  const sendCartRecoveryReminder = async (cartId: string, customNote: string) => {
+  // Abandoned Carts — recovery state lives in the database, written only through
+  // the staff-only mark_cart_recovery RPC so two staff members cannot record the
+  // same reminder twice for a bag nobody has touched since.
+  const applyCartRecovery = async (cartId: string, action: "reminder" | "recovered" | "reset") => {
     if (isSupabaseConfigured() && /^[0-9a-f]{8}-/i.test(cartId)) {
-      const ok = await markCartReminderSentInDB(cartId);
-      if (!ok) {
-        showToast("error", "Failed to record reminder.");
-        return;
+      const result = await recordCartRecoveryInDB(cartId, action);
+      if (!result.success) {
+        showToast("error", result.error || "Failed to record cart recovery.");
+        return false;
       }
-      const dbCarts = await fetchAbandonedCartsAggFromDB();
-      setAbandonedCarts(dbCarts);
-      showToast("success", "Recovery reminder recorded for this client.");
-      return;
+      setAbandonedCarts(await fetchAbandonedCartsAggFromDB());
+      showToast(
+        "success",
+        action === "reminder"
+          ? "Reminder recorded for this client. No email is dispatched while the mail service is unconfigured."
+          : action === "recovered"
+            ? "Bag marked as recovered."
+            : "Recovery state cleared."
+      );
+      return true;
     }
     setAbandonedCarts((prev) =>
-      prev.map((c) => (c.id === cartId ? { ...c, status: "Reminder Sent" } : c))
+      prev.map((c) => {
+        if (c.id !== cartId) return c;
+        const next: AbandonedCart = { ...c };
+        if (action === "reminder") {
+          next.status = "Reminder Sent";
+          next.reminderSentAt = new Date().toISOString();
+          next.recoveredAt = null;
+        } else if (action === "recovered") {
+          next.status = "Recovered";
+          next.recoveredAt = new Date().toISOString();
+        } else {
+          next.status = "Pending";
+          next.reminderSentAt = null;
+          next.recoveredAt = null;
+        }
+        return next;
+      })
     );
-    showToast("success", `Recovery reminder sent with note: "${customNote.slice(0, 30)}..."`);
+    showToast("success", action === "reminder" ? "Recovery reminder recorded." : action === "recovered" ? "Bag marked as recovered." : "Recovery state cleared.");
+    return true;
   };
+
+  const sendCartRecoveryReminder = (cartId: string) => applyCartRecovery(cartId, "reminder");
+  const markCartRecovered = (cartId: string) => applyCartRecovery(cartId, "recovered");
+  const clearCartRecoveryState = (cartId: string) => applyCartRecovery(cartId, "reset");
 
   // Notifications & Templates
   const markNotificationRead = async (id: string) => {
@@ -2282,6 +2466,8 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         updateCampaign,
         deleteCampaign,
         sendCartRecoveryReminder,
+        markCartRecovered,
+        clearCartRecoveryState,
         markNotificationRead,
         updateEmailTemplate,
         addStaffMember,

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, Lock, Mail, User, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, User, X, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
 import { useAuth, isStaffRole } from "../context/AuthContext";
 
 export default function Login() {
@@ -54,6 +54,24 @@ export default function Login() {
       setResetSuccess(false);
     }
   }, [resetMode]);
+
+  // Keep focus inside the recovery dialog while open, then hand it back to the trigger.
+  const resetPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isResetOpen) return;
+    const trigger = document.activeElement;
+    resetPanelRef.current?.querySelector<HTMLElement>("input")?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsResetOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (trigger instanceof HTMLElement) trigger.focus();
+    };
+  }, [isResetOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,7 +162,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-dvh bg-navy flex items-center justify-center p-4 relative overflow-hidden pt-24 pb-12">
+    <main className="min-h-dvh bg-navy flex items-center justify-center p-4 relative overflow-hidden pt-24 pb-12">
       {/* Background Radial Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-gold/10 rounded-full blur-[140px] pointer-events-none" />
 
@@ -175,8 +193,9 @@ export default function Login() {
         >
           {/* Error & Success Banner */}
           <div aria-live="polite">
-            {errorMessage && (
+            {errorMessage && !isResetOpen && (
               <motion.div
+                id="login-form-error"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 className="mb-5 p-3 rounded-lg bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs flex items-start space-x-2"
@@ -202,18 +221,19 @@ export default function Login() {
             {/* Full Name field (Signup Mode Only) */}
             {mode === "signup" && (
               <div>
-                <label className="block text-xs font-sans text-ivory/80 font-medium mb-1.5">
+                <label htmlFor="login-full-name" className="block text-xs font-sans text-ivory/80 font-medium mb-1.5">
                   Full Name <span className="text-gold">*</span>
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
+                    id="login-full-name"
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Lord Alexander Sinclair"
-                    className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                    placeholder="As you would like it on your orders"
+                    className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -221,19 +241,22 @@ export default function Login() {
 
             {/* Email Field */}
             <div>
-              <label className="block text-xs font-sans text-ivory/80 font-medium mb-1.5">
+              <label htmlFor="login-email" className="block text-xs font-sans text-ivory/80 font-medium mb-1.5">
                 Email Address <span className="text-gold">*</span>
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
+                  id="login-email"
                   type="email"
                   required
                   autoComplete="username"
+                  aria-invalid={errorMessage ? true : undefined}
+                  aria-describedby={errorMessage ? "login-form-error" : undefined}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@domain.com"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -241,14 +264,17 @@ export default function Login() {
             {/* Password Field */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-sans text-ivory/80 font-medium">
+                <label htmlFor="login-password" className="block text-xs font-sans text-ivory/80 font-medium">
                   Password <span className="text-gold">*</span>
                 </label>
                 {mode === "signin" && (
                   <button
                     type="button"
-                    onClick={() => setIsResetOpen(true)}
-                    className="text-[11px] font-sans text-gold hover:text-goldLight transition-colors"
+                    onClick={() => {
+                      setErrorMessage("");
+                      setIsResetOpen(true);
+                    }}
+                    className="px-1 -mx-1 py-2 -my-2 rounded text-[11px] font-sans text-gold hover:text-goldLight transition-colors"
                   >
                     Forgot Password?
                   </button>
@@ -257,18 +283,21 @@ export default function Login() {
               <div className="relative">
                 <Lock className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
+                  id="login-password"
                   type={showPassword ? "text" : "password"}
                   required
                   autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  aria-invalid={errorMessage ? true : undefined}
+                  aria-describedby={errorMessage ? "login-form-error" : undefined}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-10 py-2.5 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-12 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-gold transition-colors"
+                  className="absolute right-0 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-gold transition-colors"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -286,7 +315,7 @@ export default function Login() {
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="rounded border-gold/30 bg-navy text-gold focus:ring-gold focus:ring-offset-navy"
                 />
-                <label htmlFor="remember" className="text-xs font-sans text-muted select-none">
+                <label htmlFor="remember" className="text-xs font-sans text-muted select-none py-1.5 -my-1.5">
                   Remember me on this browser
                 </label>
               </div>
@@ -296,7 +325,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
+              className="w-full py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-navy border-t-transparent rounded-full animate-spin" />
@@ -350,22 +379,37 @@ export default function Login() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-navy/80 backdrop-blur-sm flex items-center justify-center p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setIsResetOpen(false);
+            }}
           >
             <motion.div
+              ref={resetPanelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="password-recovery-title"
+              tabIndex={-1}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-navy2 border border-gold/30 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl"
+              className="bg-navy2 border border-gold/30 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl focus:outline-none"
             >
               <div className="flex items-center justify-between border-b border-gold/20 pb-3">
-                <h3 className="font-serif font-bold text-lg text-ivory">Password Recovery</h3>
-                <button onClick={() => setIsResetOpen(false)} className="text-muted hover:text-ivory">
-                  ✕
+                <h3 id="password-recovery-title" className="font-serif font-bold text-lg text-ivory">
+                  Password Recovery
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsResetOpen(false)}
+                  aria-label="Close password recovery"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-ivory hover:bg-navy transition-colors"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
               {resetSuccess ? (
-                <div className="py-4 text-center space-y-2">
+                <div role="status" className="py-4 text-center space-y-2">
                   <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
                   <p className="text-sm text-ivory font-serif font-bold">Password Reset Instructions Sent</p>
                   <p className="text-xs text-muted">
@@ -374,21 +418,31 @@ export default function Login() {
                 </div>
               ) : (
                 <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                  {errorMessage && (
+                    <p id="recovery-form-error" role="alert" className="text-xs text-rose-300">
+                      {errorMessage}
+                    </p>
+                  )}
                   {resetMode ? (
                     <>
                       <p className="text-xs text-muted">
                         Your reset link was verified. Choose a new password for your account.
                       </p>
                       <div>
-                        <label className="block text-xs text-ivory mb-1">New Password</label>
+                        <label htmlFor="recovery-password" className="block text-xs text-ivory mb-1">
+                          New Password
+                        </label>
                         <input
+                          id="recovery-password"
                           type="password"
                           required
                           minLength={6}
+                          aria-invalid={errorMessage ? true : undefined}
+                          aria-describedby={errorMessage ? "recovery-form-error" : undefined}
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
                         />
                         <p className="text-[10px] text-muted mt-1">At least 6 characters.</p>
                       </div>
@@ -399,14 +453,19 @@ export default function Login() {
                         Enter the email address associated with your account and we will send you instructions to reset your password.
                       </p>
                       <div>
-                        <label className="block text-xs text-ivory mb-1">Email Address</label>
+                        <label htmlFor="recovery-email" className="block text-xs text-ivory mb-1">
+                          Email Address
+                        </label>
                         <input
+                          id="recovery-email"
                           type="email"
                           required
+                          aria-invalid={errorMessage ? true : undefined}
+                          aria-describedby={errorMessage ? "recovery-form-error" : undefined}
                           value={resetEmail}
                           onChange={(e) => setResetEmail(e.target.value)}
                           placeholder="name@domain.com"
-                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
+                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
                         />
                       </div>
                     </>
@@ -415,14 +474,14 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => setIsResetOpen(false)}
-                      className="px-4 py-2 rounded text-xs text-muted hover:text-ivory"
+                      className="px-4 py-2 min-h-11 rounded text-xs text-muted hover:text-ivory"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={resetBusy}
-                      className="px-4 py-2 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-50"
+                      className="px-4 py-2 min-h-11 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-50"
                     >
                       {resetMode ? "Set New Password" : "Send Instructions"}
                     </button>
@@ -433,6 +492,6 @@ export default function Login() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </main>
   );
 }

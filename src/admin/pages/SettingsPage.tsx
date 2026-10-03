@@ -823,7 +823,7 @@ export const SettingsPage: React.FC = () => {
       setMethods(cleaned);
       setPaymentProblems(problems);
       setPaymentStatus({ kind: "failed", message: `Nothing was saved — ${problems.length} item(s) need attention.` });
-      showToast("error", "Payment configuration not saved: fix the listed problems first.");
+      showToast("error", "Checkout payment instructions not saved: fix the listed problems first.");
       return;
     }
 
@@ -844,7 +844,7 @@ export const SettingsPage: React.FC = () => {
         kind: "failed",
         message: "The settings service rejected the write, so checkout still shows the previous instructions. Your edits are kept here — retry, or confirm your staff sign-in.",
       });
-      showToast("error", "Payment configuration could not be saved.");
+      showToast("error", "Checkout payment instructions could not be saved.");
     }
   };
 
@@ -868,7 +868,7 @@ export const SettingsPage: React.FC = () => {
     }
     const secret = findSecret(estimatedDaysText);
     if (secret) {
-      problems.push(`Estimated delivery time looks like ${secret}. Delivery rules are public; remove it before saving.`);
+      problems.push(`Estimated delivery time looks like ${secret}. Delivery pricing is public; remove it before saving.`);
     }
 
     const cleaned: ShippingDraft = {
@@ -881,7 +881,7 @@ export const SettingsPage: React.FC = () => {
       setDraft(cleaned);
       setDeliveryProblems(problems);
       setDeliveryStatus({ kind: "failed", message: `Nothing was saved — ${problems.length} item(s) need attention.` });
-      showToast("error", "Delivery rules not saved: fix the listed problems first.");
+      showToast("error", "Delivery pricing not saved: fix the listed problems first.");
       return;
     }
 
@@ -909,7 +909,7 @@ export const SettingsPage: React.FC = () => {
         kind: "failed",
         message: "The settings service rejected the write, so order pricing still uses the previous amounts. Retry, or confirm your staff sign-in.",
       });
-      showToast("error", "Delivery rules could not be saved.");
+      showToast("error", "Delivery pricing could not be saved.");
     }
   };
 
@@ -1335,7 +1335,7 @@ export const SettingsPage: React.FC = () => {
                   status={paymentStatus}
                   dirty={paymentDirty}
                   loadingLabel="Saving payment configuration…"
-                  savedLabel="Payment configuration saved"
+                  savedLabel="Checkout payment instructions saved"
                   retryLabel="Retry save"
                   onRetry={() => void savePaymentConfig()}
                 />
@@ -1356,7 +1356,7 @@ export const SettingsPage: React.FC = () => {
                   ))}
                 </div>
 
-                <ProblemList heading="Payment configuration not saved" problems={paymentProblems} />
+                <ProblemList heading="Checkout payment instructions not saved" problems={paymentProblems} />
 
                 <div className="bg-navy2/90 border border-gold/20 rounded-lg p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <p className="flex items-start gap-2 text-[11px] text-muted font-light leading-relaxed min-w-0">
@@ -1447,14 +1447,14 @@ export const SettingsPage: React.FC = () => {
                     {deliveryPreview}
                   </p>
 
-                  <ProblemList heading="Delivery rules not saved" problems={deliveryProblems} />
+                  <ProblemList heading="Delivery pricing not saved" problems={deliveryProblems} />
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-gold/15 pt-4">
                     <SaveStatus
                       status={deliveryStatus}
                       dirty={deliveryDirty}
                       loadingLabel="Saving delivery rules…"
-                      savedLabel="Delivery rules saved"
+                      savedLabel="Delivery pricing saved"
                       retryLabel="Retry save"
                       onRetry={() => void saveDeliveryConfig()}
                     />

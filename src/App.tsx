@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
@@ -8,43 +9,60 @@ import Footer from "./components/Footer";
 import CartDrawer from "./components/CartDrawer";
 import WhatsAppButton from "./components/WhatsAppButton";
 import ScrollToTop from "./components/ScrollToTop";
-import Home from "./pages/Home";
-import Collections from "./pages/Collections";
-import Bestsellers from "./pages/Bestsellers";
-import Men from "./pages/Men";
-import Women from "./pages/Women";
-import ProductPage from "./pages/Product";
-import Cart from "./pages/Cart";
-import Checkout from "./pages/Checkout";
-import OrderConfirmation from "./pages/OrderConfirmation";
-import ScentFinder from "./pages/ScentFinder";
-import Journal from "./pages/Journal";
-import Wishlist from "./pages/Wishlist";
-import Account from "./pages/Account";
-import Login from "./pages/Login";
-import Contact from "./pages/Contact";
-import Ingredients from "./pages/Ingredients";
-import FAQ from "./pages/FAQ";
-import ShippingDelivery from "./pages/ShippingDelivery";
-import ReturnsExchanges from "./pages/ReturnsExchanges";
-import TrackOrder from "./pages/TrackOrder";
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import TermsConditions from "./pages/TermsConditions";
-import RefundPolicy from "./pages/RefundPolicy";
-import ParentCompany from "./pages/ParentCompany";
 import NotFound from "./pages/NotFound";
-import AdminApp from "./admin/AdminApp";
-import { AdminLogin } from "./admin/pages/AdminLogin";
 import { StaffRouteGuard, CustomerRouteGuard } from "./components/ProtectedRoute";
+
+const Home = lazy(() => import("./pages/Home"));
+const Collections = lazy(() => import("./pages/Collections"));
+const Bestsellers = lazy(() => import("./pages/Bestsellers"));
+const Men = lazy(() => import("./pages/Men"));
+const Women = lazy(() => import("./pages/Women"));
+const ProductPage = lazy(() => import("./pages/Product"));
+const Cart = lazy(() => import("./pages/Cart"));
+const Checkout = lazy(() => import("./pages/Checkout"));
+const OrderConfirmation = lazy(() => import("./pages/OrderConfirmation"));
+const ScentFinder = lazy(() => import("./pages/ScentFinder"));
+const Journal = lazy(() => import("./pages/Journal"));
+const Wishlist = lazy(() => import("./pages/Wishlist"));
+const Account = lazy(() => import("./pages/Account"));
+const Login = lazy(() => import("./pages/Login"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Ingredients = lazy(() => import("./pages/Ingredients"));
+const FAQ = lazy(() => import("./pages/FAQ"));
+const ShippingDelivery = lazy(() => import("./pages/ShippingDelivery"));
+const ReturnsExchanges = lazy(() => import("./pages/ReturnsExchanges"));
+const TrackOrder = lazy(() => import("./pages/TrackOrder"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const TermsConditions = lazy(() => import("./pages/TermsConditions"));
+const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
+const ParentCompany = lazy(() => import("./pages/ParentCompany"));
+const AdminApp = lazy(() => import("./admin/AdminApp"));
+const AdminLogin = lazy(() =>
+  import("./admin/pages/AdminLogin").then((m) => ({ default: m.AdminLogin }))
+);
+
+function RouteFallback() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center" role="status">
+      <span className="sr-only">Loading page…</span>
+      <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function CustomerLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-navy text-ivory">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
       <Navbar />
       <CartDrawer />
       <WhatsAppButton />
-      <main className="flex-1">
-        <Outlet />
+      <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
       <Footer />
     </div>
@@ -59,56 +77,58 @@ export default function App() {
           <CartProvider>
             <WishlistProvider>
               <ScrollToTop />
-              <Routes>
-                {/* Customer Login Route */}
-                <Route path="/login" element={<Login />} />
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
+                  {/* Customer Login Route */}
+                  <Route path="/login" element={<Login />} />
 
-                {/* Staff Admin Login Portal */}
-                <Route path="/admin/login" element={<AdminLogin />} />
+                  {/* Staff Admin Login Portal */}
+                  <Route path="/admin/login" element={<AdminLogin />} />
 
-                {/* Protected Staff Admin Console Routes */}
-                <Route element={<StaffRouteGuard />}>
-                  <Route path="/admin/*" element={<AdminApp />} />
-                </Route>
-
-                {/* Storefront Routes */}
-                <Route element={<CustomerLayout />}>
-                  <Route path="/" element={<Home />} />
-                  <Route path="/collections" element={<Collections />} />
-                  <Route path="/bestsellers" element={<Bestsellers />} />
-                  <Route path="/men" element={<Men />} />
-                  <Route path="/women" element={<Women />} />
-                  <Route path="/product/:slug" element={<ProductPage />} />
-                  <Route path="/cart" element={<Cart />} />
-                  <Route path="/checkout" element={<Checkout />} />
-                  <Route path="/order-confirmation/:orderId" element={<OrderConfirmation />} />
-                  <Route path="/scent-finder" element={<ScentFinder />} />
-                  <Route path="/journal" element={<Journal />} />
-                  <Route path="/wishlist" element={<Wishlist />} />
-
-                  {/* Protected Customer Account Routes */}
-                  <Route element={<CustomerRouteGuard />}>
-                    <Route path="/account" element={<Account />} />
-                    <Route path="/account/orders" element={<Account />} />
-                    <Route path="/account/orders/:id" element={<Account />} />
-                    <Route path="/account/profile" element={<Account />} />
-                    <Route path="/account/addresses" element={<Account />} />
-                    <Route path="/account/wishlist" element={<Account />} />
+                  {/* Protected Staff Admin Console Routes */}
+                  <Route element={<StaffRouteGuard />}>
+                    <Route path="/admin/*" element={<AdminApp />} />
                   </Route>
 
-                  <Route path="/contact" element={<Contact />} />
-                  <Route path="/ingredients" element={<Ingredients />} />
-                  <Route path="/faq" element={<FAQ />} />
-                  <Route path="/shipping-delivery" element={<ShippingDelivery />} />
-                  <Route path="/returns-exchanges" element={<ReturnsExchanges />} />
-                  <Route path="/track-order" element={<TrackOrder />} />
-                  <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-                  <Route path="/terms-conditions" element={<TermsConditions />} />
-                  <Route path="/refund-policy" element={<RefundPolicy />} />
-                  <Route path="/parent-company" element={<ParentCompany />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-              </Routes>
+                  {/* Storefront Routes */}
+                  <Route element={<CustomerLayout />}>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/collections" element={<Collections />} />
+                    <Route path="/bestsellers" element={<Bestsellers />} />
+                    <Route path="/men" element={<Men />} />
+                    <Route path="/women" element={<Women />} />
+                    <Route path="/product/:slug" element={<ProductPage />} />
+                    <Route path="/cart" element={<Cart />} />
+                    <Route path="/checkout" element={<Checkout />} />
+                    <Route path="/order-confirmation/:orderId" element={<OrderConfirmation />} />
+                    <Route path="/scent-finder" element={<ScentFinder />} />
+                    <Route path="/journal" element={<Journal />} />
+                    <Route path="/wishlist" element={<Wishlist />} />
+
+                    {/* Protected Customer Account Routes */}
+                    <Route element={<CustomerRouteGuard />}>
+                      <Route path="/account" element={<Account />} />
+                      <Route path="/account/orders" element={<Account />} />
+                      <Route path="/account/orders/:id" element={<Account />} />
+                      <Route path="/account/profile" element={<Account />} />
+                      <Route path="/account/addresses" element={<Account />} />
+                      <Route path="/account/wishlist" element={<Account />} />
+                    </Route>
+
+                    <Route path="/contact" element={<Contact />} />
+                    <Route path="/ingredients" element={<Ingredients />} />
+                    <Route path="/faq" element={<FAQ />} />
+                    <Route path="/shipping-delivery" element={<ShippingDelivery />} />
+                    <Route path="/returns-exchanges" element={<ReturnsExchanges />} />
+                    <Route path="/track-order" element={<TrackOrder />} />
+                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                    <Route path="/terms-conditions" element={<TermsConditions />} />
+                    <Route path="/refund-policy" element={<RefundPolicy />} />
+                    <Route path="/parent-company" element={<ParentCompany />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Route>
+                </Routes>
+              </Suspense>
             </WishlistProvider>
           </CartProvider>
         </AdminDataProvider>

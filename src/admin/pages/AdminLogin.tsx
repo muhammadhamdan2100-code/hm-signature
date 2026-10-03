@@ -58,7 +58,7 @@ export const AdminLogin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-dvh bg-navy flex items-center justify-center p-4 relative overflow-hidden">
+    <main className="min-h-dvh bg-navy flex items-center justify-center p-4 relative overflow-hidden">
       {/* Radial Gold Lighting */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gold/10 rounded-full blur-[140px] pointer-events-none" />
 
@@ -88,6 +88,7 @@ export const AdminLogin: React.FC = () => {
           <AnimatePresence>
             {authError && (
               <motion.div
+                id="staff-login-error"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
@@ -103,43 +104,49 @@ export const AdminLogin: React.FC = () => {
           <form onSubmit={handleLoginSubmit} className="space-y-4 font-sans text-xs">
             {/* Email Field */}
             <div>
-              <label className="block text-ivory/80 font-medium mb-1.5">
+              <label htmlFor="staff-login-email" className="block text-ivory/80 font-medium mb-1.5">
                 Staff Email Address <span className="text-gold">*</span>
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
+                  id="staff-login-email"
                   type="email"
                   required
                   autoComplete="username"
+                  aria-invalid={authError ? true : undefined}
+                  aria-describedby={authError ? "staff-login-error" : undefined}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@hmsignature.com"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
               </div>
             </div>
 
             {/* Password Field */}
             <div>
-              <label className="block text-ivory/80 font-medium mb-1.5">
+              <label htmlFor="staff-login-password" className="block text-ivory/80 font-medium mb-1.5">
                 Password <span className="text-gold">*</span>
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
+                  id="staff-login-password"
                   type={showPassword ? "text" : "password"}
                   required
                   autoComplete="current-password"
+                  aria-invalid={authError ? true : undefined}
+                  aria-describedby={authError ? "staff-login-error" : undefined}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-10 py-2.5 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-12 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-gold transition-colors"
+                  className="absolute right-0 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-gold transition-colors"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -149,7 +156,7 @@ export const AdminLogin: React.FC = () => {
 
             {/* Remember Me */}
             <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center space-x-2 text-xs text-muted cursor-pointer select-none">
+              <label className="flex items-center space-x-2 text-xs text-muted cursor-pointer select-none py-1.5 -my-1.5">
                 <input
                   type="checkbox"
                   checked={rememberMe}
@@ -164,7 +171,7 @@ export const AdminLogin: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
+              className="w-full py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-navy border-t-transparent rounded-full animate-spin" />
@@ -178,6 +185,6 @@ export const AdminLogin: React.FC = () => {
           </form>
         </motion.div>
       </div>
-    </div>
+    </main>
   );
 };

@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { supabase, isSupabaseConfigured, dbService } from "../lib/supabase";
+import {
+  createCustomerAddress,
+  deleteCustomerAddress,
+  fetchCustomerAddresses,
+  setDefaultCustomerAddress,
+  updateCustomerAddress,
+  type AddressRecord,
+} from "../services/customerAddresses";
 import { getCurrentStaff, setCurrentStaff, logoutStaff } from "../services/auth";
 import { INITIAL_STAFF_MEMBERS, getDefaultPermissionsForRole } from "../services/staff";
 import { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin, ROLE_PERMISSIONS, type StaffMember, type StaffRole } from "../types/staff";
@@ -14,6 +22,8 @@ export interface UserProfile {
   role: UserRole;
   avatarUrl?: string;
   permissions?: Record<string, boolean>;
+  /** Mirrors profiles.is_primary_admin — the protected Super Admin identity. */
+  isPrimaryAdmin?: boolean;
 }
 
 export interface UserAddress {
@@ -25,11 +35,17 @@ export interface UserAddress {
   postalCode: string;
   country: string;
   isDefault: boolean;
+  type?: "shipping" | "billing" | "home" | "work" | "other";
+  state?: string;
+  fullName?: string;
+  phone?: string;
 }
 
 interface AuthContextType {
   user: UserProfile | null;
   addresses: UserAddress[];
+  addressesLoading: boolean;
+  addressesError: string | null;
   isLoading: boolean;
   isAdmin: boolean;
   isCustomer: boolean;
@@ -39,9 +55,10 @@ interface AuthContextType {
   forgotPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   completePasswordReset: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
-  addAddress: (address: Omit<UserAddress, "id">) => void;
-  removeAddress: (id: string) => void;
-  setDefaultAddress: (id: string) => void;
+  addAddress: (address: Omit<UserAddress, "id">) => Promise<boolean>;
+  updateAddress: (id: string, address: Omit<UserAddress, "id">) => Promise<boolean>;
+  removeAddress: (id: string) => Promise<boolean>;
+  setDefaultAddress: (id: string) => Promise<boolean>;
   hasPermission: (permissionKey: string) => boolean;
 }
 
@@ -57,19 +74,6 @@ export function isCustomerRole(role?: string): boolean {
   if (!role) return false;
   return role.toLowerCase().trim() === "customer";
 }
-
-const DEFAULT_ADDRESSES: UserAddress[] = [
-  {
-    id: "addr-1",
-    title: "Primary Residence",
-    addressLine1: "Boutique Residence 42, Gulberg III",
-    addressLine2: "Near M.M. Alam Road",
-    city: "Lahore",
-    postalCode: "54600",
-    country: "Pakistan",
-    isDefault: true,
-  },
-];
 
 const LOCKOUT_STORAGE_KEY = "hm_signature_login_attempts";
 const MAX_FAILED_ATTEMPTS = 5;
@@ -116,6 +120,65 @@ function clearLockout(email: string) {
   }
 }
 
+// ---------------------------------------------------------------- addresses
+// Rows written before this feature moved to Supabase. The previous build seeded
+// a fabricated "Primary Residence" address on first render, so that particular
+// row is never imported into a real account.
+const LEGACY_ADDRESS_KEY = "hm_auth_addresses";
+
+function isLegacyFixture(row: any): boolean {
+  const line = String(row?.addressLine1 || "").trim().toLowerCase();
+  const city = String(row?.city || "").trim().toLowerCase();
+  return line === "boutique residence 42, gulberg iii" && city === "lahore";
+}
+
+function readLegacyAddresses(): UserAddress[] {
+  try {
+    const raw = localStorage.getItem(LEGACY_ADDRESS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (row: any) => row?.addressLine1 && row?.city && row?.id && !isLegacyFixture(row)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function toUserAddress(row: AddressRecord): UserAddress {
+  return {
+    id: row.id,
+    title: row.label || (row.isDefault ? "Default address" : "Saved address"),
+    addressLine1: row.addressLine1,
+    addressLine2: row.addressLine2,
+    city: row.city,
+    postalCode: row.postalCode || "",
+    country: row.country,
+    isDefault: row.isDefault,
+    type: row.type,
+    state: row.state,
+    fullName: row.fullName,
+    phone: row.phone,
+  };
+}
+
+function toInput(addr: Omit<UserAddress, "id">) {
+  return {
+    type: addr.type,
+    label: addr.title,
+    fullName: addr.fullName,
+    phone: addr.phone,
+    addressLine1: addr.addressLine1,
+    addressLine2: addr.addressLine2,
+    city: addr.city,
+    state: addr.state,
+    postalCode: addr.postalCode,
+    country: addr.country,
+    isDefault: addr.isDefault,
+  };
+}
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem("hm_auth_user");
@@ -136,10 +199,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return null;
   });
 
-  const [addresses, setAddresses] = useState<UserAddress[]>(() => {
-    const saved = localStorage.getItem("hm_auth_addresses");
-    return saved ? JSON.parse(saved) : DEFAULT_ADDRESSES;
-  });
+  const [addresses, setAddresses] = useState<UserAddress[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(false);
+  const [addressesError, setAddressesError] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured());
 
@@ -159,20 +221,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     let status = "active";
     let fullName = sessionUser.user_metadata?.full_name || (email ? email.split("@")[0] : "Client");
     let phone: string | undefined;
+    let primaryAdmin = false;
 
     if (profile) {
       role = (profile.role || "customer") as UserRole;
       status = (profile.status || "active").toLowerCase().trim();
       fullName = profile.full_name || fullName;
       phone = profile.phone;
+      primaryAdmin = Boolean(profile.is_primary_admin);
     } else {
       if (isPrimaryAdmin(email)) {
         role = "super_admin";
         status = "active";
+        primaryAdmin = true;
       } else if (sessionUser.user_metadata?.role && sessionUser.user_metadata.role !== "customer") {
         role = sessionUser.user_metadata.role as UserRole;
         status = "active";
       }
+    }
+
+    // Auth holds the credential; profiles.email is only a copy for display. After an
+    // email change is confirmed (or any drift), mirror it here so staff screens and the
+    // customer account show the address the user actually signs in with. Row-level
+    // security limits this to the owner's own row and to non-privileged columns.
+    if (profile && email && isSupabaseConfigured() && (profile.email || "").toLowerCase() !== email) {
+      await supabase
+        .from("profiles")
+        .update({ email, updated_at: new Date().toISOString() })
+        .eq("id", sessionUser.id);
     }
 
     // Account status check: block inactive/suspended accounts
@@ -191,6 +267,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       fullName,
       phone,
       role,
+      isPrimaryAdmin: primaryAdmin,
     };
 
     setUser(userObj);
@@ -205,7 +282,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         status: "Active",
         lastActive: "Just now",
         createdAt: profile?.created_at ? profile.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
-        isPrimaryAdmin: isPrimaryAdmin(email),
+        isPrimaryAdmin: primaryAdmin || isPrimaryAdmin(email),
         permissions: getDefaultPermissionsForRole(displayRole),
       };
       setCurrentStaff(staffObj);
@@ -225,9 +302,58 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  // The database is the only source of truth. A device that saved addresses
+  // while this feature lived in localStorage has those rows imported once, and
+  // only while the account still has nothing stored.
   useEffect(() => {
-    localStorage.setItem("hm_auth_addresses", JSON.stringify(addresses));
-  }, [addresses]);
+    if (!user?.id) {
+      setAddresses([]);
+      return;
+    }
+    if (!isSupabaseConfigured()) return;
+    let mounted = true;
+    setAddressesLoading(true);
+    setAddressesError(null);
+    fetchCustomerAddresses()
+      .then(async (rows) => {
+        if (!mounted) return rows;
+        if (rows.length === 0) {
+          const legacy = readLegacyAddresses();
+          for (const item of legacy) {
+            await createCustomerAddress({
+              label: item.title,
+              addressLine1: item.addressLine1,
+              addressLine2: item.addressLine2,
+              city: item.city,
+              postalCode: item.postalCode,
+              country: item.country,
+              isDefault: item.isDefault,
+            });
+          }
+          if (legacy.length > 0) {
+            const imported = await fetchCustomerAddresses();
+            // Only drop the device copy once every row is confirmed in the
+            // database, so an interrupted import can never lose an address.
+            if (imported.length >= legacy.length) localStorage.removeItem(LEGACY_ADDRESS_KEY);
+            return mounted ? imported : rows;
+          }
+          return rows;
+        }
+        return rows;
+      })
+      .then((rows) => {
+        if (mounted) setAddresses(rows.map(toUserAddress));
+      })
+      .catch((e: any) => {
+        if (mounted) setAddressesError(e?.message || "We could not load your saved addresses.");
+      })
+      .finally(() => {
+        if (mounted) setAddressesLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id]);
 
   // Supabase Auth session initialization & listener
   useEffect(() => {
@@ -508,21 +634,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return true;
   };
 
-  const addAddress = (addr: Omit<UserAddress, "id">) => {
-    const newAddr: UserAddress = { ...addr, id: `addr-${Date.now()}` };
-    if (addr.isDefault) {
-      setAddresses((prev) => prev.map((a) => ({ ...a, isDefault: false })).concat(newAddr));
-    } else {
-      setAddresses((prev) => [...prev, newAddr]);
+  const refreshAddresses = async () => {
+    try {
+      setAddresses((await fetchCustomerAddresses()).map(toUserAddress));
+      setAddressesError(null);
+    } catch (e: any) {
+      setAddressesError(e?.message || "We could not reload your saved addresses.");
     }
   };
 
-  const removeAddress = (id: string) => {
-    setAddresses((prev) => prev.filter((a) => a.id !== id));
+  const addAddress = async (addr: Omit<UserAddress, "id">) => {
+    const res = await createCustomerAddress(toInput(addr));
+    if (res.success) await refreshAddresses();
+    else setAddressesError(res.error || "The address was not saved.");
+    return res.success;
   };
 
-  const setDefaultAddress = (id: string) => {
-    setAddresses((prev) => prev.map((a) => ({ ...a, isDefault: a.id === id })));
+  const updateAddress = async (id: string, addr: Omit<UserAddress, "id">) => {
+    const res = await updateCustomerAddress(id, toInput(addr));
+    if (res.success) await refreshAddresses();
+    else setAddressesError(res.error || "The address was not updated.");
+    return res.success;
+  };
+
+  const removeAddress = async (id: string) => {
+    const res = await deleteCustomerAddress(id);
+    if (res.success) await refreshAddresses();
+    else setAddressesError(res.error || "The address was not removed.");
+    return res.success;
+  };
+
+  const setDefaultAddress = async (id: string) => {
+    const res = await setDefaultCustomerAddress(id);
+    if (res.success) await refreshAddresses();
+    else setAddressesError(res.error || "That address could not be set as the default.");
+    return res.success;
   };
 
   const hasPermission = (permissionKey: string): boolean => {
@@ -541,6 +687,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       value={{
         user,
         addresses,
+        addressesLoading,
+        addressesError,
         isLoading,
         isAdmin: isStaffRole(user?.role),
         isCustomer: isCustomerRole(user?.role),
@@ -551,6 +699,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logout,
         updateProfile,
         addAddress,
+        updateAddress,
         removeAddress,
         setDefaultAddress,
         hasPermission,

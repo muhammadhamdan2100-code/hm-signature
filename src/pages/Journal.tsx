@@ -33,7 +33,9 @@ export default function Journal() {
                   {a.text} A closer look at the craftsmanship, history and sensory detail that goes into
                   every HM Signature creation — for those who want to understand the story behind the scent.
                 </p>
-                <span className="link-underline cursor-default">READ THE FULL STORY →</span>
+                <p className="text-[11px] font-mono uppercase tracking-[1.5px] text-muted">
+                  Full essays accompany each release.
+                </p>
               </div>
             </motion.article>
           ))}

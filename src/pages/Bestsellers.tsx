@@ -3,9 +3,9 @@ import ShopPage from "../components/ShopPage";
 export default function Bestsellers() {
   return (
     <ShopPage
-      eyebrow="MOST LOVED"
+      eyebrow="CHOSEN BY THE ATELIER"
       title="Bestsellers"
-      subtitle="The signature scents our clients return for, again and again."
+      subtitle="Fragrances the house puts forward as an introduction to its range."
       baseFilter={(p) => p.bestseller}
       heroTexture="texture-velvet"
     />

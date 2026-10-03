@@ -150,10 +150,10 @@ export default function ProductCard({ product, onQuickView }: { product: Product
           <button
             onClick={handleAdd}
             disabled={soldOut}
-            aria-label={soldOut ? `${product.name} is sold out` : `Add ${product.name} to cart`}
+            aria-label={soldOut ? `${product.name} is sold out` : `Add ${product.name} to bag`}
             className="flex-1 min-h-[44px] inline-flex items-center justify-center text-[11px] tracking-[1.5px] bg-gold text-navy hover:bg-goldLight transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gold/20 disabled:text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-goldLight focus-visible:ring-offset-1 focus-visible:ring-offset-navy"
           >
-            {soldOut ? "SOLD OUT" : "ADD TO CART"}
+            {soldOut ? "SOLD OUT" : "ADD TO BAG"}
           </button>
         </div>
       </div>

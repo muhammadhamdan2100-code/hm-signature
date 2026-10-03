@@ -6,10 +6,9 @@ import type {
   SystemNotification,
   EmailTemplate,
   Campaign,
-  AbandonedCart,
 } from "../admin/context/AdminDataContext";
 import type { StaffMember } from "../types/staff";
-import { toDisplayRole } from "../types/staff";
+import { toDisplayRole, isPrimaryAdmin } from "../types/staff";
 import { getDefaultPermissionsForRole } from "./staff";
 
 // STORE SETTINGS — stored as a single JSONB row in site_settings
@@ -109,6 +108,76 @@ export async function fetchNotificationsFromDB(): Promise<SystemNotification[]> 
   }));
 }
 
+// TRANSACTIONAL EMAIL QUEUE (staff-only under RLS; a customer sees nothing.)
+export type EmailQueueRow = {
+  id: number;
+  template: string;
+  recipientKind: "customer" | "staff";
+  orderRef: string | null;
+  status: string;
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+};
+
+export type EmailQueueCounts = { status: string; count: number }[];
+
+export async function fetchEmailQueueStatsFromDB(): Promise<EmailQueueCounts> {
+  const { data, error } = await supabase.rpc("get_email_queue_stats");
+  if (error || !data) return [];
+  return (data as any[]).map((row) => ({ status: row.queue_status, count: Number(row.row_count) }));
+}
+
+export async function fetchEmailQueueFromDB(limit = 12): Promise<EmailQueueRow[]> {
+  const { data, error } = await supabase
+    .from("email_outbox")
+    .select(
+      "id,template,recipient_kind,order_ref,status,attempts,last_error,created_at,sent_at"
+    )
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 50));
+  if (error || !data) return [];
+  return (data as any[]).map((row) => ({
+    id: Number(row.id),
+    template: row.template,
+    recipientKind: row.recipient_kind === "staff" ? "staff" : "customer",
+    orderRef: row.order_ref ?? null,
+    status: row.status,
+    attempts: Number(row.attempts ?? 0),
+    lastError: row.last_error ?? null,
+    createdAt: (row.created_at || "").replace("T", " ").slice(0, 16),
+    sentAt: row.sent_at ? row.sent_at.replace("T", " ").slice(0, 16) : null,
+  }));
+}
+
+/**
+ * Asks the worker to drain the queue now. Returns null when the deployment cannot
+ * deliver at all (no SMTP or no server credentials) so the UI can say so plainly.
+ */
+export async function runEmailWorkerNow(): Promise<{ sent: number; failed: number; skipped: number } | null> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+  try {
+    const res = await fetch("/api/email-worker", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({}),
+    });
+    if (res.status === 503) return null;
+    if (!res.ok) return { sent: 0, failed: 0, skipped: 0 };
+    const body = (await res.json().catch(() => null)) as Record<string, number> | null;
+    return {
+      sent: Number(body?.sent ?? 0),
+      failed: Number(body?.failed ?? 0),
+      skipped: Number(body?.skipped ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function createSystemNotification(input: {
   type: SystemNotification["type"];
   title: string;
@@ -203,7 +272,9 @@ export async function saveCampaignToDB(
     type: "discount_push",
     subject: campaign.name,
     content: extras,
-    status: campaign.status || "Active",
+    // The table only accepts the pipeline vocabulary; a new campaign starts as a Draft
+    // so nothing can be presented as an offer before its dates and status are set.
+    status: campaign.status || "Draft",
     scheduled_at: campaign.startDate ? new Date(campaign.startDate).toISOString() : null,
   };
   if (campaign.id && /^[0-9a-f]{8}-/i.test(campaign.id)) {
@@ -221,42 +292,34 @@ export async function deleteCampaignFromDB(id: string): Promise<boolean> {
 }
 
 // ABANDONED CARTS
-export async function fetchAbandonedCartsFromDB(): Promise<AbandonedCart[]> {
-  const { data, error } = await supabase
-    .from("abandoned_carts")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error || !data) return [];
-  return data.map((c: any) => {
-    let items: AbandonedCart["items"] = [];
-    try {
-      const snapshot = typeof c.items_snapshot === "string" ? JSON.parse(c.items_snapshot) : c.items_snapshot;
-      items = (Array.isArray(snapshot) ? snapshot : []).map((i: any) => ({
-        productName: i.productName || i.name || "Item",
-        quantity: Number(i.quantity || 1),
-        price: Number(i.price || 0),
-      }));
-    } catch {
-      items = [];
-    }
-    return {
-      id: c.id,
-      customerName: c.customer_name || "Guest",
-      customerEmail: c.customer_email,
-      cartValue: Number(c.total_value || 0),
-      items,
-      abandonedDate: (c.created_at || "").split("T")[0],
-      status: c.recovered ? "Recovered" : c.recovery_email_sent_at ? "Reminder Sent" : "Pending",
-    };
-  });
+// The queue is derived from live `cart` rows by the staff-only RPC
+// get_abandoned_carts (see src/services/adminOps.ts). Recovery state is written
+// only through mark_cart_recovery, which refuses a second reminder while the bag
+// has been untouched since the last one.
+export type CartRecoveryAction = "reminder" | "recovered" | "reset";
+
+export interface CartRecoveryResult {
+  success: boolean;
+  error?: string;
+  reminderSentAt?: string | null;
+  recoveredAt?: string | null;
 }
 
-export async function markCartReminderSentInDB(id: string): Promise<boolean> {
-  const { error } = await supabase
-    .from("abandoned_carts")
-    .update({ recovery_email_sent_at: new Date().toISOString() })
-    .eq("id", id);
-  return !error;
+export async function recordCartRecoveryInDB(
+  cartId: string,
+  action: CartRecoveryAction
+): Promise<CartRecoveryResult> {
+  const { data, error } = await supabase.rpc("mark_cart_recovery", {
+    p_cart_id: cartId,
+    p_action: action,
+  });
+  if (error) return { success: false, error: error.message };
+  const row = (Array.isArray(data) ? data[0] : data) ?? {};
+  return {
+    success: true,
+    reminderSentAt: row.reminder_sent_at ?? null,
+    recoveredAt: row.recovered_at ?? null,
+  };
 }
 
 // STAFF MEMBERS (profiles rows with non-customer roles)
@@ -277,7 +340,7 @@ export async function fetchStaffMembersFromDB(): Promise<StaffMember[]> {
       status: p.status === "active" ? "Active" : p.status === "suspended" ? "Suspended" : "Inactive",
       lastActive: p.last_sign_in_at ? fmtAgo(p.last_sign_in_at) : "Never",
       createdAt: (p.created_at || "").split("T")[0],
-      isPrimaryAdmin: p.email?.toLowerCase() === "muhammadhamdan2100@gmail.com",
+      isPrimaryAdmin: Boolean(p.is_primary_admin) || isPrimaryAdmin(p.email),
       permissions: getDefaultPermissionsForRole(displayRole),
     } as StaffMember;
   });

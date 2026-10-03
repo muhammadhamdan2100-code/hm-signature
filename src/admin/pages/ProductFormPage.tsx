@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useAdminData, type AdminProduct } from "../context/AdminDataContext";
 import {
   type ProductVariant,
@@ -6,6 +6,8 @@ import {
   autoPriceFor,
   isValidSizeLabel,
   normalizeSizeLabel,
+  hasDuplicateSize,
+  sanitizeSkuCode,
   SIZE_PRESETS,
   FRAGRANCE_FAMILIES,
   OCCASION_OPTIONS,
@@ -83,7 +85,16 @@ export const ProductFormPage: React.FC = () => {
   const [seoDescription, setSeoDescription] = useState("");
 
   // Bottle Sizes / ML Variants State
-  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  // A fresh form starts on the standard ladder so the size table is never empty;
+  // the populate effect replaces it as soon as a record is loaded.
+  const [variants, setVariants] = useState<ProductVariant[]>(() =>
+    generateDefaultVariants(3500, "HM-PRD", 50)
+  );
+  // Guards the reset below: React keeps this component mounted when the route
+  // moves from /admin/products/:id to /admin/products/new, so without it the
+  // "new" form opens pre-filled with the fragrance that was just edited.
+  const previousRouteId = useRef<string | undefined>(undefined);
+  const lastSkuSeed = useRef<string>("");
   const [pricingError, setPricingError] = useState<string>("");
   const [customSizeOpen, setCustomSizeOpen] = useState(false);
   const [customSizeValue, setCustomSizeValue] = useState("");
@@ -91,12 +102,51 @@ export const ProductFormPage: React.FC = () => {
 
   // Populate data if editing
   useEffect(() => {
+    const routeChanged = previousRouteId.current !== id;
+    previousRouteId.current = id;
+
+    if (!isEditing && routeChanged) {
+      setName("");
+      setSlug("");
+      setSku("");
+      lastSkuSeed.current = "";
+      setPrice(3500);
+      setSalePrice(undefined);
+      setSize("50ml");
+      setStock(50);
+      setLowStockThreshold(10);
+      setShortDescription("");
+      setFragranceFamily("");
+      setScentProfile("");
+      setIntensity("");
+      setOccasions([]);
+      setSeasons([]);
+      setTopNotes("Bergamot, Saffron, Pink Pepper");
+      setHeartNotes("Bulgarian Rose, Oud Wood, Cedar");
+      setBaseNotes("Amber, Vanilla, Leather");
+      setDescription("");
+      setFullDescription("");
+      setPhotos([]);
+      setPhotoAlts({});
+      setSeoTitle("");
+      setSeoDescription("");
+      setFeatured(false);
+      setBestseller(false);
+      setNewArrival(true);
+      setActive(true);
+      setPricingError("");
+      setCustomSizeValue("");
+      setCustomSizeOpen(false);
+      setVariants(generateDefaultVariants(3500, "HM-PRD", 50));
+    }
+
     if (isEditing && existingProduct) {
       setName(existingProduct.name);
       setSlug(existingProduct.slug);
       setPrice(existingProduct.price);
       setSalePrice(existingProduct.salePrice);
       setSku(existingProduct.sku);
+      lastSkuSeed.current = existingProduct.sku || "";
       setCategory(existingProduct.category);
       setCollection(existingProduct.collection);
       setGender(existingProduct.gender);
@@ -140,10 +190,10 @@ export const ProductFormPage: React.FC = () => {
       } else {
         setVariants(generateDefaultVariants(existingProduct.price, existingProduct.sku, existingProduct.stock));
       }
-    } else if (!isEditing) {
-      setVariants(generateDefaultVariants(price, sku || "HM-PRD", stock));
+    } else if (!isEditing && routeChanged) {
+      setVariants(generateDefaultVariants(3500, "HM-PRD", 50));
     }
-  }, [isEditing, existingProduct]);
+  }, [id, isEditing, existingProduct]);
 
   // Auto generate slug & SKU from name if creating
   const handleNameChange = (val: string) => {
@@ -154,10 +204,33 @@ export const ProductFormPage: React.FC = () => {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)+/g, "");
       setSlug(generatedSlug);
-      const generatedSku = `HM-${val.slice(0, 3).toUpperCase()}-100`;
-      setSku(generatedSku);
+      // Only alphanumerics reach the code: "QA Verify" used to yield "HM-QA -100"
+      // with a space inside the SKU.
+      const skuSeed = val.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
+      const generatedSku = `HM-${skuSeed || "PRD"}-100`;
+      handleSkuChange(generatedSku);
       setSeoTitle(`${val} — HM Signature Extrait de Parfum`);
     }
+  };
+
+  // The base code is the seed for every size row, so it may not carry spaces, and
+  // rows whose SKU is still auto-derived (or the "HM-PRD" placeholder) must follow
+  // it. A hand-written variant SKU is left alone.
+  const handleSkuChange = (val: string) => {
+    const clean = sanitizeSkuCode(val);
+    const seed = lastSkuSeed.current;
+    setSku(clean);
+    lastSkuSeed.current = clean;
+    setVariants((prevVariants) =>
+      prevVariants.map((v) => {
+        const ml = normalizeSizeLabel(v.size).toUpperCase();
+        // Derived by the placeholder, by the seed this row was built from, or
+        // still blank. Anything else was typed by hand and stays untouched.
+        const isAutoRow =
+          !v.sku || /^HM-PRD-\d+ML$/.test(v.sku) || (!!seed && v.sku === `${seed}-${ml}`);
+        return isAutoRow && clean ? { ...v, sku: `${clean}-${ml}` } : v;
+      })
+    );
   };
 
   // Re-derive every automatic row from the current base price, leaving manual rows untouched.
@@ -187,7 +260,7 @@ export const ProductFormPage: React.FC = () => {
   };
 
   const hasSizeAt = (list: ProductVariant[], label: string, exceptIndex = -1) =>
-    list.some((v, i) => i !== exceptIndex && normalizeSizeLabel(v.size) === normalizeSizeLabel(label));
+    hasDuplicateSize(list, label, exceptIndex);
 
   // Variant Editor Handlers
   const handleUpdateVariant = (index: number, field: keyof ProductVariant, value: string | number | boolean | undefined | string[]) => {
@@ -463,7 +536,7 @@ export const ProductFormPage: React.FC = () => {
                   type="text"
                   required
                   value={sku}
-                  onChange={(e) => setSku(e.target.value)}
+                  onChange={(e) => handleSkuChange(e.target.value)}
                   placeholder="HM-ROU-100"
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                 />

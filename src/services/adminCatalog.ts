@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { AdminProduct, Category, Collection, InventoryLog } from "../admin/context/AdminDataContext";
 import type { ProductVariant } from "../data/products";
-import { isValidSizeLabel, normalizeSizeLabel, sizeToMl } from "../data/products";
+import { deriveVariantSku, isValidSizeLabel, normalizeSizeLabel, sizeToMl } from "../data/products";
 
 // Resolve note names to fragrance_notes ids, creating any missing note once.
 async function ensureFragranceNotes(
@@ -143,7 +143,13 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        price: Number(p.base_price || (var50 ? var50.price : 4500)),
+        // Never invent a price: base price, then the 50ml row, then the cheapest
+        // real variant. A product with no price at all reads as 0 and the UI says
+        // "Price on request".
+        price: Number(
+          p.base_price ||
+            (var50 ? var50.price : variants.length ? Math.min(...variants.map((v) => v.price)) : 0)
+        ),
         salePrice: p.sale_price ? Number(p.sale_price) : undefined,
         sku: p.sku,
         category: p.categories?.name || p.fragrance_family || "Woody Oriental",
@@ -153,7 +159,12 @@ export async function fetchAdminProductsFromDB(): Promise<AdminProduct[]> {
         fragranceFamily: p.fragrance_family || p.categories?.name || undefined,
         size: "50ml",
         concentration: p.concentration || "Extrait de Parfum (25-30% Oil)",
-        stock: var50 ? var50.stock : variants.reduce((a, b) => a + b.stock, 0),
+        // Lowest figure across the active sizes: reporting the 50ml row alone let
+        // a sold-out 10ml hide behind a healthy 50ml, so the roster and the
+        // low-stock alert both read from the weakest size.
+        stock: variants.length
+          ? Math.min(...variants.map((v) => Number(v.stock ?? 0)))
+          : Number(p.stock ?? 0),
         lowStockThreshold: variants.length ? Math.min(...variants.map((v) => v.lowStockThreshold ?? 10)) : 10,
         topNotes,
         heartNotes,
@@ -379,7 +390,10 @@ export async function saveProductToDB(
         const variantPayload: any = {
           product_id: productId,
           size: sizeLabel,
-          sku: v.sku || `${productData.sku}-${sizeLabel.toUpperCase()}`,
+          // An empty SKU or the "HM-PRD" placeholder ladder is derived from the
+          // real base code at save time, so a record created before its code was
+          // typed no longer keeps placeholder codes forever.
+          sku: deriveVariantSku(productData.sku, sizeLabel, v.sku),
           price: v.price,
           sale_price: v.salePrice || null,
           low_stock_threshold: threshold,

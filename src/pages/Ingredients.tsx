@@ -21,7 +21,7 @@ const principles = [
   {
     icon: ShieldCheck,
     title: "Safety & Disclosure",
-    text: "We formulate to fragrance-industry safety guidance, and every product page lists the full ingredient declaration, including declared allergens.",
+    text: "We formulate to fragrance-industry safety guidance. Where a fragrance has a published ingredient declaration, it appears on its product page.",
   },
 ];
 
@@ -77,8 +77,9 @@ export default function Ingredients() {
 
         <div className="max-w-[800px] mx-auto px-6 lg:px-10 mt-20 pt-10 border-t border-gold/15 text-sm text-muted leading-relaxed text-center">
           <p>
-            Full ingredient listings for each fragrance are available on its product page under the
-            "Ingredients" tab. For allergen information or specific sensitivities, please reach out via our{" "}
+            Ingredient listings are published on each product page under the "Ingredients" tab as soon
+            as the atelier finalises them; where one is not yet shown, the page says so. For allergen
+            information or specific sensitivities, please reach out via our{" "}
             <Link to="/contact" className="text-goldLight hover:underline">Contact page</Link> before ordering.
           </p>
         </div>

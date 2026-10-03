@@ -72,7 +72,7 @@ export function getCurrentStaff(): StaffMember | null {
           status: "Active",
           lastActive: "Just now",
           createdAt: new Date().toISOString().split("T")[0],
-          isPrimaryAdmin: isPrimaryAdmin(user.email),
+          isPrimaryAdmin: Boolean(user.isPrimaryAdmin) || isPrimaryAdmin(user.email),
           permissions: getDefaultPermissionsForRole(displayRole),
         };
       }
@@ -200,7 +200,7 @@ export async function loginStaff(
         status: "Active",
         lastActive: authData.user.last_sign_in_at ? new Date(authData.user.last_sign_in_at).toLocaleTimeString() : "Just now",
         createdAt: profile.created_at ? profile.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
-        isPrimaryAdmin: isPrimaryAdmin(profile.email || trimmedEmail),
+        isPrimaryAdmin: Boolean(profile.is_primary_admin) || isPrimaryAdmin(profile.email || trimmedEmail),
         permissions: getDefaultPermissionsForRole(displayRole),
       };
 

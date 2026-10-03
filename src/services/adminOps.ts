@@ -532,7 +532,13 @@ export async function fetchAbandonedCartsAggFromDB(hours = 24): Promise<Abandone
     cartValue: Number(r.cart_value ?? 0),
     items: byCart.get(r.cart_id) || [],
     abandonedDate: r.stalled_since ? String(r.stalled_since).replace("T", " ").slice(0, 16) : "",
-    status: "Pending" as const,
+    recoveredAt: r.recovered_at || null,
+    reminderSentAt: r.reminder_sent_at || null,
+    status: r.recovered_at
+      ? ("Recovered" as const)
+      : r.reminder_sent_at
+        ? ("Reminder Sent" as const)
+        : ("Pending" as const),
   }));
 }
 
@@ -761,4 +767,254 @@ export async function deleteShippingMethodFromDB(id: string): Promise<boolean> {
   if (!/^[0-9a-f]{8}-/i.test(id)) return true;
   const { error } = await supabase.from("shipping_methods").delete().eq("id", id);
   return !error;
+}
+
+// ─── PAYMENT RECONCILIATION (staff-only RPCs) ───────────────────────────────
+
+export type ReconciliationRow = {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  paymentStatus: string;
+  provider: string;
+  method: string;
+  paymentReference: string | null;
+  expectedAmount: number;
+  recordedAmount: number;
+  difference: number;
+  currency: string;
+  providerReference: string | null;
+  paymentState: string;
+  refundedAmount: number;
+  state: string;
+  paymentDate: string | null;
+  orderCreatedAt: string | null;
+};
+
+export type ReconciliationFilter = (typeof RECONCILIATION_STATES)[number];
+
+export const RECONCILIATION_STATES = [
+  "matched",
+  "missing_payment_record",
+  "amount_mismatch",
+  "pending",
+  "failed",
+  "unrefunded_cancellation",
+  "refund_discrepancy",
+  "review",
+] as const;
+
+export async function fetchPaymentReconciliationFromDB(days = 90): Promise<ReconciliationRow[]> {
+  const { data, error } = await supabase.rpc("get_payment_reconciliation", {
+    p_days: Math.min(Math.max(days, 1), 3650),
+  });
+  if (error) {
+    console.warn("fetchPaymentReconciliationFromDB:", error.message);
+    return [];
+  }
+  return (data as any[]).map((row) => ({
+    orderId: row.order_id,
+    orderNumber: row.order_number,
+    orderStatus: row.order_status,
+    paymentStatus: row.payment_status,
+    provider: row.provider,
+    method: row.method,
+    paymentReference: row.payment_reference ?? null,
+    expectedAmount: Number(row.expected_amount ?? 0),
+    recordedAmount: Number(row.recorded_amount ?? 0),
+    difference: Number(row.difference ?? 0),
+    currency: row.currency,
+    providerReference: row.provider_reference ?? null,
+    paymentState: row.payment_state,
+    refundedAmount: Number(row.refunded_amount ?? 0),
+    state: row.reconciliation_state,
+    paymentDate: row.payment_date ?? null,
+    orderCreatedAt: row.order_created_at ?? null,
+  }));
+}
+
+export async function fetchDuplicatePaymentEventsFromDB(
+  days = 90
+): Promise<{ providerReference: string; occurrences: number; orderNumbers: string }[]> {
+  const { data, error } = await supabase.rpc("get_duplicate_payment_events", {
+    p_days: Math.min(Math.max(days, 1), 3650),
+  });
+  if (error) {
+    console.warn("fetchDuplicatePaymentEventsFromDB:", error.message);
+    return [];
+  }
+  return (data as any[]).map((row) => ({
+    providerReference: row.provider_reference,
+    occurrences: Number(row.occurrences ?? 0),
+    orderNumbers: row.order_numbers,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — follow-up automations and customer segments
+// ---------------------------------------------------------------------------
+
+export interface AutomationWorkflow {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  delayMinutes: number;
+  requiresMarketingConsent: boolean;
+  pending: number;
+  completed: number;
+  skipped: number;
+  failed: number;
+  lastRun: { at: string | null; status: string; error: string | null } | null;
+}
+
+export interface AutomationRunRow {
+  id: number;
+  workflowId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  status: string;
+  queued: number;
+  processed: number;
+  error: string;
+}
+
+export interface FollowUpTaskRow {
+  id: number;
+  workflowId: string;
+  status: string;
+  dueAt: string;
+  attempts: number;
+  orderRef: string | null;
+  lastError: string;
+  skipReason: string | null;
+}
+
+export interface CustomerSegmentRow {
+  id: string;
+  label: string;
+  rule: string;
+  count: number;
+  measuredAt: string;
+}
+
+export interface AutomationDashboard {
+  workflows: AutomationWorkflow[];
+  recentRuns: AutomationRunRow[];
+  queue: FollowUpTaskRow[];
+  emailQueue: { status: string; count: number }[];
+  serverTime: string | null;
+}
+
+/**
+ * Returns null when the staff-only RPC refused the call, so the page can say
+ * "not permitted" instead of showing an empty board that looks like an idle store.
+ */
+export async function fetchAutomationDashboard(): Promise<AutomationDashboard | null> {
+  const { data, error } = await supabase.rpc("get_automation_dashboard");
+  if (error) {
+    console.warn("fetchAutomationDashboard:", error.message);
+    return null;
+  }
+  const payload = (data ?? {}) as Record<string, any>;
+  return {
+    workflows: (payload.workflows ?? []).map((w: any) => ({
+      id: String(w.id),
+      name: String(w.name),
+      description: String(w.description),
+      enabled: Boolean(w.enabled),
+      delayMinutes: Number(w.delayMinutes ?? 0),
+      requiresMarketingConsent: Boolean(w.requiresMarketingConsent),
+      pending: Number(w.pending ?? 0),
+      completed: Number(w.completed ?? 0),
+      skipped: Number(w.skipped ?? 0),
+      failed: Number(w.failed ?? 0),
+      lastRun: w.lastRun
+        ? {
+            at: w.lastRun.at ?? null,
+            status: String(w.lastRun.status ?? ""),
+            error: w.lastRun.error ?? null,
+          }
+        : null,
+    })),
+    recentRuns: (payload.recentRuns ?? []).map((r: any) => ({
+      id: Number(r.id),
+      workflowId: r.workflowId ?? null,
+      startedAt: String(r.startedAt),
+      finishedAt: r.finishedAt ?? null,
+      status: String(r.status),
+      queued: Number(r.queued ?? 0),
+      processed: Number(r.processed ?? 0),
+      error: String(r.error ?? ""),
+    })),
+    queue: (payload.queue ?? []).map((t: any) => ({
+      id: Number(t.id),
+      workflowId: String(t.workflowId),
+      status: String(t.status),
+      dueAt: String(t.dueAt),
+      attempts: Number(t.attempts ?? 0),
+      orderRef: t.orderRef ?? null,
+      lastError: String(t.lastError ?? ""),
+      skipReason: t.skipReason ?? null,
+    })),
+    emailQueue: (payload.emailQueue ?? []).map((e: any) => ({
+      status: String(e.status),
+      count: Number(e.count ?? 0),
+    })),
+    serverTime: payload.serverTime ?? null,
+  };
+}
+
+export async function fetchCustomerSegments(): Promise<CustomerSegmentRow[]> {
+  const { data, error } = await supabase.rpc("get_customer_segments");
+  if (error) {
+    console.warn("fetchCustomerSegments:", error.message);
+    return [];
+  }
+  return (data as any[]).map((row) => ({
+    id: String(row.segment_id),
+    label: String(row.label),
+    rule: String(row.rule),
+    count: Number(row.customer_count ?? 0),
+    measuredAt: String(row.measured_at),
+  }));
+}
+
+export async function setAutomationWorkflowEnabled(
+  workflowId: string,
+  enabled: boolean
+): Promise<{ ok: boolean; error: string | null }> {
+  const { data, error } = await supabase.rpc("set_workflow_enabled", {
+    p_workflow_id: workflowId,
+    p_enabled: enabled,
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  if (data === false) {
+    return { ok: false, error: "That workflow no longer exists." };
+  }
+  return { ok: true, error: null };
+}
+
+/** Waiting period in minutes. The database clamps it to 15 minutes – 7 days. */
+export async function updateWorkflowTiming(
+  workflowId: string,
+  delayMinutes: number
+): Promise<{ ok: boolean; error: string | null }> {
+  const minutes = Math.round(Number(delayMinutes));
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 10080) {
+    return { ok: false, error: "Enter a waiting period between 1 and 10080 minutes." };
+  }
+  const { data, error } = await supabase.rpc("update_workflow_timing", {
+    p_workflow_id: workflowId,
+    p_delay_minutes: minutes,
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  if (data === false) {
+    return { ok: false, error: "That workflow no longer exists." };
+  }
+  return { ok: true, error: null };
 }

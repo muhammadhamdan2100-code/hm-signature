@@ -19,9 +19,12 @@ export const ReviewsPage: React.FC = () => {
   const pendingCount = reviews.filter((r) => r.status === "Pending").length;
   const approvedCount = reviews.filter((r) => r.status === "Approved").length;
 
-  const avgRating = (
-    reviews.reduce((acc, r) => acc + r.rating, 0) / (reviews.length || 1)
-  ).toFixed(1);
+  // Same definition the storefront uses: approved submissions only. A pending or
+  // rejected review has not been published, so it must not move the published average.
+  const approvedReviews = reviews.filter((r) => r.status === "Approved");
+  const avgRating = approvedReviews.length
+    ? (approvedReviews.reduce((acc, r) => acc + r.rating, 0) / approvedReviews.length).toFixed(1)
+    : "—";
 
   const renderStars = (rating: number) => (
     <div className="flex items-center space-x-0.5 text-gold">

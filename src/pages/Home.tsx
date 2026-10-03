@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import Hero from "../components/Hero";
@@ -21,11 +21,9 @@ export default function Home() {
   const [featuredList, setFeaturedList] = useState<Product[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [searchParams] = useSearchParams();
-  const { homepageConfig, homepageConfigPersisted } = useAdminData();
+  const { homepageConfig } = useAdminData();
   useSeoMeta("/", "HM Signature — Haute Parfumerie", "Luxury extrait de parfum crafted in small batches.");
-  const announcement = homepageConfigPersisted
-    ? homepageConfig.announcementBar
-    : { enabled: false, text: "", link: "" };
+  const announcement = homepageConfig.announcementBar;
 
   useEffect(() => {
     let mounted = true;
@@ -54,19 +52,9 @@ export default function Home() {
     }
   }, [searchParams]);
 
-  return (
-    <>
-      <Hero />
-
-      {announcement.enabled && announcement.text && (
-        <RouterLink
-          to={announcement.link || "/collections"}
-          className="block bg-gold text-navy text-center text-[11px] tracking-[1.5px] py-2 font-sans uppercase"
-        >
-          {announcement.text}
-        </RouterLink>
-      )}
-
+  const blocks: Record<string, ReactNode> = {
+    hero: <Hero hero={homepageConfig.hero} />,
+    collections: (
       <section className="py-28" style={{ background: "linear-gradient(160deg, #2A0D13 0%, #3A1118 100%)" }}>
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-16">
@@ -108,13 +96,33 @@ export default function Home() {
           )}
         </div>
       </section>
+    ),
+    values: <ValuesSection />,
+    story: <BrandStory />,
+    spotlight: <FeaturedProduct />,
+    journal: <JournalSection />,
+    reviews: <Reviews />,
+    newsletter: <Newsletter />,
+  };
 
-      <ValuesSection />
-      <BrandStory />
-      <FeaturedProduct />
-      <JournalSection />
-      <Reviews />
-      <Newsletter />
+  const orderedSections = homepageConfig.sections
+    .filter((s) => s.enabled && blocks[s.id])
+    .sort((a, b) => a.order - b.order);
+
+  return (
+    <>
+      {announcement.enabled && announcement.text && (
+        <RouterLink
+          to={announcement.link || "/collections"}
+          className="block bg-gold text-navy text-center text-[11px] tracking-[1.5px] py-2 font-sans uppercase"
+        >
+          {announcement.text}
+        </RouterLink>
+      )}
+
+      {orderedSections.map((section) => (
+        <Fragment key={section.id}>{blocks[section.id]}</Fragment>
+      ))}
     </>
   );
 }
