@@ -1,0 +1,45 @@
+// pending merge into src/i18n/dictionaries/en.ts
+// Sign-in / sign-up / password-recovery copy for the authentication surface.
+// "HM Signature" is a proper noun and stays as-is in every language.
+export const auth = {
+  tagline: "LUXURY PERFUMERY WORKSPACE",
+  signInTitle: "Sign In to HM Signature",
+  signUpTitle: "Join the House of HM Signature",
+  signInSubtitle: "Access your client concierge or staff administrative portal.",
+  signUpSubtitle: "Create your personal client account to experience bespoke fragrances.",
+  fullNameLabel: "Full Name",
+  fullNamePlaceholder: "As you would like it on your orders",
+  emailLabel: "Email Address",
+  passwordLabel: "Password",
+  forgotPassword: "Forgot Password?",
+  showPassword: "Show password",
+  hidePassword: "Hide password",
+  rememberMe: "Remember me on this browser",
+  signIn: "Sign In",
+  signUpCta: "Create Client Account",
+  noAccount: "Don't have an account?",
+  createAccount: "Create account",
+  haveAccount: "Already have an account?",
+  signInHere: "Sign in here",
+  invalidCredentials: "Invalid email or password",
+  signUpFailed: "Failed to create account.",
+  emailConfirmationSent:
+    "Account created. Please check your inbox to confirm your email, then sign in.",
+  accountCreated: "Account created successfully. Welcome to HM Signature.",
+  passwordRecoveryTitle: "Password Recovery",
+  closePasswordRecovery: "Close password recovery",
+  resetInstructionsSent: "Password Reset Instructions Sent",
+  // Split around the styled email address, so the address keeps its own typography.
+  resetCheckInboxPrefix: "Check your inbox at",
+  resetCheckInboxSuffix: "for further steps.",
+  resetLinkVerified: "Your reset link was verified. Choose a new password for your account.",
+  newPasswordLabel: "New Password",
+  newPasswordHint: "At least 6 characters.",
+  forgotPasswordHelp:
+    "Enter the email address associated with your account and we will send you instructions to reset your password.",
+  setNewPassword: "Set New Password",
+  sendInstructions: "Send Instructions",
+  resetFailed: "Could not reset password.",
+  passwordUpdated: "Password updated. You are signed in.",
+  resetSendFailed: "Could not send reset instructions.",
+};

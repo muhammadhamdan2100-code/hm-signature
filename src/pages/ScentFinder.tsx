@@ -7,7 +7,8 @@ import { getCatalogProducts } from "../services/catalog";
 import { useCart } from "../context/CartContext";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 import ProductVisual from "../components/ProductVisual";
-import { formatPKR } from "../utils/currency";
+import { useCurrency } from "../context/CurrencyContext";
+import { useI18n } from "../i18n/I18nProvider";
 import {
   FINDER_STEPS,
   STRONG_MATCH_SCORE,
@@ -16,12 +17,13 @@ import {
   defaultFinderAnswers,
   describeAnswers,
   familyOptionsForCatalogue,
-  resultHeading,
   scoreProducts,
   selectRecommendations,
   sizesFor,
   type FinderAnswerKey,
   type FinderAnswers,
+  type FinderOption,
+  type FinderSize,
   type FinderStep,
   type RankedProduct,
 } from "../lib/fragranceMatch";
@@ -79,10 +81,11 @@ const capitalise = (value: string): string => (value ? value.charAt(0).toUpperCa
 const restore = readSession();
 
 export default function ScentFinder() {
+  const { t, language, direction } = useI18n();
   useSeoMeta(
-    "/scent-finder",
-    "Scent finder — HM Signature",
-    "A short consultation on family, projection, occasion and season, matched to the scents we actually stock."
+"/scent-finder",
+    t("seo.scentFinderTitle"),
+    t("seo.scentFinderDescription")
   );
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -112,7 +115,7 @@ export default function ScentFinder() {
     return () => {
       mounted = false;
     };
-  }, [attempt]);
+  }, [attempt, language.code]);
 
   useEffect(() => {
     writeSession({ version: 1, answers, step, view });
@@ -199,19 +202,147 @@ export default function ScentFinder() {
   };
 
   const onOptionKeyDown = (event: KeyboardEvent<HTMLDivElement>, optionCount: number) => {
-    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+    // In a right-to-left script the arrow that moves forward points the other way.
+    const forwardKey = direction === "rtl" ? "ArrowLeft" : "ArrowRight";
+    const backKey = direction === "rtl" ? "ArrowRight" : "ArrowLeft";
+    const keys = [forwardKey, "ArrowDown", backKey, "ArrowUp"];
     if (!keys.includes(event.key)) return;
     event.preventDefault();
     const active = document.activeElement;
     const index = optionRefs.current.findIndex((el) => el === active);
     if (index < 0) return;
-    const forward = event.key === "ArrowRight" || event.key === "ArrowDown";
+    const forward = event.key === forwardKey || event.key === "ArrowDown";
     const next = (index + (forward ? 1 : -1) + optionCount) % optionCount;
     optionRefs.current[next]?.focus();
   };
 
+  /* ------------------------------------------------------------------ */
+  /* Consultation copy                                                   */
+  /*                                                                     */
+  /* `FINDER_STEPS` and the answer chips are data, so the strings they   */
+  /* carry are resolved to a dictionary key here rather than at module   */
+  /* scope (where `t` does not exist). Catalogue attribute values — the  */
+  /* families, seasons, occasions and intensities a fragrance declares — */
+  /* are rendered as declared, exactly as on the product and shop pages. */
+  /* ------------------------------------------------------------------ */
+
+  const stepEyebrow = (definition: FinderStep): string => {
+    switch (definition.key) {
+      case "family":
+        return t("scentFinder.stepFamilyEyebrow");
+      case "intensity":
+        return t("scentFinder.stepIntensityEyebrow");
+      case "occasion":
+        return t("scentFinder.stepOccasionEyebrow");
+      case "season":
+        return t("scentFinder.stepSeasonEyebrow");
+      case "leaning":
+        return t("scentFinder.stepLeaningEyebrow");
+      case "intent":
+        return t("scentFinder.stepIntentEyebrow");
+      case "notesText":
+        return t("scentFinder.stepNotesEyebrow");
+    }
+    return definition.eyebrow;
+  };
+
+  const stepQuestion = (definition: FinderStep): string => {
+    switch (definition.key) {
+      case "family":
+        return t("scentFinder.stepFamilyQuestion");
+      case "intensity":
+        return t("scentFinder.stepIntensityQuestion");
+      case "occasion":
+        return t("scentFinder.stepOccasionQuestion");
+      case "season":
+        return t("scentFinder.stepSeasonQuestion");
+      case "leaning":
+        return t("scentFinder.stepLeaningQuestion");
+      case "intent":
+        return t("scentFinder.stepIntentQuestion");
+      case "notesText":
+        return t("scentFinder.stepNotesQuestion");
+    }
+    return definition.question;
+  };
+
+  const stepHelp = (definition: FinderStep): string => {
+    switch (definition.key) {
+      case "family":
+        return t("scentFinder.stepFamilyHelp");
+      case "intensity":
+        return t("scentFinder.stepIntensityHelp");
+      case "occasion":
+        return t("scentFinder.stepOccasionHelp");
+      case "season":
+        return t("scentFinder.stepSeasonHelp");
+      case "leaning":
+        return t("scentFinder.stepLeaningHelp");
+      case "intent":
+        return t("scentFinder.stepIntentHelp");
+      case "notesText":
+        return t("scentFinder.stepNotesHelp");
+    }
+    return definition.help;
+  };
+
+  const stepPlaceholder = (definition: FinderStep): string => {
+    if (definition.key === "notesText") return t("scentFinder.stepNotesPlaceholder");
+    return definition.placeholder || "";
+  };
+
+  const optionLabel = (definition: FinderStep, option: FinderOption): string => {
+    if (definition.key === "leaning") {
+      if (option.value === "masculine") return t("scentFinder.leaningMasculine");
+      if (option.value === "feminine") return t("scentFinder.leaningFeminine");
+      if (option.value === "versatile") return t("scentFinder.leaningVersatile");
+    }
+    if (definition.key === "intent") {
+      if (option.value === "self") return t("scentFinder.intentSelf");
+      if (option.value === "gift") return t("scentFinder.intentGift");
+    }
+    return option.label;
+  };
+
+  const optionCaption = (definition: FinderStep, option: FinderOption): string | undefined => {
+    if (definition.key === "intensity") {
+      if (option.value === "Light") return t("scentFinder.captionLight");
+      if (option.value === "Moderate") return t("scentFinder.captionModerate");
+      if (option.value === "Strong") return t("scentFinder.captionStrong");
+      if (option.value === "Enormous") return t("scentFinder.captionEnormous");
+    }
+    return option.caption;
+  };
+
+  /** The shopper's own answer restated on a refine chip. */
+  const chipLabel = (chip?: { key: FinderAnswerKey; label: string; specified: boolean }): string => {
+    if (!chip?.specified) return t("scentFinder.notSpecified");
+    if (chip.key === "leaning") {
+      if (answers.leaning === "masculine") return t("scentFinder.leaningMasculine");
+      if (answers.leaning === "feminine") return t("scentFinder.leaningFeminine");
+      if (answers.leaning === "versatile") return t("scentFinder.chipVersatile");
+    }
+    if (chip.key === "intent") {
+      if (answers.intent === "gift") return t("scentFinder.chipGift");
+      if (answers.intent === "self") return t("scentFinder.chipForYourself");
+    }
+    return chip.label;
+  };
+
+  /** Honest result wording, mirroring `resultHeading` in the matching library. */
+  const resultHeadingText = (count: number): string => {
+    if (answers.intent === "gift") {
+      return count === 1 ? t("scentFinder.resultOneGift") : t("scentFinder.resultGifts", { count });
+    }
+    return count === 1 ? t("scentFinder.resultOneScent") : t("scentFinder.resultScents", { count });
+  };
+
   const answeredCount = answerChips.filter((chip) => chip.specified).length;
-  const progressLabel = view === "results" ? "complete" : `${Math.round((answeredCount / total) * 100)} percent answered`;
+  const answeredLabels = answerChips.filter((chip) => chip.specified).map((chip) => chipLabel(chip)).join(", ");
+  const progressLabel =
+    view === "results"
+      ? t("scentFinder.progressComplete")
+      : t("scentFinder.progressAnswered", { percent: Math.round((answeredCount / total) * 100) });
 
   return (
     <div className="pt-24 min-h-screen bg-navy relative overflow-hidden">
@@ -222,45 +353,43 @@ export default function ScentFinder() {
 
       <div className="max-w-[980px] mx-auto px-5 sm:px-6 lg:px-10 py-16 lg:py-20 relative">
         <header className="text-center mb-12 lg:mb-16">
-          <div className="eyebrow mb-4">SCENT FINDER</div>
+          <div className="eyebrow mb-4">{t("scentFinder.eyebrow")}</div>
           <h1 className="font-serif text-4xl lg:text-6xl leading-tight">
-            Find Your
+            {t("scentFinder.titleLine1")}
             <br />
-            <span className="italic text-goldLight">Signature Scent</span>
+            <span className="italic text-goldLight">{t("scentFinder.titleLine2")}</span>
           </h1>
           <p className="text-muted mt-6 text-sm leading-relaxed max-w-md mx-auto">
-            A short consultation on family, projection, occasion and season — answered with the scents in
-            stock today, and with nothing claimed about them that they do not declare.
+            {t("scentFinder.intro")}
           </p>
         </header>
 
         {status === "loading" && (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="w-10 h-10 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-xs font-mono uppercase tracking-[2px] text-gold">Preparing the collection…</p>
+            <p className="text-xs font-mono uppercase tracking-[2px] text-gold">{t("scentFinder.loading")}</p>
           </div>
         )}
 
         {status === "error" && (
           <div className="text-center border border-gold/25 bg-navy2/40 px-6 py-12">
-            <h2 className="font-serif text-2xl mb-3">The collection could not be reached</h2>
+            <h2 className="font-serif text-2xl mb-3">{t("scentFinder.errorTitle")}</h2>
             <p className="text-muted text-sm leading-relaxed mb-7 max-w-sm mx-auto">
-              Something interrupted the connection to our catalogue. Nothing you have entered is lost.
+              {t("scentFinder.errorBody")}
             </p>
             <button onClick={retry} className="btn-gold-fill inline-flex items-center gap-2">
-              <RotateCcw size={14} /> TRY AGAIN
+              <RotateCcw size={14} /> {t("scentFinder.tryAgain")}
             </button>
           </div>
         )}
 
         {status === "ready" && products.length === 0 && (
           <div className="text-center border border-gold/25 bg-navy2/40 px-6 py-14">
-            <h2 className="font-serif text-2xl lg:text-3xl mb-3">The collection is being prepared</h2>
+            <h2 className="font-serif text-2xl lg:text-3xl mb-3">{t("scentFinder.emptyTitle")}</h2>
             <p className="text-muted text-sm leading-relaxed mb-7 max-w-md mx-auto">
-              No fragrances are listed just yet, so we would rather say so than show you anything invented.
-              Please check again soon.
+              {t("scentFinder.emptyBody")}
             </p>
-            <Link to="/" className="btn-gold">RETURN HOME</Link>
+            <Link to="/" className="btn-gold">{t("common.returnHome")}</Link>
           </div>
         )}
 
@@ -268,10 +397,10 @@ export default function ScentFinder() {
           <div className="max-w-xl mx-auto">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[11px] tracking-[1.5px] text-muted font-mono">
-                QUESTION {step + 1} OF {total}
+                {t("scentFinder.questionCounter", { current: step + 1, total })}
               </span>
               <span className="text-[11px] tracking-[1.5px] text-muted font-mono">
-                {refining ? "REFINING" : "SCENT FINDER"}
+                {refining ? t("scentFinder.refining") : t("scentFinder.eyebrow")}
               </span>
             </div>
 
@@ -290,30 +419,30 @@ export default function ScentFinder() {
                 transition={{ duration: 0.35 }}
                 className="text-center"
               >
-                <div className="eyebrow mb-3">{current.eyebrow}</div>
+                <div className="eyebrow mb-3">{stepEyebrow(current)}</div>
                 <h2
                   ref={headingRef}
                   tabIndex={-1}
                   id={`step-${current.key}`}
                   className="font-serif text-2xl lg:text-3xl leading-snug mb-3 focus:outline-none"
                 >
-                  {current.question}
+                  {stepQuestion(current)}
                 </h2>
                 <p id={`step-help-${current.key}`} className="text-muted text-xs leading-relaxed mb-9 max-w-md mx-auto">
-                  {current.help}
+                  {stepHelp(current)}
                 </p>
 
                 {current.freeText ? (
-                  <div className="text-left">
+                  <div className="text-start">
                     <label htmlFor="notes-text" className="block text-[11px] tracking-[1.5px] text-goldLight mb-3">
-                      SCENTS YOU HAVE LOVED (OPTIONAL)
+                      {t("scentFinder.notesFieldLabel")}
                     </label>
                     <textarea
                       id="notes-text"
                       rows={3}
                       value={answers.notesText}
                       onChange={(e) => setValue("notesText", e.target.value)}
-                      placeholder={current.placeholder}
+                      placeholder={stepPlaceholder(current)}
                       aria-describedby={`step-help-${current.key}`}
                       className="w-full bg-transparent border border-gold/25 rounded-sm px-4 py-3 text-sm text-ivory placeholder:text-muted/60 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/50 leading-relaxed"
                     />
@@ -324,10 +453,11 @@ export default function ScentFinder() {
                     aria-labelledby={`step-${current.key}`}
                     aria-describedby={`step-help-${current.key}`}
                     onKeyDown={(e) => onOptionKeyDown(e, (current.options || []).length)}
-                    className="grid gap-3 sm:grid-cols-2 text-left"
+                    className="grid gap-3 sm:grid-cols-2 text-start"
                   >
                     {(current.options || []).map((option, i) => {
                       const selected = answers[current.key] === option.value;
+                      const caption = optionCaption(current, option);
                       return (
                         <button
                           key={option.value}
@@ -337,17 +467,17 @@ export default function ScentFinder() {
                           }}
                           aria-pressed={selected}
                           onClick={() => setValue(current.key, option.value)}
-                          className={`min-h-[56px] w-full px-5 py-3 border transition-colors text-left flex items-start justify-between gap-3 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/60 ${
+                          className={`min-h-[56px] w-full px-5 py-3 border transition-colors text-start flex items-start justify-between gap-3 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/60 ${
                             selected
                               ? "border-gold bg-gold/10 text-ivory"
                               : "border-gold/25 hover:border-gold/70 hover:bg-gold/5 text-ivory/90"
                           }`}
                         >
                           <span className="flex-1 min-w-0">
-                            <span className="block text-sm break-words">{option.label}</span>
-                            {option.caption && (
+                            <span className="block text-sm break-words">{optionLabel(current, option)}</span>
+                            {caption && (
                               <span className="block text-[11px] text-muted mt-1 leading-relaxed">
-                                {option.caption}
+                                {caption}
                               </span>
                             )}
                           </span>
@@ -364,33 +494,37 @@ export default function ScentFinder() {
                       onClick={back}
                       className="btn-gold inline-flex items-center justify-center gap-2 min-h-[48px] text-[11px]"
                     >
-                      <ArrowLeft size={14} aria-hidden="true" />
-                      {refining ? "BACK TO MATCHES" : "BACK"}
+                      <ArrowLeft size={14} aria-hidden="true" className="rtl:rotate-180" />
+                      {refining ? t("scentFinder.backToMatches") : t("scentFinder.backButton")}
                     </button>
                   )}
                   {current.skippable && (
                     <button
                       onClick={refining ? clearAnswer : skip}
-                      className="link-underline text-[11px] sm:ml-auto py-3 min-h-[44px]"
+                      className="link-underline text-[11px] sm:ms-auto py-3 min-h-[44px]"
                     >
-                      {refining ? "CLEAR THIS ANSWER" : "NOT SURE YET"}
+                      {refining ? t("scentFinder.clearThisAnswer") : t("scentFinder.notSureYet")}
                     </button>
                   )}
                   <button
                     onClick={advance}
                     className="btn-gold-fill inline-flex items-center justify-center gap-2 min-h-[48px]"
                   >
-                    {refining ? "UPDATE MATCHES" : step === total - 1 ? "SEE MY MATCHES" : "CONTINUE"}
-                    <ArrowRight size={14} aria-hidden="true" />
+                    {refining
+                      ? t("scentFinder.updateMatches")
+                      : step === total - 1
+                        ? t("scentFinder.seeMyMatches")
+                        : t("scentFinder.continueButton")}
+                    <ArrowRight size={14} aria-hidden="true" className="rtl:rotate-180" />
                   </button>
                 </div>
               </motion.div>
             </AnimatePresence>
 
             <p className="text-center text-muted text-[11px] mt-14 leading-relaxed">
-              Your answers are kept on this device, so you can leave and come back.{" "}
+              {t("scentFinder.deviceNote")}{" "}
               <button onClick={restart} className="link-underline text-[11px] py-1">
-                START AGAIN
+                {t("scentFinder.startAgain")}
               </button>
             </p>
           </div>
@@ -406,19 +540,19 @@ export default function ScentFinder() {
 
             <div className="text-center mb-10">
               <div className="eyebrow mb-3">
-                {hasConfidentMatch ? "YOUR SHORTLIST" : "NOTHING TO RECOMMEND YET"}
+                {hasConfidentMatch ? t("scentFinder.shortlistEyebrow") : t("scentFinder.noMatchesEyebrow")}
               </div>
               <h2
                 ref={headingRef}
                 tabIndex={-1}
                 className="font-serif text-3xl lg:text-5xl leading-tight focus:outline-none"
               >
-                {hasConfidentMatch ? resultHeading(matches.length, answers) : "Nothing matches this combination yet"}
+                {hasConfidentMatch ? resultHeadingText(matches.length) : t("scentFinder.noMatchesTitle")}
               </h2>
               <p className="text-muted text-sm leading-relaxed mt-5 max-w-lg mx-auto">
                 {hasConfidentMatch
-                  ? `Based on your answers — ${answerChips.filter((c) => c.specified).map((c) => c.label).join(", ")}. Each card below lists the attributes that overlap.`
-                  : `We only put a scent forward when it genuinely shares what you asked for. None of the ${products.length} fragrances listed today clears that bar — usually because their season, occasion or intensity details are still being completed.`}
+                  ? t("scentFinder.resultsBody", { answers: answeredLabels })
+                  : t("scentFinder.noMatchesBody", { count: products.length })}
               </p>
             </div>
 
@@ -436,8 +570,8 @@ export default function ScentFinder() {
                         : "border-gold/15 text-muted hover:border-gold/50"
                     }`}
                   >
-                    {capitalise(chip?.label || "Not specified")}
-                    <span className="text-gold ml-2">Change</span>
+                    {capitalise(chipLabel(chip))}
+                    <span className="text-gold ms-2">{t("scentFinder.change")}</span>
                   </button>
                 );
               })}
@@ -457,28 +591,27 @@ export default function ScentFinder() {
             ) : (
               <div className="text-center border border-gold/25 bg-navy2/40 px-6 py-12">
                 <p className="text-muted text-sm leading-relaxed mb-7 max-w-sm mx-auto">
-                  Try loosening one answer — the family or the projection level usually opens this up.
+                  {t("scentFinder.loosenBody")}
                 </p>
-                <Link to="/collections" className="btn-gold-fill">BROWSE THE COLLECTION</Link>
+                <Link to="/collections" className="btn-gold-fill">{t("scentFinder.browseCollection")}</Link>
               </div>
             )}
 
             <div className="flex flex-wrap items-center justify-center gap-4 mt-14 pt-8 border-t border-gold/15">
-              <Link to="/collections" className="link-underline py-2 min-h-[44px]">VIEW ALL FRAGRANCES</Link>
+              <Link to="/collections" className="link-underline py-2 min-h-[44px]">{t("scentFinder.viewAllFragrances")}</Link>
               <button
                 onClick={() => goToStep(0, true)}
                 className="link-underline py-2 min-h-[44px]"
               >
-                REFINE FROM THE FIRST QUESTION
+                {t("scentFinder.refineFromFirst")}
               </button>
               <button onClick={restart} className="link-underline py-2 min-h-[44px]">
-                START AGAIN
+                {t("scentFinder.startAgain")}
               </button>
             </div>
 
             <p className="text-center text-muted text-[11px] mt-8 leading-relaxed max-w-md mx-auto">
-              Every line under “why this matched” is quoted from what the fragrance declares in our catalogue.
-              Where a detail is missing, we leave it out rather than guess.
+              {t("scentFinder.whyQuotedNote")}
             </p>
           </motion.section>
         )}
@@ -486,9 +619,16 @@ export default function ScentFinder() {
         <span className="sr-only" aria-live="polite">
           {view === "results"
             ? hasConfidentMatch
-              ? `${matches.length} ${matches.length === 1 ? "match" : "matches"} ready.`
-              : "No close match found."
-            : `Question ${step + 1} of ${total}. ${current.question}. ${progressLabel}.`}
+              ? matches.length === 1
+                ? t("scentFinder.liveMatchesOne", { count: matches.length })
+                : t("scentFinder.liveMatchesMany", { count: matches.length })
+              : t("scentFinder.liveNoMatch")
+            : t("scentFinder.liveQuestion", {
+                current: step + 1,
+                total,
+                question: stepQuestion(current),
+                progress: progressLabel,
+              })}
         </span>
       </div>
     </div>
@@ -496,6 +636,8 @@ export default function ScentFinder() {
 }
 
 function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number; strong: boolean }) {
+  const { t } = useI18n();
+  const { format } = useCurrency();
   const { product, reasons } = item;
   const { addToCart } = useCart();
   const sizes = useMemo(() => sizesFor(product), [product]);
@@ -508,10 +650,18 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
   const safeIndex = Math.min(sizeIndex, Math.max(sizes.length - 1, 0));
   const size = sizes[safeIndex];
   const availability = availabilityLabel(size);
+  /** Same thresholds the matching library reports, worded in the active language. */
+  const availabilityText = (option: FinderSize): string => {
+    if (option.stock <= 0) return t("product.availabilityOutOfStock");
+    if (option.stock <= (option.lowStockThreshold ?? 5)) {
+      return t("product.availabilityOnlyLeft", { count: option.stock });
+    }
+    return t("scentFinder.inStock");
+  };
   const pyramid = [
-    { label: "Top", items: product.topNotes || [] },
-    { label: "Heart", items: product.heartNotes || [] },
-    { label: "Base", items: product.baseNotes || [] },
+    { labelKey: "product.topNotes", items: product.topNotes || [] },
+    { labelKey: "product.heartNotes", items: product.heartNotes || [] },
+    { labelKey: "product.baseNotes", items: product.baseNotes || [] },
   ].filter((group) => group.items.length > 0);
   const sparseData = !product.seasons?.length && !product.occasions?.length && !product.intensity;
 
@@ -529,7 +679,7 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
           <div className="eyebrow break-words">{product.fragranceFamily || product.category}</div>
           {strong && (
             <span className="text-[10px] tracking-[1.5px] text-gold border border-gold/40 px-2 py-1 shrink-0">
-              CLOSEST
+              {t("scentFinder.closest")}
             </span>
           )}
         </div>
@@ -540,7 +690,7 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
         </p>
 
         <div className="mb-5">
-          <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">WHY THIS MATCHED</div>
+          <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">{t("scentFinder.whyMatched")}</div>
           <ul className="space-y-2 text-sm text-ivory/90">
             {reasons.map((reason) => (
               <li key={reason} className="flex gap-2 leading-relaxed">
@@ -553,7 +703,7 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
           </ul>
           {sparseData && (
             <p className="text-muted text-[11px] mt-3 leading-relaxed">
-              Season and occasion details for this scent are still being listed.
+              {t("scentFinder.sparseNote")}
             </p>
           )}
         </div>
@@ -562,8 +712,8 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
           <div className="mb-6 pt-5 border-t border-gold/15">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
               {pyramid.map((group) => (
-                <div key={group.label}>
-                  <div className="text-[10px] text-muted tracking-[1.5px] mb-2">{group.label.toUpperCase()} NOTES</div>
+                <div key={group.labelKey}>
+                  <div className="text-[10px] text-muted tracking-[1.5px] mb-2">{t(group.labelKey)}</div>
                   {group.items.slice(0, 4).map((note) => (
                     <div key={note} className="text-ivory/90 mb-0.5 break-words">
                       {note}
@@ -576,10 +726,10 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
         )}
 
         <div className="mt-auto">
-          <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">AVAILABLE SIZES</div>
+          <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">{t("scentFinder.availableSizes")}</div>
           <div
             role="group"
-            aria-label={`${product.name} sizes and prices`}
+            aria-label={t("scentFinder.sizesAria", { name: product.name })}
             className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4"
           >
             {sizes.map((option, i) => {
@@ -598,7 +748,7 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
                   } ${state.available ? "" : "opacity-50"}`}
                 >
                   <span className="text-[11px] font-mono tracking-wider">{option.size}</span>
-                  <span className="text-[10px] font-mono text-goldLight">{formatPKR(option.price)}</span>
+                  <span className="text-[10px] font-mono text-goldLight">{format(option.price)}</span>
                 </button>
               );
             })}
@@ -606,9 +756,9 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
 
           <div className="flex items-center justify-between gap-3 mb-4 text-[11px] font-mono tracking-wider">
             <span className={availability.available ? "text-goldLight" : "text-muted"}>
-              {availability.text.toUpperCase()}
+              {availabilityText(size)}
             </span>
-            <span className="text-gold font-bold text-sm">{formatPKR(size.price)}</span>
+            <span className="text-gold font-bold text-sm">{format(size.price)}</span>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
@@ -618,10 +768,10 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
               onClick={() => addToCart(product, size.size, 1, size.price, size.sku)}
               className="btn-gold-fill flex-1 text-center min-h-[48px] disabled:opacity-40"
             >
-              ADD TO BAG ({size.size})
+              {t("product.addToBagSize", { size: size.size })}
             </button>
             <Link to={`/product/${product.slug}`} className="btn-gold flex-1 text-center min-h-[48px]">
-              VIEW DETAILS
+              {t("product.viewDetails")}
             </Link>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React from "react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export interface BreakdownColumn<T> {
   header: string;
@@ -8,6 +9,8 @@ export interface BreakdownColumn<T> {
 
 interface AnalyticsBreakdownTableProps<T> {
   title: string;
+  /** Stable DOM anchor: a translated title slugifies to "" in Arabic/Urdu and would collide. */
+  sectionId: string;
   subtitle?: string;
   caption?: string;
   rows: T[];
@@ -23,21 +26,25 @@ interface AnalyticsBreakdownTableProps<T> {
  */
 export function AnalyticsBreakdownTable<T>({
   title,
+  sectionId,
   subtitle,
   caption,
   rows,
   columns,
   rowKey,
-  emptyMessage = "The aggregation returned no rows for this panel.",
+  emptyMessage,
 }: AnalyticsBreakdownTableProps<T>) {
+  const { t } = useI18n();
+  const emptyText = emptyMessage ?? t("admin.chartCard.noRowsForPanel");
+
   return (
     <section
-      aria-labelledby={`breakdown-${title.replace(/[^A-Za-z0-9]/g, "").toLowerCase()}`}
+      aria-labelledby={`breakdown-${sectionId}`}
       className="bg-navy2/90 border border-gold/20 rounded-lg p-4 sm:p-6 shadow-xl space-y-4 min-w-0"
     >
       <div className="border-b border-gold/15 pb-3">
         <h3
-          id={`breakdown-${title.replace(/[^A-Za-z0-9]/g, "").toLowerCase()}`}
+          id={`breakdown-${sectionId}`}
           className="font-serif text-base sm:text-lg font-bold text-ivory tracking-wide truncate"
         >
           {title}
@@ -45,8 +52,8 @@ export function AnalyticsBreakdownTable<T>({
         {subtitle && <p className="text-xs text-muted font-sans font-light mt-0.5">{subtitle}</p>}
       </div>
 
-      <div className="overflow-x-auto border border-gold/20 rounded-lg bg-navy/40 max-h-72">
-        <table className="w-full min-w-[320px] text-left text-xs font-sans">
+      <div className="relative overflow-x-auto border border-gold/20 rounded-lg bg-navy/40 max-h-72">
+        <table className="w-full min-w-[320px] text-start text-xs font-sans">
           <caption className="sr-only">{`${title}. ${caption ?? ""}`}</caption>
           <thead className="sticky top-0 bg-navy text-gold uppercase tracking-[1.5px] text-[10px] border-b border-gold/15">
             <tr>
@@ -54,7 +61,7 @@ export function AnalyticsBreakdownTable<T>({
                 <th
                   key={col.header}
                   scope="col"
-                  className={`px-3 py-2.5 whitespace-nowrap ${col.align === "right" ? "text-right" : "text-left"}`}
+                  className={`px-3 py-2.5 whitespace-nowrap ${col.align === "right" ? "text-end" : "text-start"}`}
                 >
                   {col.header}
                 </th>
@@ -65,7 +72,7 @@ export function AnalyticsBreakdownTable<T>({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-3 py-10 text-center">
-                  <p className="text-xs text-muted font-light">{emptyMessage}</p>
+                  <p className="text-xs text-muted font-light">{emptyText}</p>
                 </td>
               </tr>
             ) : (
@@ -74,7 +81,7 @@ export function AnalyticsBreakdownTable<T>({
                   {columns.map((col) => (
                     <td
                       key={col.header}
-                      className={`px-3 py-2.5 align-middle ${col.align === "right" ? "text-right" : "text-left"}`}
+                      className={`px-3 py-2.5 align-middle ${col.align === "right" ? "text-end" : "text-start"}`}
                     >
                       {col.render(row, idx)}
                     </td>

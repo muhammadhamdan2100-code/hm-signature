@@ -11,6 +11,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { uploadProductImageToStorage } from "../../services/adminCatalog";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface ImageUploaderProps {
   images: string[];
@@ -19,13 +20,14 @@ interface ImageUploaderProps {
   onAltTextsChange?: (altTexts: string[]) => void;
 }
 
+/** `key` is the stored texture identifier; only `labelKey` is display copy. */
 const PRESET_TEXTURES = [
-  { key: "texture-velvet", label: "Velvet Crimson" },
-  { key: "texture-marble-dark", label: "Dark Marble" },
-  { key: "texture-marble-champagne", label: "Champagne Marble" },
-  { key: "texture-stone-beige", label: "Beige Stone" },
-  { key: "texture-wood", label: "Rich Ebony Wood" },
-  { key: "texture-navy", label: "Midnight Sapphire" },
+  { key: "texture-velvet", labelKey: "admin.imageUploader.velvetCrimson" },
+  { key: "texture-marble-dark", labelKey: "admin.imageUploader.darkMarble" },
+  { key: "texture-marble-champagne", labelKey: "admin.imageUploader.champagneMarble" },
+  { key: "texture-stone-beige", labelKey: "admin.imageUploader.beigeStone" },
+  { key: "texture-wood", labelKey: "admin.imageUploader.richEbonyWood" },
+  { key: "texture-navy", labelKey: "admin.imageUploader.midnightSapphire" },
 ];
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -34,6 +36,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   altTexts,
   onAltTextsChange,
 }) => {
+  const { t } = useI18n();
   const [customUrl, setCustomUrl] = useState("");
   const [isAddingUrl, setIsAddingUrl] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -119,7 +122,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       onChange([...images, ...newUrls]);
       writeAlts([...alts, ...newUrls.map(() => "")]);
     } else {
-      setUploadError("The image could not be uploaded to Supabase Storage. Check the network or permissions.");
+      setUploadError(t("admin.imageUploader.uploadFailed"));
     }
     setIsUploading(false);
     e.target.value = "";
@@ -147,10 +150,12 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             )}
           </div>
           <p className="text-xs font-sans font-medium text-ivory tracking-wide">
-            {isUploading ? "Uploading photography to Atelier Storage…" : "Click or drag and drop product photography to upload"}
+            {isUploading
+              ? t("admin.imageUploader.uploadingPhotography")
+              : t("admin.imageUploader.clickOrDragToUpload")}
           </p>
           <p className="text-[11px] font-sans text-muted mt-1">
-            Supports PNG, JPG and WebP up to 10 MB per image. High resolution is recommended.
+            {t("admin.imageUploader.supportedFormats")}
           </p>
         </label>
 
@@ -162,20 +167,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
         {/* Quick Texture Selectors */}
         <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {PRESET_TEXTURES.map((t) => (
+          {PRESET_TEXTURES.map((texture) => (
             <button
-              key={t.key}
+              key={texture.key}
               type="button"
-              onClick={() => handleAddTexture(t.key)}
-              aria-pressed={images.includes(t.key)}
-              className={`px-2.5 py-1 rounded text-[11px] font-sans border transition-colors flex items-center space-x-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
-                images.includes(t.key)
+              onClick={() => handleAddTexture(texture.key)}
+              aria-pressed={images.includes(texture.key)}
+              className={`px-2.5 py-1 rounded text-[11px] font-sans border transition-colors flex items-center gap-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
+                images.includes(texture.key)
                   ? "bg-gold text-navy border-gold font-semibold"
                   : "bg-navy2 text-muted border-gold/20 hover:text-ivory hover:border-gold/40"
               }`}
             >
-              <span>{t.label}</span>
-              {images.includes(t.key) && <Check className="w-3 h-3 ml-1" />}
+              <span>{t(texture.labelKey)}</span>
+              {images.includes(texture.key) && <Check className="w-3 h-3 ms-1" />}
             </button>
           ))}
         </div>
@@ -188,12 +193,12 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               onClick={() => setIsAddingUrl(true)}
               className="inline-flex items-center text-xs text-gold hover:text-goldLight underline tracking-wider focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
             >
-              <Plus className="w-3.5 h-3.5 mr-1" /> Add a custom image URL or path
+              <Plus className="w-3.5 h-3.5 me-1" /> {t("admin.imageUploader.addCustomImageUrl")}
             </button>
           ) : (
-            <form onSubmit={handleAddCustomUrl} className="flex items-center space-x-2 mt-2">
+            <form onSubmit={handleAddCustomUrl} className="flex items-center gap-2 mt-2">
               <label htmlFor="custom-image-url" className="sr-only">
-                Custom image URL or path
+                {t("admin.imageUploader.customImageUrlLabel")}
               </label>
               <input
                 id="custom-image-url"
@@ -207,14 +212,14 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 type="submit"
                 className="px-3 py-1.5 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               >
-                Add
+                {t("admin.shared.add")}
               </button>
               <button
                 type="button"
                 onClick={() => setIsAddingUrl(false)}
                 className="px-2 py-1.5 text-muted hover:text-ivory text-xs focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
               >
-                Cancel
+                {t("admin.modal.cancel")}
               </button>
             </form>
           )}
@@ -247,7 +252,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   {img.startsWith("/") || img.startsWith("http") ? (
                     <img
                       src={img}
-                      alt={altValue || `Product image ${idx + 1}`}
+                      alt={altValue || t("admin.imageUploader.productImageNumbered", { number: idx + 1 })}
                       className="h-full w-full object-cover"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = "none";
@@ -265,8 +270,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
                 {/* Primary Tag */}
                 {isPrimary && (
-                  <span className="absolute top-2 left-2 bg-gold text-navy text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded shadow">
-                    Primary
+                  <span className="absolute top-2 start-2 bg-gold text-navy text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded shadow">
+                    {t("admin.imageUploader.primary")}
                   </span>
                 )}
 
@@ -276,28 +281,28 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                     type="button"
                     onClick={() => handleMove(idx, -1)}
                     disabled={idx === 0}
-                    title="Move image earlier"
-                    aria-label={`Move image ${idx + 1} earlier`}
+                    title={t("admin.imageUploader.moveImageEarlier")}
+                    aria-label={t("admin.imageUploader.moveImageEarlierNumbered", { number: idx + 1 })}
                     className="p-1.5 rounded bg-navy text-gold border border-gold/30 hover:bg-gold hover:text-navy transition-colors disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
                   </button>
                   <button
                     type="button"
                     onClick={() => handleMove(idx, 1)}
                     disabled={idx === images.length - 1}
-                    title="Move image later"
-                    aria-label={`Move image ${idx + 1} later`}
+                    title={t("admin.imageUploader.moveImageLater")}
+                    aria-label={t("admin.imageUploader.moveImageLaterNumbered", { number: idx + 1 })}
                     className="p-1.5 rounded bg-navy text-gold border border-gold/30 hover:bg-gold hover:text-navy transition-colors disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-4 h-4 rtl:rotate-180" />
                   </button>
                   {!isPrimary && (
                     <button
                       type="button"
                       onClick={() => handleSetPrimary(idx)}
-                      title="Make this the primary image"
-                      aria-label={`Make image ${idx + 1} primary`}
+                      title={t("admin.imageUploader.makeThisThePrimaryImage")}
+                      aria-label={t("admin.imageUploader.makeImagePrimary", { number: idx + 1 })}
                       className="p-1.5 rounded bg-gold/20 text-gold hover:bg-gold hover:text-navy transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                     >
                       <Star className="w-4 h-4" />
@@ -306,8 +311,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   <button
                     type="button"
                     onClick={() => handleDelete(idx)}
-                    title="Remove image"
-                    aria-label={`Remove image ${idx + 1}`}
+                    title={t("admin.imageUploader.removeImage")}
+                    aria-label={t("admin.imageUploader.removeImageNumbered", { number: idx + 1 })}
                     className="p-1.5 rounded bg-rose-950/60 text-rose-300 hover:bg-rose-900 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -317,7 +322,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 {/* Alt text editor */}
                 <div className="bg-navy/70 px-2.5 py-2 border-t border-gold/15">
                   <label htmlFor={altId} className="block text-[10px] uppercase tracking-wider text-muted mb-1">
-                    Alt text
+                    {t("admin.imageUploader.altText")}
                   </label>
                   <input
                     id={altId}
@@ -325,11 +330,11 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                     value={altValue}
                     onChange={(e) => handleSetAlt(idx, e.target.value)}
                     aria-describedby={altHelpId}
-                    placeholder="Describe this image"
+                    placeholder={t("admin.imageUploader.describeThisImage")}
                     className="w-full bg-navy border border-gold/25 rounded px-2 py-1 text-[11px] text-ivory placeholder-muted focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                   />
                   <p id={altHelpId} className="sr-only">
-                    Alternative text is read by screen readers and shown when the image fails to load.
+                    {t("admin.imageUploader.altTextHelp")}
                   </p>
                 </div>
               </div>

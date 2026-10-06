@@ -1,4 +1,5 @@
 import { Check, X } from "lucide-react";
+import { useI18n } from "../i18n/I18nProvider";
 
 export interface OrderTimelineEvent {
   status: string;
@@ -12,8 +13,8 @@ export interface OrderTimelineProps {
 }
 
 const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 // Order events arrive as "YYYY-MM-DD HH:MM" (or a raw ISO stamp from other
@@ -46,12 +47,13 @@ function isTerminalStatus(status: string): boolean {
  * given — no fetching, no invented steps — oldest first, newest step highlighted.
  */
 export function OrderTimeline({ events, compact = false }: OrderTimelineProps) {
+  const { t } = useI18n();
   const steps = events ?? [];
 
   if (steps.length === 0) {
     return (
       <p className="text-[11px] text-muted italic font-light bg-navy/50 border border-gold/15 rounded-lg px-3.5 py-3 leading-relaxed">
-        No status updates have been recorded for this order yet.
+        {t("status.noUpdates")}
       </p>
     );
   }
@@ -89,7 +91,7 @@ export function OrderTimeline({ events, compact = false }: OrderTimelineProps) {
               <span
                 aria-hidden="true"
                 className={`absolute bottom-0 w-px -translate-x-1/2 bg-gold/20 ${
-                  compact ? "left-2.5 top-6" : "left-3 top-8"
+                  compact ? "start-2.5 top-6" : "start-3 top-8"
                 }`}
               />
             )}
@@ -133,7 +135,7 @@ export function OrderTimeline({ events, compact = false }: OrderTimelineProps) {
                       : "border-gold/40 bg-gold/10 text-gold"
                   }`}
                 >
-                  {exception ? "Final status" : isTerminalStatus(event.status) ? "Delivered" : "Current status"}
+                  {exception ? t("status.finalStatus") : isTerminalStatus(event.status) ? t("status.delivered") : t("status.currentStatus")}
                 </span>
               )}
 

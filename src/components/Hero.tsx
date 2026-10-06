@@ -2,7 +2,8 @@ import { Fragment, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import GoldLeafBranch from "./GoldLeafBranch";
-import type { HomepageConfig } from "../admin/context/AdminDataContext";
+import { useI18n } from "../i18n/I18nProvider";
+import { DEFAULT_HOMEPAGE_CONFIG, type HomepageConfig } from "../admin/context/AdminDataContext";
 
 const splitLines = (value: string) =>
   value
@@ -13,8 +14,17 @@ const splitLines = (value: string) =>
 export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const headingLines = splitLines(hero.heading);
-  const descriptionLines = splitLines(hero.description);
+  const { t } = useI18n();
+  const defaults = DEFAULT_HOMEPAGE_CONFIG.hero;
+  // Homepage copy is authored by the store, so anything actually edited stays exactly as
+  // written. The shipped defaults are English, so those follow the interface language.
+  const copy = (stored: string, fallback: string, key: string) => (stored === fallback ? t(key) : stored);
+  const headingLines = splitLines(copy(hero.heading, defaults.heading, "home.heroHeading"));
+  const descriptionLines = splitLines(copy(hero.description, defaults.description, "home.heroDescription"));
+  const subheading = copy(hero.subheading, defaults.subheading, "home.heroEyebrow");
+  const headingAccent = copy(hero.headingAccent, defaults.headingAccent, "home.heroHeadingAccent");
+  const ctaText = copy(hero.ctaText, defaults.ctaText, "home.heroCta");
+  const imageAlt = copy(hero.imageAlt, defaults.imageAlt, "home.heroImageAlt");
 
   const onMouseMove = (e: React.MouseEvent) => {
     if (!ref.current) return;
@@ -31,7 +41,7 @@ export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
       className="relative min-h-screen flex items-center pt-28 pb-16 px-6 lg:px-10 overflow-hidden"
       style={{
         background:
-          "radial-gradient(circle at 75% 45%, rgba(16,40,61,0.9), transparent 60%), linear-gradient(160deg, #08111C 0%, #0c1826 55%, #08111C 100%)",
+"radial-gradient(circle at 75% 45%, rgba(16,40,61,0.9), transparent 60%), linear-gradient(160deg, #08111C 0%, #0c1826 55%, #08111C 100%)",
       }}
     >
       {/* satin fold texture */}
@@ -39,14 +49,14 @@ export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
         className="absolute inset-0 opacity-30 pointer-events-none"
         style={{
           backgroundImage:
-            "repeating-linear-gradient(115deg, rgba(200,169,107,0.03) 0px, rgba(200,169,107,0.03) 2px, transparent 2px, transparent 60px)",
+"repeating-linear-gradient(115deg, rgba(200,169,107,0.03) 0px, rgba(200,169,107,0.03) 2px, transparent 2px, transparent 60px)",
         }}
       />
 
       <div className="max-w-[1400px] mx-auto w-full grid lg:grid-cols-2 gap-14 items-center relative">
         <div>
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.8 }} className="eyebrow mb-6">
-            {hero.subheading}
+            {subheading}
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 22 }}
@@ -60,10 +70,10 @@ export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
                 {line}
               </Fragment>
             ))}
-            {hero.headingAccent && (
+            {headingAccent && (
               <>
                 {headingLines.length > 0 && " "}
-                <span className="text-goldLight italic">{hero.headingAccent}</span>
+                <span className="text-goldLight italic">{headingAccent}</span>
               </>
             )}
           </motion.h1>
@@ -87,10 +97,10 @@ export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
             className="flex flex-wrap items-center gap-8"
           >
             <Link to={hero.ctaLink || "/collections"} className="btn-gold-fill">
-              {hero.ctaText}
+              {ctaText}
             </Link>
             <Link to="/?section=about" className="link-underline">
-              DISCOVER HM SIGNATURE
+              {t("home.heroDiscoverCta")}
             </Link>
           </motion.div>
         </div>
@@ -109,15 +119,15 @@ export default function Hero({ hero }: { hero: HomepageConfig["hero"] }) {
           />
 
           {/* botanical gold leaf branches either side */}
-          <GoldLeafBranch className="absolute left-[-10px] lg:left-2 top-2 w-24 lg:w-32 opacity-90" />
-          <GoldLeafBranch className="absolute right-[-10px] lg:right-2 bottom-2 w-20 lg:w-28 opacity-80" flip />
+          <GoldLeafBranch className="absolute start-[-10px] lg:start-2 top-2 w-24 lg:w-32 opacity-90" />
+          <GoldLeafBranch className="absolute end-[-10px] lg:end-2 bottom-2 w-20 lg:w-28 opacity-80" flip />
 
           <motion.div
             animate={{ x: offset.x, y: offset.y }}
             transition={{ type: "spring", stiffness: 60, damping: 14 }}
             className="relative z-10 w-[230px] h-[230px] lg:w-[330px] lg:h-[330px] rounded-full overflow-hidden border border-gold/30 shadow-2xl"
           >
-            <img src={hero.image} alt={hero.imageAlt} fetchPriority="high" className="w-full h-full object-cover" />
+            <img src={hero.image} alt={imageAlt} fetchPriority="high" className="w-full h-full object-cover" />
           </motion.div>
         </div>
       </div>

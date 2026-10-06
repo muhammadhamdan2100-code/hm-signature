@@ -8,7 +8,7 @@ export const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col space-y-3 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-6 end-6 z-50 flex flex-col space-y-3 max-w-sm w-full pointer-events-none">
       {toasts.map((toast) => {
         const isSuccess = toast.type === "success";
         const isError = toast.type === "error";
@@ -16,7 +16,7 @@ export const ToastContainer: React.FC = () => {
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start space-x-3 p-4 rounded border backdrop-blur-md shadow-2xl transition-all duration-300 animate-slide-up ${
+            className={`pointer-events-auto flex items-start gap-3 p-4 rounded border backdrop-blur-md shadow-2xl transition-all duration-300 animate-slide-up ${
               isSuccess
                 ? "bg-navy2/95 border-gold/40 text-ivory"
                 : isError

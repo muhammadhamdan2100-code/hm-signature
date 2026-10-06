@@ -9,6 +9,7 @@ import {
 } from "../../services/accountSecurity";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { KeyRound, ShieldCheck, MailCheck, AlertCircle } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 /**
  * The primary Super Admin can move their own sign-in address. The credential is
@@ -20,6 +21,7 @@ import { KeyRound, ShieldCheck, MailCheck, AlertCircle } from "lucide-react";
  * status remain read-only here.
  */
 export const PrimaryAdminSecurityCard: React.FC = () => {
+  const { t } = useI18n();
   const staff = getCurrentStaff();
   const isOwner = isPrimaryAdmin(staff ?? undefined);
 
@@ -50,7 +52,7 @@ export const PrimaryAdminSecurityCard: React.FC = () => {
     if (busy) return;
     const candidate = newEmail.trim().toLowerCase();
     if (!isValidEmail(candidate)) {
-      setFeedback({ tone: "err", text: "Enter a complete email address before requesting the change." });
+      setFeedback({ tone: "err", text: t("admin.primaryAdminSecurityCard.enterACompleteEmailAddress") });
       return;
     }
     setBusy(true);
@@ -72,58 +74,56 @@ export const PrimaryAdminSecurityCard: React.FC = () => {
         <div className="flex items-start gap-2.5">
           <KeyRound className="w-4 h-4 text-gold mt-0.5 shrink-0" />
           <div>
-            <h2 className="font-serif text-sm font-bold text-ivory">Primary Super Admin sign-in email</h2>
+            <h2 className="font-serif text-sm font-bold text-ivory">{t("admin.primaryAdminSecurityCard.primarySuperAdminSignIn")}</h2>
             <p className="text-[11px] text-muted font-light leading-relaxed mt-0.5 max-w-2xl">
-              The Super Admin role itself is locked: it cannot be removed, downgraded or handed to
-              another account from this dashboard. Only this address is yours to change.
+              {t("admin.primaryAdminSecurityCard.roleLockedNote")}
             </p>
           </div>
         </div>
         <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-gold bg-gold/15 border border-gold/40 px-2 py-0.5 rounded uppercase tracking-wider shrink-0">
-          <ShieldCheck className="w-3 h-3" /> Protected
+          <ShieldCheck className="w-3 h-3" /> {t("admin.primaryAdminSecurityCard.protected")}
         </span>
       </div>
 
       {!isSupabaseConfigured() ? (
         <p className="text-xs text-muted font-light">
-          Supabase Auth is not connected in this environment, so the sign-in address cannot be changed
-          here. Nothing else on this page is affected.
+          {t("admin.primaryAdminSecurityCard.supabaseNotConnected")}
         </p>
       ) : loading ? (
-        <p className="text-xs text-muted font-light">Loading account details…</p>
+        <p className="text-xs text-muted font-light">{t("admin.primaryAdminSecurityCard.loadingAccountDetails")}</p>
       ) : (
         <>
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="p-3 rounded bg-navy border border-gold/15">
               <span className="text-[9px] font-mono uppercase tracking-wider text-muted block">
-                Current sign-in address
+                {t("admin.primaryAdminSecurityCard.currentSignInAddress")}
               </span>
               <span className="text-xs font-mono text-ivory break-all block mt-1">
                 {state?.currentEmail || staff?.email || "—"}
               </span>
               {state && !state.emailConfirmed && (
                 <span className="text-[10px] text-amber-300 font-light block mt-1">
-                  This address is not yet confirmed in Supabase Auth.
+                  {t("admin.primaryAdminSecurityCard.addressNotConfirmed")}
                 </span>
               )}
             </div>
             <div className="p-3 rounded bg-navy border border-gold/15">
               <span className="text-[9px] font-mono uppercase tracking-wider text-muted block">
-                Pending change
+                {t("admin.primaryAdminSecurityCard.pendingChange")}
               </span>
               <span className="text-xs font-mono text-ivory break-all block mt-1">
                 {state?.pendingEmail ? (
                   <>
-                    <MailCheck className="w-3.5 h-3.5 text-gold inline-block mr-1 -mt-0.5" />
-                    {state.pendingEmail} — awaiting confirmation
+                    <MailCheck className="w-3.5 h-3.5 text-gold inline-block me-1 -mt-0.5" />
+                    {t("admin.primaryAdminSecurityCard.awaitingConfirmation", { email: state.pendingEmail })}
                   </>
                 ) : (
-                  "None"
+                  t("admin.primaryAdminSecurityCard.none")
                 )}
               </span>
               {state?.pendingEmail && (
                 <span className="text-[10px] text-muted font-light block mt-1">
-                  Your current address still works until you confirm the link.
+                  {t("admin.primaryAdminSecurityCard.currentAddressStillWorks")}
                 </span>
               )}
             </div>
@@ -132,7 +132,7 @@ export const PrimaryAdminSecurityCard: React.FC = () => {
           <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row sm:items-end gap-3">
             <label className="block flex-1 space-y-1.5">
               <span className="text-[9px] font-mono uppercase tracking-wider text-gold block">
-                New sign-in address
+                {t("admin.primaryAdminSecurityCard.newSignInAddress")}
               </span>
               <input
                 type="email"
@@ -151,7 +151,7 @@ export const PrimaryAdminSecurityCard: React.FC = () => {
               disabled={busy || !newEmail.trim()}
               className="min-h-11 px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs tracking-wider uppercase transition-colors disabled:opacity-40 shrink-0"
             >
-              {busy ? "Sending…" : "Request email change"}
+              {busy ? t("admin.primaryAdminSecurityCard.sending") : t("admin.primaryAdminSecurityCard.requestEmailChange")}
             </button>
           </form>
 
@@ -173,8 +173,7 @@ export const PrimaryAdminSecurityCard: React.FC = () => {
           )}
 
           <p className="text-[10px] text-muted font-light leading-relaxed">
-            Supabase Auth sends a confirmation link before the address takes effect, so a mistyped or
-            abandoned request cannot lock you out. Sign in with the new address once it is confirmed.
+            {t("admin.primaryAdminSecurityCard.confirmationLinkNote")}
           </p>
         </>
       )}

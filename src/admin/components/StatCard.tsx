@@ -32,7 +32,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     <>
       <div>
         <div className="flex items-start justify-between">
-          <span className="text-[11px] font-sans uppercase tracking-[2px] text-gold font-medium pr-8 leading-snug">
+          <span className="text-[11px] font-sans uppercase tracking-[2px] text-gold font-medium pe-8 leading-snug">
             {title}
           </span>
           <div className="p-2 rounded bg-navy/60 border border-gold/20 text-gold shrink-0">
@@ -51,9 +51,9 @@ export const StatCard: React.FC<StatCardProps> = ({
               }`}
             >
               {isPositive ? (
-                <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
+                <ArrowUpRight className="w-3.5 h-3.5 me-0.5" />
               ) : (
-                <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />
+                <ArrowDownRight className="w-3.5 h-3.5 me-0.5" />
               )}
               {change}
             </span>
@@ -74,7 +74,7 @@ export const StatCard: React.FC<StatCardProps> = ({
       <button
         type="button"
         onClick={onClick}
-        className={`${cardClass} w-full text-left cursor-pointer hover:border-gold/60 hover:shadow-lg focus:outline-none focus-visible:ring-1 focus-visible:ring-gold`}
+        className={`${cardClass} w-full text-start cursor-pointer hover:border-gold/60 hover:shadow-lg focus:outline-none focus-visible:ring-1 focus-visible:ring-gold`}
       >
         {content}
       </button>

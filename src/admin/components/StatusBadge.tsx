@@ -1,5 +1,6 @@
 import React from "react";
 import type { OrderStatus } from "../context/AdminDataContext";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface StatusBadgeProps {
   status: OrderStatus | "In Stock" | "Low Stock" | "Out of Stock" | "Active" | "Inactive" | "VIP" | "Pending" | "Approved" | "Rejected" | "Scheduled" | "Ended" | "Paid" | "Refunded" | "Failed" | string;
@@ -20,71 +21,110 @@ const TONE_CLASS: Record<BadgeTone, string> = {
   neutral: "bg-navy2 text-muted border-gold/20",
 };
 
-/** Lower-case lookup key -> canonical Title Case label + tone. */
-const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
+/**
+ * Lower-case database value -> badge tone. The keys are the stored statuses, so they stay
+ * English; only the copy shown to the staff member is translated (see `admin.status.*`).
+ */
+const STATUS_META: Record<string, { tone: BadgeTone }> = {
   // Success / settled
-  delivered: { label: "Delivered", tone: "success" },
-  "in stock": { label: "In Stock", tone: "success" },
-  active: { label: "Active", tone: "success" },
-  approved: { label: "Approved", tone: "success" },
-  paid: { label: "Paid", tone: "success" },
-  verified: { label: "Verified", tone: "success" },
-  processed: { label: "Processed", tone: "success" },
-  recovered: { label: "Recovered", tone: "success" },
-  vip: { label: "VIP", tone: "success" },
+  delivered: { tone: "success" },
+"in stock": { tone: "success" },
+  active: { tone: "success" },
+  approved: { tone: "success" },
+  paid: { tone: "success" },
+  verified: { tone: "success" },
+  processed: { tone: "success" },
+  recovered: { tone: "success" },
+  vip: { tone: "success" },
 
   // Awaiting action / in progress
-  pending: { label: "Pending", tone: "progress" },
-  "verification pending": { label: "Verification Pending", tone: "progress" },
-  processing: { label: "Processing", tone: "progress" },
-  confirmed: { label: "Confirmed", tone: "progress" },
-  scheduled: { label: "Scheduled", tone: "progress" },
-  "in transit": { label: "In Transit", tone: "progress" },
-  "low stock": { label: "Low Stock", tone: "progress" },
-  unfulfilled: { label: "Unfulfilled", tone: "progress" },
+  pending: { tone: "progress" },
+"verification pending": { tone: "progress" },
+  processing: { tone: "progress" },
+  confirmed: { tone: "progress" },
+  scheduled: { tone: "progress" },
+"in transit": { tone: "progress" },
+"low stock": { tone: "progress" },
+  unfulfilled: { tone: "progress" },
 
   // In motion / money moved (gold accent)
-  shipped: { label: "Shipped", tone: "brand" },
-  "out for delivery": { label: "Out for Delivery", tone: "brand" },
-  refunded: { label: "Refunded", tone: "brand" },
-  returned: { label: "Returned", tone: "brand" },
-  "reminder sent": { label: "Reminder Sent", tone: "brand" },
+  shipped: { tone: "brand" },
+"out for delivery": { tone: "brand" },
+  refunded: { tone: "brand" },
+  returned: { tone: "brand" },
+"reminder sent": { tone: "brand" },
 
   // Blocked / negative
-  cancelled: { label: "Cancelled", tone: "danger" },
-  "out of stock": { label: "Out of Stock", tone: "danger" },
-  rejected: { label: "Rejected", tone: "danger" },
-  inactive: { label: "Inactive", tone: "danger" },
-  failed: { label: "Failed", tone: "danger" },
-  blocked: { label: "Blocked", tone: "danger" },
-  suspended: { label: "Suspended", tone: "danger" },
+  cancelled: { tone: "danger" },
+"out of stock": { tone: "danger" },
+  rejected: { tone: "danger" },
+  inactive: { tone: "danger" },
+  failed: { tone: "danger" },
+  blocked: { tone: "danger" },
+  suspended: { tone: "danger" },
 
   // Neutral / informational
-  ended: { label: "Ended", tone: "neutral" },
-  expired: { label: "Expired", tone: "neutral" },
-  sending: { label: "Sending", tone: "brand" },
-  draft: { label: "Draft", tone: "neutral" },
-  new: { label: "New", tone: "neutral" },
-  returning: { label: "Returning", tone: "neutral" },
-  unconverted: { label: "Unconverted", tone: "neutral" },
+  ended: { tone: "neutral" },
+  expired: { tone: "neutral" },
+  sending: { tone: "brand" },
+  completed: { tone: "neutral" },
+  draft: { tone: "neutral" },
+  new: { tone: "neutral" },
+  returning: { tone: "neutral" },
+  unconverted: { tone: "neutral" },
+};
+
+/** `Out for Delivery` -> `admin.status.outfordelivery`, the key the dictionaries carry. */
+export const statusLabelKey = (value: string) =>
+  `admin.status.${value.trim().toLowerCase().replace(/\s+/g, "")}`;
+
+/**
+ * Translates a stored status word for display. Unknown values are shown exactly as they
+ * arrive, because a status the dictionaries have never seen must not be invented.
+ */
+export const useStatusLabel = () => {
+  const { t } = useI18n();
+  return (value: string) => {
+    const raw = typeof value === "string" ? value.trim() : "";
+    return raw && Object.hasOwn(STATUS_META, raw.toLowerCase()) ? t(statusLabelKey(raw)) : value;
+  };
+};
+
+/**
+ * The stored payment rail -> the label a staff member reads. The rails are fixed by the database
+ * (orders.payments carry these names), so an unrecognised one is shown as stored rather than
+ * guessed into another rail's wording.
+ */
+export const usePaymentMethodLabel = () => {
+  const { t } = useI18n();
+  return (method: string) => {
+    const key = (method || "").trim().toLowerCase();
+    if (key === "cash on delivery" || key === "cod") return t("admin.paymentMethod.cashOnDelivery");
+    if (key === "jazzcash") return t("admin.paymentMethod.jazzCash");
+    if (key === "raast") return t("admin.paymentMethod.raast");
+    if (key === "bank transfer") return t("admin.paymentMethod.bankTransfer");
+    if (key === "payfast") return t("admin.paymentMethod.payFast");
+    return method;
+  };
 };
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
+  const { t } = useI18n();
   const raw = typeof status === "string" ? status.trim() : "";
   const meta =
     raw && Object.hasOwn(STATUS_META, raw.toLowerCase())
       ? STATUS_META[raw.toLowerCase()]
       : undefined;
 
-  // Known statuses render Title Case; unknown values are shown exactly as given.
-  const label = meta ? meta.label : status;
+  // Known statuses render in the staff member's language; unknown values are shown as given.
+  const label = meta ? t(statusLabelKey(raw)) : status;
   const badgeStyle = TONE_CLASS[meta ? meta.tone : "neutral"];
 
   return (
     <span
       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-sans font-medium uppercase tracking-wider border ${badgeStyle}`}
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5 opacity-75" />
+      <span className="w-1.5 h-1.5 rounded-full bg-current me-1.5 opacity-75" />
       {label}
     </span>
   );

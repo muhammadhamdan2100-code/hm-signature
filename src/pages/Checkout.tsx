@@ -1,100 +1,211 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Banknote, Smartphone, Building2, Truck, Copy, CreditCard, AlertTriangle } from "lucide-react";
+import { Check, Banknote, Smartphone, Building2, Truck, Copy, CreditCard, AlertTriangle, Globe2 } from "lucide-react";
 import { useCart } from "../context/CartContext";
-import { useAdminData, type PaymentMethod } from "../admin/context/AdminDataContext";
+import { useAdminData } from "../admin/context/AdminDataContext";
 import ProductVisual from "../components/ProductVisual";
-import { formatPKR } from "../utils/currency";
-import { drainOwnEmailQueue, fetchServiceCapabilities } from "../services/emailService";
+import { drainOwnEmailQueue } from "../services/emailService";
 import { supabase } from "../lib/supabase";
 import {
+  fetchCheckoutMethods,
   fetchPaymentMethodsConfig,
-  fetchShippingConfig,
+  type CheckoutMethod,
   type PaymentMethodConfig,
-  type ShippingConfig,
-  DEFAULT_SHIPPING_CONFIG,
 } from "../services/storeConfig";
 import { placeOrderRpc, setOrderGiftOptionsRpc, submitPaymentProofRpc } from "../services/checkoutOps";
+import { captureEvent } from "../services/analyticsCapture";
 import { saveCustomerOrderNotes } from "../services/tracking";
+import { quoteOrder, type PricingQuote } from "../services/internationalConfig";
+import { useCurrency } from "../context/CurrencyContext";
+import { useI18n } from "../i18n/I18nProvider";
 
 const steps = ["CONTACT", "SHIPPING", "PAYMENT", "CONFIRMATION"] as const;
 type Step = (typeof steps)[number];
 
+const BASE_CURRENCY = "PKR";
+
 export default function Checkout() {
   const { items, subtotal, shipping, total, promoCode, promoDiscountAmount, clearCart } = useCart();
   const { addOrder } = useAdminData();
+  const { t } = useI18n();
+  const { currency, countries, country, setCountryCode, format } = useCurrency();
 
   const [step, setStep] = useState<Step>("CONTACT");
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>("Cash on Delivery");
+  // The chosen rail is identified by its configuration code, not its display name: several
+  // countries offer a method called "Bank Card", and only the code says which one this is.
+  const [selectedCode, setSelectedCode] = useState("");
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     email: "",
     name: "",
     phone: "",
     address: "",
     city: "Lahore",
     postalCode: "54600",
-    country: "Pakistan",
+    region: "Punjab",
+    countryCode: country?.code ?? "",
+    countryName: country?.name ?? "Pakistan",
     paymentReference: "",
     copiedField: "",
-  });
+  }));
 
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
 
   const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>([]);
-  const [shippingConfig, setShippingConfig] = useState<ShippingConfig>(DEFAULT_SHIPPING_CONFIG);
+  // What the payment-method architecture says is offered for this destination, in this currency,
+  // with the state resolved server-side (available / coming soon / not configured / unavailable).
+  const [configuredMethods, setConfiguredMethods] = useState<CheckoutMethod[]>([]);
+  const [methodsProblem, setMethodsProblem] = useState<string | null>(null);
+  const [returnNotice, setReturnNotice] = useState<string | null>(null);
   const [isGiftWrap, setIsGiftWrap] = useState(false);
   const [giftMessage, setGiftMessage] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [orderError, setOrderError] = useState<string | null>(null);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string>("");
   const [placedTotal, setPlacedTotal] = useState<number>(0);
+  const [placedReceipt, setPlacedReceipt] = useState<{ currency: string; tax: number; totalInCurrency?: number; country?: string } | null>(null);
   const [emailDelivered, setEmailDelivered] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState<string>("");
   const [hostedPaymentError, setHostedPaymentError] = useState<string | null>(null);
   const [hostedPaymentBusy, setHostedPaymentBusy] = useState(false);
-  // PayFast is only ever offered when the deployment really has merchant
-  // credentials, a settlement currency and a conversion rate configured.
-  const [payfastReady, setPayfastReady] = useState(false);
+
+  // The figures a shopper confirms are the figures the database will charge.
+  const [pricing, setPricing] = useState<PricingQuote | null>(null);
+  const [pricingProblem, setPricingProblem] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    fetchServiceCapabilities().then((caps) => {
-      if (mounted) setPayfastReady(caps.payfast);
-    });
+    // The instruction copy (account titles, reference labels) stays in site_settings. What a
+    // customer may actually submit comes from the payment-method configuration instead.
     fetchPaymentMethodsConfig()
       .then((methods) => {
-        if (!mounted) return;
-        const enabled = methods.filter((m) => m.enabled !== false);
-        setPaymentConfigs(enabled);
-        if (enabled.length > 0 && !enabled.some((m) => m.id === selectedMethod)) {
-          setSelectedMethod(enabled[0].id as PaymentMethod);
-        }
+        if (mounted) setPaymentConfigs(methods.filter((m) => m.enabled !== false));
       })
       .catch(() => setPaymentConfigs([]));
-    fetchShippingConfig().then((c) => {
-      if (mounted) setShippingConfig(c);
-    });
     return () => {
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const visiblePaymentConfigs = paymentConfigs.filter(
-    (m) => m.id !== "PayFast" || payfastReady
+  // A browser that leaves the card page can come back to /checkout?payment=cancelled. The order
+  // row was created before the redirect, so the notice says what really happened: nothing was
+  // charged and the payment is still pending.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") === "cancelled") setReturnNotice(t("checkout.cardPaymentCancelled"));
+  }, [t]);
+
+  useEffect(() => {
+    if (!form.countryCode) return;
+    let alive = true;
+    fetchCheckoutMethods(form.countryCode, currency.code)
+      .then(({ methods, degraded }) => {
+        if (!alive) return;
+        setConfiguredMethods(methods);
+        setMethodsProblem(degraded && methods.length === 0 ? t("checkout.noMethods") : null);
+        setSelectedCode((current) => {
+          // Keep the shopper's choice when the destination or currency changes and that rail is
+          // still submittable; otherwise move to the first one that is.
+          if (methods.some((m) => m.code === current && m.canSubmit)) return current;
+          return methods.find((m) => m.canSubmit)?.code ?? "";
+        });
+      })
+      .catch(() => {
+        if (!alive) return;
+        setConfiguredMethods([]);
+        setSelectedCode("");
+        setMethodsProblem(t("checkout.noMethods"));
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.countryCode, currency.code]);
+
+  // Follow the header destination once it is known, so the address form and the
+  // priced basket always agree.
+  useEffect(() => {
+    if (!country) return;
+    setForm((f) =>
+      f.countryCode === country.code
+        ? f
+        : {
+            ...f,
+            countryCode: country.code,
+            countryName: country.name,
+            region: country.code === "PK" ? "Punjab" : "",
+          }
+    );
+  }, [country]);
+
+  const basket = useMemo(
+    () =>
+      items
+        .map((i) => {
+          const wanted = (i.selectedSize || i.product.size || "50ml").toLowerCase();
+          const variant = i.product.variants?.find((v) => v.size.toLowerCase() === wanted && !v.id.startsWith("v-"));
+          return variant ? { variant_id: variant.id, quantity: i.quantity } : null;
+        })
+        .filter(Boolean) as { variant_id: string; quantity: number }[],
+    [items]
   );
+
+  const unresolvedSizes = items.length > 0 && basket.length !== items.length;
+  const basketSignature = JSON.stringify(basket.map((b) => [b.variant_id, b.quantity]));
+
+  useEffect(() => {
+    if (step === "CONFIRMATION" || basket.length === 0) {
+      setPricing(null);
+      return;
+    }
+    let alive = true;
+    quoteOrder(basket, form.countryCode || null, currency.code, promoCode)
+      .then((result) => {
+        if (!alive) return;
+        if ("error" in result) {
+          setPricing(null);
+          setPricingProblem(result.error);
+        } else {
+          setPricing(result);
+          setPricingProblem(null);
+        }
+      })
+      .catch(() => {
+        if (alive) setPricingProblem(t("checkout.pricingUnavailable"));
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basketSignature, form.countryCode, currency.code, promoCode, step]);
+
+  // The list a shopper sees is the configuration itself. A rail whose provider has no
+  // credentials, or that a Super Admin marked as coming soon, is rendered but not selectable,
+  // and the server refuses it again if something posts it anyway.
+  const selectedMethod = configuredMethods.find((m) => m.code === selectedCode) ?? null;
+  const selectedLabel = selectedMethod?.name ?? "";
+  const submittableMethods = configuredMethods.filter((m) => m.canSubmit);
+  // Nothing settleable for this destination - abroad that is the honest "coming soon" state,
+  // because no international gateway has credentials yet.
+  const noPaymentRoute = configuredMethods.length === 0 || submittableMethods.length === 0;
+  const paymentMethodsAvailable = Boolean(selectedMethod?.canSubmit) && !pricingProblem && !methodsProblem;
+
+  // A hosted rail is a page the browser is sent to after the order exists. Stripe collects the
+  // card there; neither handler ever learns a card number, and neither marks anything paid.
+  const isHostedRail = selectedMethod?.provider === "payfast" || selectedMethod?.provider === "stripe";
 
   // PayFast's documented Custom Integration is a form the browser posts; fetch
   // cannot complete it. The field set, including the signature, is built on the
   // server from the stored order total.
   const startHostedPayment = async () => {
     if (!placedOrderId) return;
+    captureEvent({ event: "payment_started", orderId: placedOrderId, currencyCode: currency.code, countryCode: form.countryCode || null });
     setHostedPaymentBusy(true);
     setHostedPaymentError(null);
     try {
@@ -103,7 +214,7 @@ export default function Checkout() {
       const res = await fetch("/api/payfast-start", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+"Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ orderId: placedOrderId }),
@@ -113,33 +224,79 @@ export default function Checkout() {
         | null;
       if (!res.ok || !payload?.endpoint || !payload.fields) {
         setHostedPaymentError(
-          res.status === 503
-            ? "Online card payment is not available on this store yet. Choose another payment method or contact the atelier."
-            : "The payment page could not be opened. Please try again or choose another payment method."
+          res.status === 503 ? t("checkout.payfastUnavailable") : t("checkout.payfastNotOpened")
         );
         return;
       }
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = payload.endpoint;
-      form.acceptCharset = "UTF-8";
+      const el = document.createElement("form");
+      el.method = "POST";
+      el.action = payload.endpoint;
+      el.acceptCharset = "UTF-8";
       for (const [name, value] of Object.entries(payload.fields)) {
         const input = document.createElement("input");
         input.type = "hidden";
         input.name = name;
         input.value = String(value ?? "");
-        form.appendChild(input);
+        el.appendChild(input);
       }
-      document.body.appendChild(form);
-      form.submit();
+      document.body.appendChild(el);
+      el.submit();
     } catch {
-      setHostedPaymentError("The payment page could not be opened. Please try again.");
+      setHostedPaymentError(t("checkout.payfastNotOpened"));
     } finally {
       setHostedPaymentBusy(false);
     }
   };
 
-  const activeMethodConfig = paymentConfigs.find((m) => m.id === selectedMethod);
+  // 9.4 — reaching checkout is its own funnel step, recorded once per mount. The
+  // shopper's identity is attached by the database from their session, never from
+  // anything typed into this form.
+  useEffect(() => {
+    captureEvent({ event: "begin_checkout", currencyCode: currency.code, countryCode: form.countryCode || null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The card rail asks this deployment's server to open a Stripe Checkout Session for the order
+  // that was just created, then the browser leaves for Stripe's page. Nothing here learns a card
+  // number, and nothing here calls the order paid: that happens in the provider's webhook.
+  const startCardPayment = async () => {
+    if (!placedOrderId || !selectedMethod) return;
+    captureEvent({ event: "payment_started", orderId: placedOrderId, currencyCode: currency.code, countryCode: form.countryCode || null });
+    setHostedPaymentBusy(true);
+    setHostedPaymentError(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch("/api/stripe-start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          orderId: placedOrderId,
+          methodCode: selectedMethod.code,
+          currency: currency.code,
+        }),
+      });
+      const payload = (await res.json().catch(() => null)) as { url?: string } | null;
+      if (!res.ok || !payload?.url) {
+        setHostedPaymentError(
+          res.status === 503 ? t("checkout.payfastUnavailable") : t("checkout.payfastNotOpened")
+        );
+        return;
+      }
+      window.location.assign(payload.url);
+    } catch {
+      setHostedPaymentError(t("checkout.payfastNotOpened"));
+    } finally {
+      setHostedPaymentBusy(false);
+    }
+  };
+
+  // Instruction copy is keyed by the method's display name, so the shopkeeper's edits on the
+  // Payments page keep applying to the rails they describe.
+  const activeMethodConfig = paymentConfigs.find((m) => m.id === selectedLabel);
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -155,12 +312,12 @@ export default function Checkout() {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      setProofError("Please select a valid image file (PNG, JPG, WebP).");
+      setProofError(t("checkout.invalidImage"));
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      setProofError("Payment screenshot file size must be less than 10MB.");
+      setProofError(t("checkout.imageTooBig"));
       return;
     }
 
@@ -185,31 +342,32 @@ export default function Checkout() {
 
     try {
       const cfg = activeMethodConfig;
-      const requiresReference = Boolean(cfg?.requiresReference);
-      const requiresProof = Boolean(cfg?.requiresProof);
+      // Whether evidence is required is a property of the configured rail, not of the copy that
+      // describes it, so a rail cannot silently stop asking for a reference.
+      const requiresReference = Boolean(selectedMethod?.requiresReference);
+      const requiresProof = Boolean(selectedMethod?.requiresProof);
+
+      if (!selectedMethod || !selectedMethod.canSubmit) {
+        setOrderError(t("checkout.noMethods"));
+        setIsProcessing(false);
+        return;
+      }
 
       if (requiresReference && !form.paymentReference.trim()) {
-        setProofError(`Enter your ${cfg?.referenceLabel || "transaction reference"} so we can match your payment.`);
+        setProofError(t("checkout.needReference", { label: cfg?.referenceLabel || t("checkout.referenceFallback") }));
         setIsProcessing(false);
         return;
       }
       if (requiresProof && !paymentProofFile) {
-        setProofError("Attach a screenshot of your payment confirmation.");
+        setProofError(t("checkout.needProof"));
         setIsProcessing(false);
         return;
       }
 
       // Every line must resolve to a real catalogue size before we ask the
       // database to price and reserve it.
-      const rpcItems = items
-        .map((i) => {
-          const wanted = (i.selectedSize || i.product.size || "50ml").toLowerCase();
-          const variant = i.product.variants?.find((v) => v.size.toLowerCase() === wanted && !v.id.startsWith("v-"));
-          return variant ? { variant_id: variant.id, quantity: i.quantity } : null;
-        });
-
-      if (rpcItems.some((r) => r === null)) {
-        setOrderError("One of the selected sizes is no longer available. Please review your bag.");
+      if (unresolvedSizes) {
+        setOrderError(t("checkout.sizeUnavailable"));
         setIsProcessing(false);
         return;
       }
@@ -223,7 +381,7 @@ export default function Checkout() {
       let uploadedProofPath = "";
       if (requiresProof && paymentProofFile) {
         if (!authUser) {
-          setProofError("Please sign in to attach a payment screenshot, or send the reference with your order.");
+          setProofError(t("checkout.signInForProof"));
           setIsProcessing(false);
           return;
         }
@@ -235,7 +393,7 @@ export default function Checkout() {
 
         if (uploadErr || !uploadData) {
           console.error("Payment screenshot upload failed:", uploadErr?.message || "storage unavailable");
-          setProofError("Your payment screenshot could not be uploaded. Please try again.");
+          setProofError(t("checkout.proofUploadFailed"));
           setIsProcessing(false);
           return;
         }
@@ -250,19 +408,21 @@ export default function Checkout() {
         shippingAddress: {
           street: form.address,
           city: form.city,
-          state: "Punjab",
+          state: form.region,
           zip: form.postalCode,
-          country: form.country,
+          country: form.countryName,
         },
-        paymentMethod: selectedMethod,
+        paymentMethod: selectedLabel,
         couponCode: promoCode,
-        items: rpcItems as { variant_id: string; quantity: number }[],
+        items: basket,
+        countryCode: form.countryCode || null,
+        currency: currency.code,
       });
 
       if (!placed.success || !placed.orderId) {
         // Nothing was reserved and nothing was written: keep the bag intact.
         console.error("Order could not be registered:", placed.error);
-        setOrderError("Your order could not be registered. Please try again.");
+        setOrderError(placed.error || t("checkout.orderFailed"));
         setIsProcessing(false);
         return;
       }
@@ -270,6 +430,12 @@ export default function Checkout() {
       setPlacedOrderNumber(placed.orderNumber || "");
       setPlacedOrderId(placed.orderId || "");
       setPlacedTotal(placed.total ?? total);
+      setPlacedReceipt({
+        currency: placed.currency || BASE_CURRENCY,
+        tax: placed.tax ?? 0,
+        totalInCurrency: placed.totalInCurrency,
+        country: placed.destinationCountry,
+      });
 
       if (uploadedProofPath || form.paymentReference) {
         const proof = await submitPaymentProofRpc(placed.orderId, {
@@ -279,9 +445,7 @@ export default function Checkout() {
         });
         if (!proof.success) {
           console.error("Payment evidence could not be attached:", proof.error);
-          setOrderError(
-            `${placed.orderNumber} was registered, but your payment evidence was not attached. Please send it to the concierge.`
-          );
+          setOrderError(t("checkout.proofNotAttached", { order: placed.orderNumber || "" }));
         }
       }
 
@@ -289,9 +453,7 @@ export default function Checkout() {
         const gift = await setOrderGiftOptionsRpc(placed.orderId, isGiftWrap, giftMessage);
         if (!gift.success) {
           console.error("Gift presentation request could not be saved:", gift.error);
-          setOrderError(
-            `${placed.orderNumber} was registered, but the gift presentation was not saved. Please tell the concierge so it can be added before dispatch.`
-          );
+          setOrderError(t("checkout.giftNotSaved", { order: placed.orderNumber || "" }));
         }
       }
 
@@ -299,9 +461,7 @@ export default function Checkout() {
         const notes = await saveCustomerOrderNotes(placed.orderId, deliveryNotes.trim());
         if (!notes.success) {
           console.error("Delivery note could not be saved:", notes.error);
-          setOrderError(
-            `${placed.orderNumber} was registered, but your delivery note was not saved.`
-          );
+          setOrderError(t("checkout.notesNotSaved", { order: placed.orderNumber || "" }));
         }
       }
 
@@ -319,7 +479,7 @@ export default function Checkout() {
         shippingCost: placed.shipping ?? shipping,
         status: "Pending",
         paymentStatus: requiresProof || requiresReference ? "Verification Pending" : "Pending",
-        paymentMethod: selectedMethod,
+        paymentMethod: selectedLabel,
         paymentReference: form.paymentReference || undefined,
         paymentProofUrl: uploadedProofPath || undefined,
         shippingStatus: "Unfulfilled",
@@ -327,16 +487,16 @@ export default function Checkout() {
         shippingAddress: {
           street: form.address,
           city: form.city,
-          state: "Punjab",
+          state: form.region,
           zip: form.postalCode,
-          country: form.country,
+          country: form.countryName,
         },
         billingAddress: {
           street: form.address,
           city: form.city,
-          state: "Punjab",
+          state: form.region,
           zip: form.postalCode,
-          country: form.country,
+          country: form.countryName,
         },
         items: items.map((i) => ({
           id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -358,10 +518,19 @@ export default function Checkout() {
       setEmailDelivered(delivered > 0);
 
       clearCart();
+      // 9.4 — the order exists, so the funnel's last step is recorded against its
+      // id. Whether the money settled is a separate event, recorded where the
+      // settled status is actually known.
+      captureEvent({
+        event: "order_completed",
+        orderId: placed.orderId,
+        currencyCode: placed.currency || currency.code,
+        countryCode: placed.destinationCountry || form.countryCode || null,
+      });
       setStep("CONFIRMATION");
     } catch (error: any) {
       console.error("Order processing error:", error);
-      setOrderError("Your order could not be placed. Please try again.");
+      setOrderError(t("checkout.placeFailed"));
     } finally {
       setIsProcessing(false);
     }
@@ -379,11 +548,35 @@ export default function Checkout() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const stepLabel: Record<Step, string> = {
+    CONTACT: t("checkout.stepContact"),
+    SHIPPING: t("checkout.stepShipping"),
+    PAYMENT: t("checkout.stepPayment"),
+    CONFIRMATION: t("checkout.stepConfirmation"),
+  };
+
+  const deliveryWindow = useMemo(() => {
+    if (!country) return "";
+    const min = country.deliveryDaysMin;
+    const max = country.deliveryDaysMax;
+    if (min && max) return min === max ? t("shipping.daysOne", { count: max }) : t("shipping.daysRange", { from: min, to: max });
+    if (max) return t("shipping.daysUpTo", { count: max });
+    return "";
+  }, [country, t]);
+
+  // Server figures once they arrive; the local bag estimate until then, so the panel
+  // is never blank while the quote is in flight.
+  const shownSubtotal = pricing?.subtotal ?? subtotal + promoDiscountAmount;
+  const shownDiscount = pricing?.discount ?? promoDiscountAmount;
+  const shownShipping = pricing?.shipping ?? shipping;
+  const shownTax = pricing?.tax ?? 0;
+  const shownTotal = pricing?.total ?? total;
+
   if (items.length === 0 && step !== "CONFIRMATION") {
     return (
       <div className="pt-40 pb-32 text-center bg-navy min-h-screen">
-        <p className="text-muted mb-8 font-sans text-sm">Your bag is empty — add a fragrance before checking out.</p>
-        <Link to="/collections" className="btn-gold-fill font-sans text-xs">DISCOVER FRAGRANCES →</Link>
+        <p className="text-muted mb-8 font-sans text-sm">{t("checkout.empty")}</p>
+        <Link to="/collections" className="btn-gold-fill font-sans text-xs">{t("checkout.discover")}</Link>
       </div>
     );
   }
@@ -407,7 +600,9 @@ export default function Checkout() {
                   >
                     {done ? <Check size={13} /> : i + 1}
                   </div>
-                  <span className={`text-[11px] tracking-widest hidden sm:inline uppercase ${active || done ? "text-ivory" : "text-muted"}`}>{s}</span>
+                  <span className={`text-[11px] tracking-widest hidden sm:inline uppercase ${active || done ? "text-ivory" : "text-muted"}`}>
+                    {stepLabel[s]}
+                  </span>
                 </div>
                 {i < steps.length - 1 && <div className="w-6 sm:w-12 h-px bg-gold/20" />}
               </div>
@@ -420,46 +615,52 @@ export default function Checkout() {
             <div className="w-16 h-16 rounded-full border border-gold mx-auto flex items-center justify-center mb-8 bg-gold/10">
               <Check size={28} className="text-gold" />
             </div>
-            <div className="text-[10px] font-mono tracking-[4px] text-gold uppercase mb-2">ORDER REGISTERED</div>
-            <h1 className="font-serif text-3xl font-bold mb-4">Acquisition Confirmed</h1>
-            <p className="text-muted leading-relaxed text-sm mb-2">Thank you, {form.name || "valued client"}.</p>
+            <div className="text-[10px] font-mono tracking-[4px] text-gold uppercase mb-2">{t("checkout.orderRegistered")}</div>
+            <h1 className="font-serif text-3xl font-bold mb-4">{t("checkout.acquisitionConfirmed")}</h1>
+            <p className="text-muted leading-relaxed text-sm mb-2">{t("checkout.thankYou", { name: form.name || t("checkout.valuedClient") })}</p>
             <p className="text-muted leading-relaxed text-xs mb-8">
-              Your order <span className="text-gold font-mono font-bold">#{placedOrderNumber}</span> has been placed.{" "}
+              {t("checkout.orderPlaced")} <span className="text-gold font-mono font-bold">#{placedOrderNumber}</span>{" "}
+              {t("checkout.hasBeenPlaced")}{" "}
               {emailDelivered
-                ? `A receipt has been sent to ${form.email || "your email"}.`
-                : `Email delivery is not available on this store yet, so no receipt was sent — keep this reference and follow the order from your account or with the tracking page.`}
+                ? t("checkout.emailReceipt", { email: form.email || t("checkout.emailFallback") })
+                : t("checkout.emailUnavailable")}
             </p>
 
-            <div className="border border-gold/25 p-6 text-left mb-8 bg-navy2 rounded-lg space-y-3 font-sans text-xs">
-              <div className="flex justify-between text-muted"><span>Order Reference:</span><span className="text-gold font-mono font-bold">{placedOrderNumber}</span></div>
-              <div className="flex justify-between text-muted"><span>Total Amount:</span><span className="text-gold font-mono font-bold">{formatPKR(placedTotal)}</span></div>
-              <div className="flex justify-between text-muted"><span>Selected Payment Method:</span><span className="text-ivory font-semibold">{selectedMethod}</span></div>
-              <div className="flex justify-between text-muted"><span>Payment Status:</span><span className="text-amber-300 font-semibold">{Boolean(activeMethodConfig?.requiresReference || activeMethodConfig?.requiresProof) ? "Awaiting verification" : "Awaiting delivery collection"}</span></div>
-              <div className="flex justify-between text-muted"><span>Typical Delivery:</span><span className="text-ivory font-semibold">{shippingConfig.estimatedDays}</span></div>
-              <div className="flex justify-between text-muted"><span>Gift Presentation:</span><span className="text-ivory font-semibold">{isGiftWrap ? "Requested with note card" : "Standard packaging"}</span></div>
+            <div className="border border-gold/25 p-6 text-start mb-8 bg-navy2 rounded-lg space-y-3 font-sans text-xs">
+              <div className="flex justify-between text-muted"><span>{t("checkout.orderReference")}</span><span className="text-gold font-mono font-bold">{placedOrderNumber}</span></div>
+              <div className="flex justify-between text-muted"><span>{t("checkout.totalAmountLabel")}</span><span className="text-gold font-mono font-bold">{format(placedTotal)}</span></div>
+              {placedReceipt && placedReceipt.tax > 0 && (
+                <div className="flex justify-between text-muted"><span>{t("checkout.taxLine")}</span><span className="text-ivory font-mono">{format(placedReceipt.tax)}</span></div>
+              )}
+              <div className="flex justify-between text-muted"><span>{t("checkout.currencyLabel")}</span><span className="text-ivory font-semibold">{placedReceipt?.currency ?? currency.code}</span></div>
+              <div className="flex justify-between text-muted"><span>{t("checkout.deliveryToLabel")}</span><span className="text-ivory font-semibold">{form.countryName}</span></div>
+              <div className="flex justify-between text-muted"><span>{t("checkout.selectedPayment")}</span><span className="text-ivory font-semibold">{selectedLabel}</span></div>
+              <div className="flex justify-between text-muted"><span>{t("checkout.paymentStatusLabel")}</span><span className="text-amber-300 font-semibold">{selectedMethod?.requiresReference || selectedMethod?.requiresProof || isHostedRail ? t("checkout.awaitingVerification") : t("checkout.awaitingCollection")}</span></div>
+              <div className="flex justify-between text-muted"><span>{t("checkout.typicalDeliveryLabel")}</span><span className="text-ivory font-semibold">{[country?.deliveryMethod, deliveryWindow].filter(Boolean).join(" · ") || "—"}</span></div>
+              <div className="flex justify-between text-muted"><span>{t("checkout.giftPresentationLabel")}</span><span className="text-ivory font-semibold">{isGiftWrap ? t("checkout.withNoteCard") : t("checkout.standardPackaging")}</span></div>
             </div>
 
             <p className="text-[11px] text-muted font-light mb-6 leading-relaxed">
-              You can follow this order from your account, or with the tracking reference on the Track Order page once it is dispatched.
+              {t("checkout.trackNote")}
             </p>
 
-            <div className="flex items-center justify-center space-x-4">
-              {selectedMethod === "PayFast" && (
+            <div className="flex items-center justify-center gap-4">
+              {isHostedRail && (
                 <button
                   type="button"
-                  onClick={startHostedPayment}
+                  onClick={selectedMethod?.provider === "stripe" ? startCardPayment : startHostedPayment}
                   disabled={hostedPaymentBusy || !placedOrderId}
                   className="btn-gold-fill font-sans text-xs disabled:opacity-50"
                 >
-                  {hostedPaymentBusy ? "OPENING…" : "CONTINUE TO SECURE PAYMENT →"}
+                  {hostedPaymentBusy ? t("checkout.opening") : t("checkout.continueSecure")}
                 </button>
               )}
               <Link to="/account/orders" className="btn-gold font-sans text-xs">
-                TRACK ORDER →
+                {t("checkout.trackOrder")}
               </Link>
             </div>
 
-            {selectedMethod === "PayFast" && hostedPaymentError && (
+            {isHostedRail && hostedPaymentError && (
               <p role="alert" className="text-[11px] text-rose-300 mt-4 max-w-md mx-auto leading-relaxed">
                 {hostedPaymentError}
               </p>
@@ -480,27 +681,73 @@ export default function Checkout() {
                 {step === "CONTACT" && (
                   <>
                     <div className="border-b border-gold/20 pb-3">
-                      <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">STEP 1 OF 3</span>
-                      <h2 className="font-serif text-2xl text-ivory font-bold">Client Contact Information</h2>
+                      <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">{t("checkout.stepOfThree", { n: 1 })}</span>
+                      <h2 className="font-serif text-2xl text-ivory font-bold">{t("checkout.contactHeading")}</h2>
                     </div>
-                    <Field label="Email Address" type="email" value={form.email} onChange={(v) => update("email", v)} required placeholder="client@domain.com" />
-                    <Field label="Full Legal Name" value={form.name} onChange={(v) => update("name", v)} required placeholder="e.g. Lord Alexander Sinclair" />
-                    <Field label="Contact Phone Number" type="tel" value={form.phone} onChange={(v) => update("phone", v)} required placeholder="+92 300 8472910" />
+                    <Field label={t("checkout.email")} type="email" value={form.email} onChange={(v) => update("email", v)} required placeholder={t("checkout.emailPlaceholder")} />
+                    <Field label={t("checkout.fullName")} value={form.name} onChange={(v) => update("name", v)} required placeholder={t("checkout.fullNamePlaceholder")} />
+                    <Field label={t("checkout.phone")} type="tel" value={form.phone} onChange={(v) => update("phone", v)} required placeholder="+92 300 8472910" />
                   </>
                 )}
 
                 {step === "SHIPPING" && (
                   <>
                     <div className="border-b border-gold/20 pb-3">
-                      <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">STEP 2 OF 3</span>
-                      <h2 className="font-serif text-2xl text-ivory font-bold">Boutique Delivery Address</h2>
+                      <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">{t("checkout.stepOfThree", { n: 2 })}</span>
+                      <h2 className="font-serif text-2xl text-ivory font-bold">{t("checkout.shippingHeading")}</h2>
                     </div>
-                    <Field label="Street Address" value={form.address} onChange={(v) => update("address", v)} required placeholder="Residence, House / Apartment No…" />
+
+                    <CountryField
+                      countries={countries}
+                      value={form.countryCode}
+                      onChange={(code) => {
+                        const picked = countries.find((c) => c.code === code);
+                        if (!picked) return;
+                        setCountryCode(picked.code);
+                        setForm((f) => ({
+                          ...f,
+                          countryCode: picked.code,
+                          countryName: picked.name,
+                          region: picked.code === "PK" ? "Punjab" : "",
+                        }));
+                      }}
+                      label={t("checkout.country")}
+                      unavailableSuffix={t("checkout.deliveryUnavailableSuffix")}
+                    />
+
+                    {pricingProblem && (
+                      <p role="status" className="text-[11px] text-amber-300 font-sans leading-relaxed">
+                        {pricingProblem}
+                      </p>
+                    )}
+
+                    <Field label={t("checkout.street")} value={form.address} onChange={(v) => update("address", v)} required placeholder={t("checkout.streetPlaceholder")} />
                     <div className="grid sm:grid-cols-2 gap-6">
-                      <Field label="City" value={form.city} onChange={(v) => update("city", v)} required />
-                      <Field label="Postal Code" value={form.postalCode} onChange={(v) => update("postalCode", v)} required />
+                      <Field label={t("checkout.city")} value={form.city} onChange={(v) => update("city", v)} required />
+                      <Field label={t("checkout.postalCode")} value={form.postalCode} onChange={(v) => update("postalCode", v)} required />
                     </div>
-                    <Field label="Country" value={form.country} onChange={(v) => update("country", v)} required />
+                    <Field label={t("checkout.region")} value={form.region} onChange={(v) => update("region", v)} placeholder={t("checkout.regionPlaceholder")} />
+
+                    {country?.enabled && (
+                      <div className="rounded-lg border border-gold/25 bg-navy2/60 p-4 font-sans text-xs space-y-1.5">
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-gold">{t("shipping.deliveryTo", { country: country.name })}</p>
+                        <p className="text-ivory">
+                          {[country.deliveryMethod, deliveryWindow].filter(Boolean).join(" · ")}
+                        </p>
+                        <p className="text-muted">
+                          {shownShipping === 0
+                            ? t("shipping.complimentary")
+                            : t("shipping.fee", { amount: format(shownShipping) })}
+                          {country.freeShippingThreshold != null && shownShipping > 0 && (
+                            <> {t("shipping.freeOver", { amount: format(country.freeShippingThreshold) })}</>
+                          )}
+                        </p>
+                        {country.notes && <p className="text-muted leading-relaxed">{country.notes}</p>}
+                        {country.restrictions && (
+                          <p className="text-muted leading-relaxed">{t("shipping.restrictions")}: {country.restrictions}</p>
+                        )}
+                      </div>
+                    )}
 
                     <div className="space-y-3 pt-2 border-t border-gold/15">
                       <label className="flex items-start gap-3 cursor-pointer">
@@ -511,9 +758,9 @@ export default function Checkout() {
                           className="mt-0.5 w-4 h-4 accent-[#c9a961] shrink-0"
                         />
                         <span className="font-sans">
-                          <span className="block text-xs text-ivory font-medium">Present it as a gift</span>
+                          <span className="block text-xs text-ivory font-medium">{t("checkout.giftTitle")}</span>
                           <span className="block text-[11px] text-muted font-light leading-relaxed">
-                            Request a gift note and the atelier will confirm what it can do before dispatch.
+                            {t("checkout.giftBody")}
                           </span>
                         </span>
                       </label>
@@ -521,7 +768,7 @@ export default function Checkout() {
                       {isGiftWrap && (
                         <div className="space-y-1">
                           <label htmlFor="gift-message" className="text-[10px] uppercase tracking-widest text-gold font-mono">
-                            Gift message
+                            {t("checkout.giftMessage")}
                           </label>
                           <textarea
                             id="gift-message"
@@ -529,16 +776,16 @@ export default function Checkout() {
                             onChange={(e) => setGiftMessage(e.target.value)}
                             rows={3}
                             maxLength={500}
-                            placeholder="Write the message you would like the atelier to include."
+                            placeholder={t("checkout.giftMessagePlaceholder")}
                             className="w-full bg-navy border border-gold/25 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold font-sans"
                           />
-                          <p className="text-[10px] text-muted font-mono text-right">{giftMessage.length}/500</p>
+                          <p className="text-[10px] text-muted font-mono text-end">{giftMessage.length}/500</p>
                         </div>
                       )}
 
                       <div className="space-y-1">
                         <label htmlFor="delivery-notes" className="text-[10px] uppercase tracking-widest text-gold font-mono">
-                          Delivery notes (optional)
+                          {t("checkout.deliveryNotes")}
                         </label>
                         <textarea
                           id="delivery-notes"
@@ -546,14 +793,10 @@ export default function Checkout() {
                           onChange={(e) => setDeliveryNotes(e.target.value)}
                           rows={2}
                           maxLength={500}
-                          placeholder="Gate code, preferred arrival window, who to call on arrival."
+                          placeholder={t("checkout.deliveryNotesPlaceholder")}
                           className="w-full bg-navy border border-gold/25 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold font-sans"
                         />
                       </div>
-
-                      <p className="text-[11px] text-muted font-light">
-                        Typical delivery time: <span className="text-ivory">{shippingConfig.estimatedDays}</span>.
-                      </p>
                     </div>
                   </>
                 )}
@@ -561,162 +804,224 @@ export default function Checkout() {
                 {step === "PAYMENT" && (
                   <>
                     <div className="border-b border-gold/20 pb-3">
-                      <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">STEP 3 OF 3</span>
-                      <h2 className="font-serif text-2xl text-ivory font-bold">Select Payment Method (Pakistan)</h2>
+                      <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold">{t("checkout.stepOfThree", { n: 3 })}</span>
+                      <h2 className="font-serif text-2xl text-ivory font-bold">
+                        {t("checkout.paymentHeading", { country: form.countryName })}
+                      </h2>
                     </div>
 
-                    {/* Payment Method Selector Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans" role="radiogroup" aria-label="Payment method">
-                      {visiblePaymentConfigs.map((m) => {
-                        const Icon =
-                          m.id === "JazzCash" ? Smartphone
-                          : m.id === "Raast" ? Banknote
-                          : m.id === "Bank Transfer" ? Building2
-                          : m.id === "Cash on Delivery" ? Truck
-                          : CreditCard;
-                        const isSelected = selectedMethod === m.id;
-                        return (
-                          <label
-                            key={m.id}
-                            className={`p-4 rounded-lg border transition-all space-y-2 cursor-pointer ${
-                              isSelected
-                                ? "bg-navy2 border-gold shadow-lg ring-1 ring-gold/40"
-                                : "bg-navy/60 border-gold/20 hover:border-gold/40"
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="payment_method"
-                              value={m.id}
-                              checked={isSelected}
-                              onChange={() => setSelectedMethod(m.id as PaymentMethod)}
-                              className="sr-only"
-                            />
-                            <div className="flex items-center justify-between">
-                              <Icon className={`w-5 h-5 ${isSelected ? "text-gold" : "text-muted"}`} />
-                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? "border-gold bg-gold" : "border-gold/30"}`}>
-                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-navy" />}
-                              </div>
-                            </div>
-                            <div>
-                              <h4 className="font-serif font-bold text-xs text-ivory">{m.label}</h4>
-                              <p className="text-[10px] text-muted leading-tight mt-0.5">{m.description}</p>
-                            </div>
-                          </label>
-                        );
-                      })}
-                      {paymentConfigs.length === 0 && (
-                        <p className="text-[11px] text-muted font-light sm:col-span-2">
-                          No payment methods are configured yet. Please contact the concierge to complete your order.
-                        </p>
-                      )}
-                    </div>
+                    {returnNotice && (
+                      <p role="status" className="rounded-lg border border-gold/30 bg-navy2 p-4 text-[11px] text-ivory leading-relaxed font-sans">
+                        {returnNotice}
+                      </p>
+                    )}
 
-                    {/* Payment Method Specific Instructions Box */}
-                    <div className="bg-navy2 border border-gold/30 p-5 rounded-lg space-y-4 font-sans text-xs">
-                      {activeMethodConfig && (
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-2 text-gold font-bold uppercase text-[11px] font-mono">
-                            <Truck className="w-4 h-4" />
-                            <span>{activeMethodConfig.instructionHeading || `${activeMethodConfig.label} instructions`}</span>
-                          </div>
-
-                          {activeMethodConfig.id === "Cash on Delivery" ? (
-                            <p className="text-muted leading-relaxed">
-                              Pay the exact order total of <strong className="text-gold font-mono">{formatPKR(total)}</strong> in cash to the courier when your parcel arrives.
-                            </p>
-                          ) : (
-                            <div className="bg-navy p-3 rounded border border-gold/15 space-y-1.5 font-mono text-[11px]">
-                              {activeMethodConfig.details.map((d) => (
-                                <p key={d.label} className="flex justify-between gap-3">
-                                  <span className="text-muted">{d.label}:</span>
-                                  <span className={`text-ivory font-bold flex items-center gap-1 text-right ${d.copyValue ? "text-gold" : ""}`}>
-                                    {d.value}
-                                    {d.copyValue && (
-                                      <button
-                                        type="button"
-                                        aria-label={`Copy ${d.label}`}
-                                        onClick={() => copyToClipboard(d.copyValue || d.value, d.label)}
-                                        className="hover:text-ivory shrink-0"
-                                      >
-                                        <Copy className="w-3 h-3" />
-                                      </button>
-                                    )}
-                                  </span>
-                                </p>
-                              ))}
-                            </div>
-                          )}
-
-                          {activeMethodConfig.requiresReference && (
-                            <Field
-                              label={activeMethodConfig.referenceLabel || "Transaction Reference"}
-                              value={form.paymentReference}
-                              onChange={(v) => update("paymentReference", v)}
-                              placeholder={activeMethodConfig.referencePlaceholder || "Enter the reference from your transfer"}
-                              required
-                            />
-                          )}
-                        </div>
-                      )}
-
-                      {/* Payment Screenshot Upload Field for Digital Transfer Methods */}
-                      {activeMethodConfig?.requiresProof && (
-                        <div className="space-y-2 pt-2 border-t border-gold/15">
-                          <span className="text-[10px] tracking-widest text-gold uppercase block font-mono">
-                            Upload Payment Screenshot / Transfer Receipt <span className="text-gold">*</span>
-                          </span>
-
-                          {!paymentProofPreview ? (
-                            <label className="border-2 border-dashed border-gold/30 hover:border-gold/60 bg-navy p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors">
-                              <input
-                                type="file"
-                                accept="image/png,image/jpeg,image/webp"
-                                onChange={handleProofFileChange}
-                                className="hidden"
-                              />
-                              <span className="text-xs text-ivory font-medium">Click to select screenshot image</span>
-                              <span className="text-[10px] text-muted mt-1">Supports PNG, JPG, WebP up to 10MB</span>
-                            </label>
-                          ) : (
-                            <div className="bg-navy p-3 rounded border border-gold/30 flex items-center justify-between">
-                              <div className="flex items-center space-x-3 overflow-hidden">
-                                <img
-                                  src={paymentProofPreview}
-                                  alt="Payment Screenshot Preview"
-                                  className="w-12 h-12 object-cover rounded border border-gold/20 shrink-0"
-                                />
-                                <div className="min-w-0">
-                                  <span className="text-xs font-serif font-bold text-ivory block truncate">
-                                    {paymentProofFile?.name}
-                                  </span>
-                                  <span className="text-[10px] font-mono text-emerald-400 block">
-                                    ✓ Screenshot attached ({(paymentProofFile!.size / 1024).toFixed(1)} KB)
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={removeProofFile}
-                                className="px-2 py-1 text-[10px] font-mono uppercase bg-rose-950/60 text-rose-300 border border-rose-800/40 rounded hover:bg-rose-900"
+                        {/* Payment Method Selector Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans" role="radiogroup" aria-label={t("checkout.paymentMethodGroup")}>
+                          {configuredMethods.map((m) => {
+                            const Icon =
+                              m.type === "wallet" ? Smartphone
+                              : m.type === "instant" ? Banknote
+                              : m.type === "bank_transfer" ? Building2
+                              : m.type === "cash" ? Truck
+                              : CreditCard;
+                            const isSelected = selectedCode === m.code;
+                            // A rail the server says cannot be submitted is shown, clearly marked,
+                            // and never selectable - it is information, not an invitation.
+                            const locked = !m.canSubmit;
+                            const badge =
+                              m.state === "coming_soon" || m.state === "not_configured"
+                                ? t("checkout.methodComingSoon")
+                                : m.state === "unavailable" || m.state === "disabled"
+                                  ? t("checkout.methodUnavailable")
+                                  : null;
+                            return (
+                              <label
+                                key={m.code}
+                                aria-disabled={locked || undefined}
+                                className={`p-4 rounded-lg border transition-all space-y-2 ${
+                                  isSelected
+                                    ? "bg-navy2 border-gold shadow-lg ring-1 ring-gold/40"
+                                    : locked
+                                      ? "bg-navy/40 border-gold/10 opacity-60 cursor-not-allowed"
+                                      : "bg-navy/60 border-gold/20 hover:border-gold/40 cursor-pointer"
+                                }`}
                               >
-                                Remove
-                              </button>
+                                <input
+                                  type="radio"
+                                  name="payment_method"
+                                  value={m.code}
+                                  checked={isSelected}
+                                  disabled={locked}
+                                  onChange={() => {
+                                    if (!locked) setSelectedCode(m.code);
+                                  }}
+                                  className="sr-only"
+                                />
+                                <div className="flex items-center justify-between">
+                                  <Icon className={`w-5 h-5 ${isSelected ? "text-gold" : "text-muted"}`} />
+                                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? "border-gold bg-gold" : "border-gold/30"}`}>
+                                    {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-navy" />}
+                                  </div>
+                                </div>
+                                <div>
+                                  <h4 className="font-serif font-bold text-xs text-ivory flex items-center gap-2 flex-wrap">
+                                    <span>{m.name}</span>
+                                    {badge && (
+                                      <span className="px-2 py-0.5 rounded-full border border-gold/40 text-[9px] font-mono uppercase tracking-[1.5px] text-gold">
+                                        {badge}
+                                      </span>
+                                    )}
+                                  </h4>
+                                  <p className="text-[10px] text-muted leading-tight mt-0.5">{m.description}</p>
+                                  {m.provider === "stripe" && !badge && (
+                                    <p className="text-[9px] text-muted font-mono uppercase tracking-[1.5px] mt-1">
+                                      {t("checkout.poweredByProvider", { provider: "Stripe" })}
+                                    </p>
+                                  )}
+                                </div>
+                              </label>
+                            );
+                          })}
+                          {configuredMethods.length === 0 && (
+                            <p className="text-[11px] text-muted font-light sm:col-span-2">
+                              {methodsProblem || t("checkout.noMethods")}
+                            </p>
+                          )}
+                        </div>
+
+                        {noPaymentRoute && (
+                          <div className="rounded-lg border border-gold/30 bg-navy2 p-6 font-sans space-y-3">
+                            <div className="flex items-center gap-2 text-gold">
+                              <Globe2 className="w-5 h-5" />
+                              <span className="text-xs font-mono uppercase tracking-[2px]">{t("international.paymentsComingSoon")}</span>
+                            </div>
+                            <p className="text-[11px] text-muted leading-relaxed">{t("international.paymentsComingSoonBody")}</p>
+                            <p className="text-[11px] text-ivory leading-relaxed">
+                              {t("checkout.contactConcierge", { country: form.countryName })}
+                            </p>
+                            <Link
+                              to="/contact"
+                              className="inline-block px-4 py-2 border border-gold/40 rounded text-[11px] uppercase tracking-widest text-gold hover:bg-gold/10 transition-colors"
+                            >
+                              {t("checkout.contactUs")}
+                            </Link>
+                          </div>
+                        )}
+
+                        {/* Payment Method Specific Instructions Box */}
+                        <div className="bg-navy2 border border-gold/30 p-5 rounded-lg space-y-4 font-sans text-xs">
+                          {selectedMethod && (activeMethodConfig || selectedMethod.canSubmit) && (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 text-gold font-bold uppercase text-[11px] font-mono">
+                                <Truck className="w-4 h-4" />
+                                <span>{activeMethodConfig?.instructionHeading || `${selectedLabel} ${t("checkout.instructionsSuffix")}`}</span>
+                              </div>
+
+                              {selectedMethod.provider === "stripe" && !activeMethodConfig && (
+                                <p className="text-muted leading-relaxed">
+                                  {t("checkout.cardSecureBody")}{" "}
+                                  <span className="text-ivory">{selectedMethod.description}</span>
+                                </p>
+                              )}
+
+                              {activeMethodConfig && (activeMethodConfig.id === "Cash on Delivery" ? (
+                                <p className="text-muted leading-relaxed">
+                                  {t("checkout.codBodyLead")} <strong className="text-gold font-mono">{format(shownTotal)}</strong>{" "}
+                                  {t("checkout.codBodyTail")}
+                                </p>
+                              ) : (
+                                <div className="bg-navy p-3 rounded border border-gold/15 space-y-1.5 font-mono text-[11px]">
+                                  {activeMethodConfig.details.map((d) => (
+                                    <p key={d.label} className="flex justify-between gap-3">
+                                      <span className="text-muted">{d.label}:</span>
+                                      <span className={`text-ivory font-bold flex items-center gap-1 text-end ${d.copyValue ? "text-gold" : ""}`}>
+                                        {d.value}
+                                        {d.copyValue && (
+                                          <button
+                                            type="button"
+                                            aria-label={t("product.copyField", { label: d.label })}
+                                            onClick={() => copyToClipboard(d.copyValue || d.value, d.label)}
+                                            className="hover:text-ivory shrink-0"
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                      </span>
+                                    </p>
+                                  ))}
+                                </div>
+                              ))}
+
+                              {selectedMethod.requiresReference && (
+                                <Field
+                                  label={activeMethodConfig?.referenceLabel || t("checkout.referenceFallback")}
+                                  value={form.paymentReference}
+                                  onChange={(v) => update("paymentReference", v)}
+                                  placeholder={activeMethodConfig?.referencePlaceholder || t("checkout.referencePlaceholder")}
+                                  required
+                                />
+                              )}
                             </div>
                           )}
 
-                          {proofError && (
-                            <p className="text-[11px] text-rose-400 font-mono mt-1">{proofError}</p>
+                          {/* Payment Screenshot Upload Field for Digital Transfer Methods */}
+                          {selectedMethod?.requiresProof && (
+                            <div className="space-y-2 pt-2 border-t border-gold/15">
+                              <span className="text-[10px] tracking-widest text-gold uppercase block font-mono">
+                                {t("checkout.uploadProof")} <span className="text-gold">*</span>
+                              </span>
+
+                              {!paymentProofPreview ? (
+                                <label className="border-2 border-dashed border-gold/30 hover:border-gold/60 bg-navy p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors">
+                                  <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    onChange={handleProofFileChange}
+                                    className="hidden"
+                                  />
+                                  <span className="text-xs text-ivory font-medium">{t("checkout.clickSelect")}</span>
+                                  <span className="text-[10px] text-muted mt-1">{t("checkout.supportsFiles")}</span>
+                                </label>
+                              ) : (
+                                <div className="bg-navy p-3 rounded border border-gold/30 flex items-center justify-between">
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                    <img
+                                      src={paymentProofPreview}
+                                      alt={t("checkout.proofPreviewAlt")}
+                                      className="w-12 h-12 object-cover rounded border border-gold/20 shrink-0"
+                                    />
+                                    <div className="min-w-0">
+                                      <span className="text-xs font-serif font-bold text-ivory block truncate">
+                                        {paymentProofFile?.name}
+                                      </span>
+                                      <span className="text-[10px] font-mono text-emerald-400 block">
+                                        {t("checkout.attached", { size: (paymentProofFile!.size / 1024).toFixed(1) })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={removeProofFile}
+                                    className="px-2 py-1 text-[10px] font-mono uppercase bg-rose-950/60 text-rose-300 border border-rose-800/40 rounded hover:bg-rose-900"
+                                  >
+                                    {t("common.remove")}
+                                  </button>
+                                </div>
+                              )}
+
+                              {proofError && (
+                                <p className="text-[11px] text-rose-400 font-mono mt-1">{proofError}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {form.copiedField && (
+                            <div className="text-[10px] text-emerald-300 font-mono text-center">
+                              {t("checkout.copied")}
+                            </div>
                           )}
                         </div>
-                      )}
-
-                      {form.copiedField && (
-                        <div className="text-[10px] text-emerald-300 font-mono text-center">
-                          ✓ Copied to clipboard!
-                        </div>
-                      )}
-                    </div>
                   </>
                 )}
 
@@ -737,15 +1042,19 @@ export default function Checkout() {
                       onClick={() => setStep(steps[steps.indexOf(step) - 1])}
                       className="px-6 py-3 border border-gold/30 text-ivory hover:border-gold rounded font-sans text-xs uppercase tracking-wider font-semibold transition-colors flex-1"
                     >
-                      BACK
+                      {t("checkout.back")}
                     </button>
                   )}
                   <button
                     type="submit"
-                    disabled={isProcessing || paymentConfigs.length === 0}
+                    disabled={isProcessing || (step === "PAYMENT" && !paymentMethodsAvailable)}
                     className="btn-gold-fill flex-1 text-center font-sans text-xs font-bold uppercase tracking-wider py-3 shadow-lg disabled:opacity-50"
                   >
-                    {isProcessing ? "PROCESSING ORDER…" : step === "PAYMENT" ? `CONFIRM ${selectedMethod.toUpperCase()} ORDER →` : "CONTINUE →"}
+                    {isProcessing
+                      ? t("checkout.processing")
+                      : step === "PAYMENT"
+                        ? t("checkout.confirmOrder", { method: selectedLabel.toUpperCase() })
+                        : t("checkout.continue")}
                   </button>
                 </div>
               </motion.form>
@@ -753,8 +1062,8 @@ export default function Checkout() {
 
             {/* Right Side Summary Panel */}
             <div className="border border-gold/25 p-8 h-fit bg-navy2 rounded-xl shadow-xl space-y-6">
-              <h3 className="font-serif text-xl font-bold border-b border-gold/15 pb-3">Acquisition Summary</h3>
-              <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+              <h3 className="font-serif text-xl font-bold border-b border-gold/15 pb-3">{t("checkout.summary")}</h3>
+              <div className="space-y-4 max-h-64 overflow-y-auto pe-1">
                 {items.map((item) => {
                   const itemId = item.id || `${item.product.id}-${item.selectedSize}`;
                   const unitPrice = item.price ?? item.product.price;
@@ -763,33 +1072,48 @@ export default function Checkout() {
                       <ProductVisual product={item.product} className="w-14 h-16 shrink-0 flex items-center justify-center border border-gold/20 bg-navy rounded" bottleSize="w-6" />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-serif font-bold text-ivory truncate">{item.product.name}</div>
-                        <div className="flex items-center space-x-2 text-[10px] text-muted">
+                        <div className="flex items-center gap-2 text-[10px] text-muted">
                           <span className="font-mono text-gold font-bold bg-gold/10 px-1 py-0.2 rounded border border-gold/30">
                             {item.selectedSize}
                           </span>
                           <span>•</span>
-                          <span>Qty: {item.quantity}</span>
+                          <span>{t("checkout.qty", { n: item.quantity })}</span>
                         </div>
                       </div>
-                      <span className="text-xs font-mono text-gold font-semibold">{formatPKR(unitPrice * item.quantity)}</span>
+                      <span className="text-xs font-mono text-gold font-semibold">{format(unitPrice * item.quantity)}</span>
                     </div>
                   );
                 })}
               </div>
 
               <div className="space-y-2 text-xs font-sans pt-4 border-t border-gold/15">
-                <div className="flex justify-between text-muted"><span>Subtotal</span><span className="text-ivory font-mono">{formatPKR(subtotal + promoDiscountAmount)}</span></div>
-                {promoDiscountAmount > 0 && (
+                <div className="flex justify-between text-muted"><span>{t("checkout.subtotal")}</span><span className="text-ivory font-mono">{format(shownSubtotal)}</span></div>
+                {shownDiscount > 0 && (
                   <div className="flex justify-between text-emerald-300">
-                    <span>Discount ({promoCode})</span>
-                    <span className="font-mono">- {formatPKR(promoDiscountAmount)}</span>
+                    <span>{t("checkout.discount", { code: promoCode })}</span>
+                    <span className="font-mono">- {format(shownDiscount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-muted"><span>Shipping</span><span className="text-ivory font-mono">{shipping === 0 ? "Complimentary" : formatPKR(shipping)}</span></div>
+                <div className="flex justify-between text-muted"><span>{t("checkout.shipping")}</span><span className="text-ivory font-mono">{shownShipping === 0 ? t("shipping.complimentary") : format(shownShipping)}</span></div>
+                {shownTax > 0 && (
+                  <div className="flex justify-between text-muted">
+                    <span>{t("tax.label", { label: pricing?.taxLabel || t("tax.fallback"), rate: pricing?.taxRate ?? 0 })}</span>
+                    <span className="text-ivory font-mono">{format(shownTax)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between pt-3 border-t border-gold/15 text-sm">
-                  <span className="font-serif font-bold text-ivory">Total Amount</span>
-                  <span className="font-mono font-bold text-gold">{formatPKR(total)}</span>
+                  <span className="font-serif font-bold text-ivory">{t("checkout.totalAmount")}</span>
+                  <span className="font-mono font-bold text-gold">{format(shownTotal)}</span>
                 </div>
+                <p className="text-[10px] text-muted font-light leading-relaxed pt-1">
+                  {t("international.currencyNote", { currency: currency.code })}
+                </p>
+                {currency.rateSource === "manual" && (
+                  <p className="text-[10px] text-muted font-light leading-relaxed">{t("international.ratesManualBody")}</p>
+                )}
+                {shownTax > 0 && (
+                  <p className="text-[10px] text-muted font-light leading-relaxed">{t("international.taxNotice")}</p>
+                )}
               </div>
             </div>
           </div>
@@ -815,6 +1139,38 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         className="w-full bg-navy border border-gold/25 px-4 py-2.5 text-ivory focus:outline-none focus:border-gold rounded font-sans"
       />
+    </label>
+  );
+}
+
+/**
+ * Destinations the store does not serve are still listed, but not selectable: the
+ * shopper sees the label instead of reaching a dead end after submitting.
+ */
+function CountryField({
+  label, value, countries, onChange, unavailableSuffix,
+}: {
+  label: string;
+  value: string;
+  countries: { code: string; name: string; enabled: boolean }[];
+  onChange: (code: string) => void;
+  unavailableSuffix: string;
+}) {
+  return (
+    <label className="block font-sans text-xs">
+      <span className="text-[10px] tracking-widest text-gold uppercase mb-1.5 block font-mono">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-navy border border-gold/25 px-4 py-2.5 text-ivory focus:outline-none focus:border-gold rounded font-sans"
+      >
+        <option value="">—</option>
+        {countries.map((c) => (
+          <option key={c.code} value={c.code} disabled={!c.enabled}>
+            {c.enabled ? c.name : `${c.name} — ${unavailableSuffix}`}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

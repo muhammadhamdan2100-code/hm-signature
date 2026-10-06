@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useAdminData, campaignDisplayState, ORDER_STATUS_ORDER } from "../context/AdminDataContext";
+import { useI18n } from "../../i18n/I18nProvider";
 import { getCurrentStaff } from "../../services/auth";
 import { toDisplayRole } from "../../types/staff";
 import { StatCard } from "../components/StatCard";
 import { ChartCard, type ChartPoint } from "../components/ChartCard";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, useStatusLabel } from "../components/StatusBadge";
 import { formatPKR } from "../../utils/currency";
 import { requestBusinessInsights } from "../../services/aiConcierge";
 import {
@@ -32,11 +33,13 @@ import {
 import { useNavigate } from "react-router-dom";
 
 // --- SHARED DASHBOARD HELPERS ---------------------------------------------
-const greetingFor = (date = new Date()) => {
+// The greeting is a dictionary key, so the heading follows the interface language while the
+// hour-of-day decision stays in code.
+const greetingKeyFor = (date = new Date()) => {
   const h = date.getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
+  if (h < 12) return "admin.dashboard.goodMorning";
+  if (h < 17) return "admin.dashboard.goodAfternoon";
+  return "admin.dashboard.goodEvening";
 };
 
 // Local calendar day, because toISOString() is UTC and would shift the "today"
@@ -58,6 +61,7 @@ const lowestVariantStock = (p: any): number => {
 
 // --- 1. ORDER MANAGER DEDICATED DASHBOARD ---
 const OrderManagerDashboard: React.FC = () => {
+  const { t } = useI18n();
   const { orders } = useAdminData();
   const navigate = useNavigate();
   const currentStaff = getCurrentStaff();
@@ -84,77 +88,77 @@ const OrderManagerDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-navy2 via-navy2 to-sky-950/40 p-6 rounded-xl border border-gold/30 shadow-2xl">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-sky-400 font-semibold">
-            ORDER FULFILMENT & DISPATCH CONCIERGE
+            {t("admin.dashboard.orderFulfilmentDispatchConcierge")}
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            {greetingFor()}, {currentStaff?.name || "Order Manager"} — Order Operations
+            {t(greetingKeyFor())}, {currentStaff?.name || t("admin.dashboard.orderManagerFallback")} — {t("admin.dashboard.orderOperations")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
-            Live operations workspace for pending acquisitions, courier tracking IDs, payment verification, and order dispatch.
+            {t("admin.dashboard.liveOperationsWorkspace")}
           </p>
         </div>
         <button
           onClick={() => navigate("/admin/orders")}
-          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center gap-2 shadow-lg shrink-0"
         >
           <ShoppingBag className="w-4 h-4" />
-          <span>View All Orders ({totalOrders})</span>
+          <span>{t("admin.dashboard.viewAllOrdersCount", { count: totalOrders })}</span>
         </button>
       </div>
 
       {/* KPI Cards (8 Order Cards) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-4">
         <StatCard
-          title="New Orders Today"
+          title={t("admin.dashboard.newOrdersToday")}
           value={newOrders.length}
-          subtitle="Received today"
+          subtitle={t("admin.dashboard.receivedToday")}
           icon={ShoppingBag}
           accent={true}
           onClick={() => navigate("/admin/orders")}
         />
         <StatCard
-          title="Pending Review"
+          title={t("admin.dashboard.pendingReview")}
           value={pendingOrders.length}
-          subtitle="Action required"
+          subtitle={t("admin.dashboard.actionRequired")}
           icon={Clock}
           onClick={() => navigate("/admin/orders?status=Pending")}
         />
         <StatCard
-          title="In Atelier Packaging"
+          title={t("admin.dashboard.inAtelierPackaging")}
           value={processingOrders.length}
-          subtitle="Processing batch"
+          subtitle={t("admin.dashboard.processingBatch")}
           icon={PackageCheck}
           onClick={() => navigate("/admin/orders?status=Processing")}
         />
         <StatCard
-          title="Shipped In Transit"
+          title={t("admin.dashboard.shippedInTransit")}
           value={shippedOrders.length}
-          subtitle="Courier dispatched"
+          subtitle={t("admin.dashboard.courierDispatched")}
           icon={Truck}
           onClick={() => navigate("/admin/orders?status=Shipped")}
         />
         <StatCard
-          title="Out for Delivery"
+          title={t("admin.status.outfordelivery")}
           value={outForDeliveryOrders.length}
-          subtitle="Destination transit"
+          subtitle={t("admin.dashboard.destinationTransit")}
           icon={Truck}
         />
         <StatCard
-          title="Delivered Orders"
+          title={t("admin.dashboard.deliveredOrders")}
           value={deliveredOrders.length}
-          subtitle="Completed acquisitions"
+          subtitle={t("admin.dashboard.completedAcquisitions")}
           icon={Check}
         />
         <StatCard
-          title="Cancelled Orders"
+          title={t("admin.dashboard.cancelledOrders")}
           value={cancelledOrders.length}
-          subtitle="Voided requests"
+          subtitle={t("admin.dashboard.voidedRequests")}
           icon={Ban}
         />
         <StatCard
-          title="Total Lifetime Orders"
+          title={t("admin.dashboard.totalLifetimeOrders")}
           value={totalOrders}
-          subtitle="Repository total"
+          subtitle={t("admin.dashboard.repositoryTotal")}
           icon={Boxes}
           onClick={() => navigate("/admin/orders")}
         />
@@ -167,31 +171,31 @@ const OrderManagerDashboard: React.FC = () => {
           <div className="flex items-center justify-between border-b border-gold/15 pb-3">
             <div>
               <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-                Recent Orders Requiring Fulfilment
+                {t("admin.dashboard.recentOrdersRequiringFulfilment")}
               </h3>
               <p className="text-xs text-muted font-light">
-                Monitor status transitions, courier dispatch, and tracking IDs
+                {t("admin.dashboard.monitorStatusTransitions")}
               </p>
             </div>
             <button
               onClick={() => navigate("/admin/orders")}
-              className="text-xs font-sans text-gold hover:text-goldLight flex items-center space-x-1 uppercase tracking-wider font-semibold"
+              className="text-xs font-sans text-gold hover:text-goldLight flex items-center gap-1 uppercase tracking-wider font-semibold"
             >
-              <span>Manage All</span>
+              <span>{t("admin.dashboard.manageAll")}</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans">
+            <table className="w-full text-start text-xs font-sans">
               <thead className="bg-navy text-gold uppercase tracking-widest text-[10px] border-b border-gold/15">
                 <tr>
-                  <th className="py-2.5 px-3">Order Number</th>
-                  <th className="py-2.5 px-3">Client</th>
-                  <th className="py-2.5 px-3">Payment</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Tracking ID</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
+                  <th className="py-2.5 px-3">{t("admin.dashboard.orderNumber")}</th>
+                  <th className="py-2.5 px-3">{t("admin.dashboard.client")}</th>
+                  <th className="py-2.5 px-3">{t("admin.dashboard.payment")}</th>
+                  <th className="py-2.5 px-3">{t("admin.shared.status")}</th>
+                  <th className="py-2.5 px-3">{t("admin.dashboard.trackingId")}</th>
+                  <th className="py-2.5 px-3 text-end">{t("admin.orders.action")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gold/10 text-ivory">
@@ -212,14 +216,14 @@ const OrderManagerDashboard: React.FC = () => {
                       <StatusBadge status={o.status} />
                     </td>
                     <td className="py-3 px-3 font-mono text-[11px] text-muted num-lining">
-                      {o.trackingNumber || "Not Assigned"}
+                      {o.trackingNumber || t("admin.dashboard.notAssigned")}
                     </td>
-                    <td className="py-3 px-3 text-right">
+                    <td className="py-3 px-3 text-end">
                       <button
                         onClick={() => navigate(`/admin/orders/${o.id}`)}
                         className="px-3 py-1 bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory rounded text-[11px] font-sans transition-colors"
                       >
-                        Fulfil →
+                        {t("admin.dashboard.fulfilArrow")}
                       </button>
                     </td>
                   </tr>
@@ -233,56 +237,56 @@ const OrderManagerDashboard: React.FC = () => {
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-5 shadow-xl backdrop-blur-md">
           <div className="border-b border-gold/15 pb-3">
             <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-              Payment Audit & Verification
+              {t("admin.dashboard.paymentAuditVerification")}
             </h3>
             <p className="text-xs text-muted font-light mt-0.5">
-              Review JazzCash, Raast references and COD collection notices
+              {t("admin.dashboard.reviewJazzcashRaastReferences")}
             </p>
           </div>
 
           <div className="space-y-3">
             <div className="p-3.5 bg-navy/80 border border-gold/20 rounded-lg flex items-center justify-between">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded bg-sky-950/60 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
                   <CreditCard className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-xs font-semibold text-ivory block">Digital Proof Audit</span>
-                  <span className="text-[10px] text-muted font-mono">{pendingTidVerification.length} payments pending verification</span>
+                  <span className="text-xs font-semibold text-ivory block">{t("admin.dashboard.digitalProofAudit")}</span>
+                  <span className="text-[10px] text-muted font-mono">{t("admin.dashboard.paymentsPendingVerification", { count: pendingTidVerification.length })}</span>
                 </div>
               </div>
               <button
                 onClick={() => navigate("/admin/payments")}
                 className="text-[11px] font-mono text-gold hover:underline"
               >
-                Audit →
+                {t("admin.dashboard.auditArrow")}
               </button>
             </div>
 
             <div className="p-3.5 bg-navy/80 border border-gold/20 rounded-lg flex items-center justify-between">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded bg-amber-950/60 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                   <Truck className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-xs font-semibold text-ivory block">COD Collection Review</span>
-                  <span className="text-[10px] text-muted font-mono">{pendingCodPayment.length} COD orders pending collection</span>
+                  <span className="text-xs font-semibold text-ivory block">{t("admin.dashboard.codCollectionReview")}</span>
+                  <span className="text-[10px] text-muted font-mono">{t("admin.dashboard.codOrdersPendingCollection", { count: pendingCodPayment.length })}</span>
                 </div>
               </div>
               <button
                 onClick={() => navigate("/admin/payments")}
                 className="text-[11px] font-mono text-gold hover:underline"
               >
-                Review →
+                {t("admin.dashboard.reviewArrow")}
               </button>
             </div>
           </div>
 
           <div className="p-4 rounded bg-navy/60 border border-gold/15 text-xs text-muted leading-relaxed">
             <span className="text-gold font-bold uppercase tracking-wider block mb-1 font-serif">
-              Courier Dispatch Reminder:
+              {t("admin.dashboard.courierDispatchReminder")}
             </span>
-            Confirm tracking ID and assign express courier before updating status to &quot;Shipped&quot;. Automated tracking notifications will be dispatched to clients immediately.
+            {t("admin.dashboard.courierDispatchReminderNote")}
           </div>
         </div>
       </div>
@@ -292,6 +296,7 @@ const OrderManagerDashboard: React.FC = () => {
 
 // --- 2. CONTENT MANAGER DEDICATED DASHBOARD ---
 const ContentManagerDashboard: React.FC = () => {
+  const { t } = useI18n();
   const { products, categories, collections, reviews, homepageConfig, campaigns } = useAdminData();
   const navigate = useNavigate();
   const currentStaff = getCurrentStaff();
@@ -306,80 +311,80 @@ const ContentManagerDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-navy2 via-navy2 to-emerald-950/40 p-6 rounded-xl border border-gold/30 shadow-2xl">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-emerald-400 font-semibold">
-            CMS CATALOG & CONTENT WORKSPACE
+            {t("admin.dashboard.cmsCatalogContentWorkspace")}
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            {greetingFor()}, {currentStaff?.name || "Content Manager"} — Content Operations
+            {t(greetingKeyFor())}, {currentStaff?.name || t("admin.dashboard.contentManagerFallback")} — {t("admin.dashboard.contentOperations")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
-            Curate rare extraits de parfum, categories, homepage CMS blocks, and moderate client reviews.
+            {t("admin.dashboard.curateRareExtraitsIntro")}
           </p>
         </div>
         <button
           onClick={() => navigate("/admin/products/new")}
-          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center gap-2 shadow-lg shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Add New Fragrance</span>
+          <span>{t("admin.dashboard.addNewFragrance")}</span>
         </button>
       </div>
 
       {/* KPI Cards (Content Metrics) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Published Fragrances"
+          title={t("admin.dashboard.publishedFragrances")}
           value={activeProducts.length}
-          subtitle="Active extraits"
+          subtitle={t("admin.dashboard.activeExtraits")}
           icon={Package}
           accent={true}
           onClick={() => navigate("/admin/products")}
         />
         <StatCard
-          title="Fragrance Categories"
+          title={t("admin.dashboard.fragranceCategories")}
           value={categories.length}
-          subtitle="Olfactory families"
+          subtitle={t("admin.dashboard.olfactoryFamilies")}
           icon={Layers}
           onClick={() => navigate("/admin/categories")}
         />
         <StatCard
-          title="Curated Collections"
+          title={t("admin.dashboard.curatedCollections")}
           value={collections.length}
-          subtitle="Special editions"
+          subtitle={t("admin.dashboard.specialEditions")}
           icon={Sparkles}
           onClick={() => navigate("/admin/collections")}
         />
         <StatCard
-          title="Pending Reviews"
+          title={t("admin.dashboard.pendingReviews")}
           value={pendingReviews.length}
-          subtitle="Moderation queue"
+          subtitle={t("admin.dashboard.moderationQueue")}
           icon={Star}
           onClick={() => navigate("/admin/reviews")}
         />
         <StatCard
-          title="Homepage Sections"
+          title={t("admin.dashboard.homepageSections")}
           value={homepageConfig.sections.length}
-          subtitle="CMS layout blocks"
+          subtitle={t("admin.dashboard.cmsLayoutBlocks")}
           icon={Globe}
           onClick={() => navigate("/admin/homepage")}
         />
         <StatCard
-          title="Active Campaigns"
+          title={t("admin.dashboard.activeCampaigns")}
           value={activeCampaigns.length}
-          subtitle="Banners & sales"
+          subtitle={t("admin.dashboard.bannersAndSales")}
           icon={TrendingUp}
           onClick={() => navigate("/admin/marketing")}
         />
         <StatCard
-          title="Total Client Reviews"
+          title={t("admin.dashboard.totalClientReviews")}
           value={reviews.length}
-          subtitle="Feedback total"
+          subtitle={t("admin.dashboard.feedbackTotal")}
           icon={Star}
           onClick={() => navigate("/admin/reviews")}
         />
         <StatCard
-          title="Total Catalog SKUs"
+          title={t("admin.dashboard.totalCatalogSkus")}
           value={products.length}
-          subtitle="Repository total"
+          subtitle={t("admin.dashboard.repositoryTotal")}
           icon={Package}
           onClick={() => navigate("/admin/products")}
         />
@@ -392,30 +397,30 @@ const ContentManagerDashboard: React.FC = () => {
           <div className="flex items-center justify-between border-b border-gold/15 pb-3">
             <div>
               <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-                Fragrance Extraits Catalog
+                {t("admin.dashboard.fragranceExtraitsCatalog")}
               </h3>
               <p className="text-xs text-muted font-light">
-                Edit descriptions, note pyramids, prices, and obsidian flacon imagery
+                {t("admin.dashboard.editDescriptionsNotePyramids")}
               </p>
             </div>
             <button
               onClick={() => navigate("/admin/products")}
-              className="text-xs font-sans text-gold hover:text-goldLight flex items-center space-x-1 uppercase tracking-wider font-semibold"
+              className="text-xs font-sans text-gold hover:text-goldLight flex items-center gap-1 uppercase tracking-wider font-semibold"
             >
-              <span>View All</span>
+              <span>{t("admin.dashboard.viewAll")}</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans">
+            <table className="w-full text-start text-xs font-sans">
               <thead className="bg-navy text-gold uppercase tracking-widest text-[10px] border-b border-gold/15">
                 <tr>
-                  <th className="py-2.5 px-3">Fragrance</th>
-                  <th className="py-2.5 px-3">SKU</th>
-                  <th className="py-2.5 px-3">Category</th>
-                  <th className="py-2.5 px-3">Price</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
+                  <th className="py-2.5 px-3">{t("admin.products.fragrance")}</th>
+                  <th className="py-2.5 px-3">{t("admin.inventory.sku")}</th>
+                  <th className="py-2.5 px-3">{t("admin.dashboard.category")}</th>
+                  <th className="py-2.5 px-3">{t("admin.products.price")}</th>
+                  <th className="py-2.5 px-3 text-end">{t("admin.orders.action")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gold/10 text-ivory">
@@ -428,12 +433,12 @@ const ContentManagerDashboard: React.FC = () => {
                     <td className="py-3 px-3 font-mono text-gold num-lining">{p.sku}</td>
                     <td className="py-3 px-3">{p.category}</td>
                     <td className="py-3 px-3 font-mono num-lining">{formatPKR(p.price)}</td>
-                    <td className="py-3 px-3 text-right">
+                    <td className="py-3 px-3 text-end">
                       <button
                         onClick={() => navigate(`/admin/products/${p.id}`)}
                         className="px-3 py-1 bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory rounded text-[11px] font-sans transition-colors"
                       >
-                        Edit CMS →
+                        {t("admin.dashboard.editCmsArrow")}
                       </button>
                     </td>
                   </tr>
@@ -447,9 +452,9 @@ const ContentManagerDashboard: React.FC = () => {
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl backdrop-blur-md">
           <div className="border-b border-gold/15 pb-3">
             <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-              Reviews Moderation Queue
+              {t("admin.dashboard.reviewsModerationQueue")}
             </h3>
-            <p className="text-xs text-muted font-light">Approve or reject client testimonials</p>
+            <p className="text-xs text-muted font-light">{t("admin.dashboard.approveOrRejectTestimonials")}</p>
           </div>
 
           <div className="space-y-3">
@@ -468,14 +473,14 @@ const ContentManagerDashboard: React.FC = () => {
                       onClick={() => navigate("/admin/reviews")}
                       className="text-[10px] font-mono text-gold hover:underline"
                     >
-                      Moderate →
+                      {t("admin.dashboard.moderateArrow")}
                     </button>
                   </div>
                 </div>
               ))
             ) : (
               <div className="text-center py-6 text-muted text-xs font-sans">
-                No pending reviews requiring moderation.
+                {t("admin.dashboard.noPendingReviewsToModerate")}
               </div>
             )}
           </div>
@@ -505,6 +510,7 @@ function useSalesTrendPoints(): { points: ChartPoint[]; orders: ChartPoint[] } {
 // charts use. No individual customer records are sent, and the panel states
 // plainly when no provider is configured.
 const AiInsightsCard: React.FC = () => {
+  const { t } = useI18n();
   const [state, setState] = useState<{
     loading: boolean;
     text: string | null;
@@ -521,7 +527,7 @@ const AiInsightsCard: React.FC = () => {
     setState({ loading: true, text: null, error: null, at: null });
     const res = await requestBusinessInsights();
     if (!res.ok) {
-      setState({ loading: false, text: null, error: res.error || (res.configured ? "Insights are unavailable." : "No AI provider is configured on this deployment."), at: null });
+      setState({ loading: false, text: null, error: res.error || (res.configured ? t("admin.dashboard.insightsUnavailable") : t("admin.dashboard.noAiProviderConfigured")), at: null });
       return;
     }
     setState({ loading: false, text: res.insight, error: null, at: res.generatedAt || null });
@@ -532,10 +538,10 @@ const AiInsightsCard: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[2.5px] text-gold font-semibold">
-            AI Business Intelligence
+            {t("admin.dashboard.aiBusinessIntelligence")}
           </span>
           <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-            Observations from your own metrics
+            {t("admin.dashboard.observationsFromYourMetrics")}
           </h3>
         </div>
         <button
@@ -543,7 +549,7 @@ const AiInsightsCard: React.FC = () => {
           disabled={state.loading}
           className="px-4 py-2 bg-navy border border-gold/40 hover:bg-gold hover:text-navy text-gold rounded text-xs uppercase font-bold tracking-wider disabled:opacity-50 transition-colors"
         >
-          {state.loading ? "Analysing…" : "Generate insights"}
+          {state.loading ? t("admin.dashboard.analysing") : t("admin.dashboard.generateInsights")}
         </button>
       </div>
 
@@ -561,14 +567,13 @@ const AiInsightsCard: React.FC = () => {
             ))}
           </ul>
           <p className="text-[10px] text-muted font-mono">
-            Generated {state.at ? new Date(state.at).toLocaleString() : "—"} · aggregated metrics only, no customer records shared
+            {t("admin.dashboard.generatedInsightsFooter", { at: state.at ? new Date(state.at).toLocaleString() : "—" })}
           </p>
         </div>
       ) : (
         !state.error && (
           <p className="text-xs text-muted font-light">
-            Produce a short written reading of revenue, cancellations, refunds, coupon performance and inventory risk
-            using the figures already shown on this page.
+            {t("admin.dashboard.produceShortWrittenReading")}
           </p>
         )
       )}
@@ -578,6 +583,7 @@ const AiInsightsCard: React.FC = () => {
 
 // --- 3. STORE MANAGER DASHBOARD ---
 const ManagerDashboard: React.FC = () => {
+  const { t } = useI18n();
   const { products, orders, customers } = useAdminData();
   const trend = useSalesTrendPoints();
   const navigate = useNavigate();
@@ -593,13 +599,13 @@ const ManagerDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-navy2 via-navy2 to-amber-950/40 p-6 rounded-xl border border-gold/30 shadow-2xl">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-amber-400 font-semibold">
-            STORE MANAGEMENT WORKSPACE
+            {t("admin.dashboard.storeManagementWorkspace")}
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            {greetingFor()}, {currentStaff?.name || "Store Manager"} — Boutique Overview
+            {t(greetingKeyFor())}, {currentStaff?.name || t("admin.dashboard.storeManagerFallback")} — {t("admin.dashboard.boutiqueOverview")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
-            Store operations overview, inventory telemetry, client order fulfilment, and sales reports.
+            {t("admin.dashboard.storeOperationsOverview")}
           </p>
         </div>
       </div>
@@ -607,43 +613,43 @@ const ManagerDashboard: React.FC = () => {
       {/* KPI Cards (Manager Scope) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
-          title="Total Revenue"
+          title={t("admin.dashboard.totalRevenue")}
           value={formatPKR(totalRevenue)}
           icon={DollarSign}
           accent={true}
           onClick={() => navigate("/admin/analytics")}
         />
         <StatCard
-          title="Total Orders"
+          title={t("admin.dashboard.totalOrders")}
           value={orders.length}
           icon={ShoppingBag}
           onClick={() => navigate("/admin/orders")}
         />
         <StatCard
-          title="Pending Orders"
+          title={t("admin.dashboard.pendingOrders")}
           value={pendingOrders.length}
-          subtitle="Action required"
+          subtitle={t("admin.dashboard.actionRequired")}
           icon={Clock}
           onClick={() => navigate("/admin/orders?status=Pending")}
         />
         <StatCard
-          title="Active Fragrances"
+          title={t("admin.dashboard.activeFragrances")}
           value={products.length}
-          subtitle="Catalog SKUs"
+          subtitle={t("admin.dashboard.catalogSkus")}
           icon={Package}
           onClick={() => navigate("/admin/products")}
         />
         <StatCard
-          title="Total Clients"
+          title={t("admin.customers.totalClients")}
           value={customers.length}
-          subtitle="VIP & Client profiles"
+          subtitle={t("admin.dashboard.vipAndClientProfiles")}
           icon={Users}
           onClick={() => navigate("/admin/customers")}
         />
         <StatCard
-          title="Low Stock Warnings"
+          title={t("admin.dashboard.lowStockWarnings")}
           value={lowStockProducts.length}
-          subtitle="Restock required"
+          subtitle={t("admin.dashboard.restockRequired")}
           icon={AlertTriangle}
           onClick={() => navigate("/admin/inventory")}
         />
@@ -653,18 +659,18 @@ const ManagerDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <ChartCard
-            title="Revenue Trend"
-            subtitle="Daily order value, last 90 days"
+            title={t("admin.dashboard.revenueTrend")}
+            subtitle={t("admin.dashboard.dailyOrderValueLastDays")}
             variant="line"
             points={trend.points}
             secondary={trend.orders}
             formatter={formatPKR}
-            secondaryFormatter={(n) => `${n} orders`}
-            primaryLabel="Revenue"
-            secondaryLabel="Orders"
-            axisLabel="Day"
-            caption="Computed from stored orders; cancelled orders are excluded."
-            emptyMessage="No order value recorded in this window yet."
+            secondaryFormatter={(n) => t("admin.dashboard.nOrders", { count: n })}
+            primaryLabel={t("admin.dashboard.revenue")}
+            secondaryLabel={t("admin.dashboard.orders")}
+            axisLabel={t("admin.dashboard.day")}
+            caption={t("admin.dashboard.computedFromStoredOrders")}
+            emptyMessage={t("admin.dashboard.noOrderValueInWindow")}
           />
         </div>
 
@@ -672,9 +678,9 @@ const ManagerDashboard: React.FC = () => {
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl backdrop-blur-md">
           <div className="border-b border-gold/15 pb-3">
             <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-              Low Stock Restock Alerts
+              {t("admin.dashboard.lowStockRestockAlerts")}
             </h3>
-            <p className="text-xs text-muted font-light">Inventory thresholds requiring replenishment</p>
+            <p className="text-xs text-muted font-light">{t("admin.dashboard.inventoryThresholdsReplenishment")}</p>
           </div>
 
           <div className="space-y-3">
@@ -682,13 +688,13 @@ const ManagerDashboard: React.FC = () => {
               <div key={p.id} className="p-3 rounded bg-navy/60 border border-gold/15 flex items-center justify-between">
                 <div>
                   <h4 className="font-serif font-bold text-sm text-ivory">{p.name}</h4>
-                  <p className="text-[10px] font-mono text-gold">Stock: {p.stock} bottles (Min: {p.lowStockThreshold})</p>
+                  <p className="text-[10px] font-mono text-gold">{t("admin.dashboard.stockBottlesMin", { count: p.stock, min: p.lowStockThreshold ?? "" })}</p>
                 </div>
                 <button
                   onClick={() => navigate("/admin/inventory")}
                   className="px-2.5 py-1 bg-navy border border-gold/30 text-gold rounded text-[10px] font-mono"
                 >
-                  Restock →
+                  {t("admin.dashboard.restockArrow")}
                 </button>
               </div>
             ))}
@@ -701,6 +707,8 @@ const ManagerDashboard: React.FC = () => {
 
 // --- 4. PRIMARY / SUPER ADMIN FULL EXECUTIVE DASHBOARD ---
 const FullAdminDashboard: React.FC = () => {
+  const { t } = useI18n();
+  const statusLabel = useStatusLabel();
   const { products, orders, customers, analytics } = useAdminData();
   const trend = useSalesTrendPoints();
   const navigate = useNavigate();
@@ -732,28 +740,28 @@ const FullAdminDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-navy2 via-navy2 to-burgundy/40 p-6 rounded-xl border border-gold/30 shadow-2xl">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            PRIMARY ATELIER EXECUTIVE OVERVIEW
+            {t("admin.dashboard.primaryAtelierExecutiveOverview")}
           </span>
           <h1 className="text-2xl md:text-3xl font-serif text-ivory font-bold tracking-tight mt-1">
-            {greetingFor()} — HM Signature Overview
+            {t(greetingKeyFor())} — {t("admin.dashboard.brandOverview")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-xl">
-            Real-time telemetry for private fragrance orders, inventory extraits, client subscriptions, staff access, and boutique revenue streams.
+            {t("admin.dashboard.realtimeTelemetryIntro")}
           </p>
         </div>
-        <div className="flex items-center space-x-3 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => navigate("/admin/products/new")}
-            className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg"
+            className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center gap-2 shadow-lg"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Fragrance</span>
+            <span>{t("admin.dashboard.addFragrance")}</span>
           </button>
           <button
             onClick={() => navigate("/admin/orders")}
             className="px-4 py-2.5 bg-navy border border-gold/30 hover:border-gold text-ivory rounded text-xs font-sans tracking-wider uppercase transition-colors"
           >
-            Manage Orders
+            {t("admin.dashboard.manageOrders")}
           </button>
         </div>
       </div>
@@ -761,74 +769,82 @@ const FullAdminDashboard: React.FC = () => {
       {/* Grid of Key Performance Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
-          title="Total Revenue"
+          title={t("admin.dashboard.totalRevenue")}
           value={formatPKR(totalRevenue)}
           icon={DollarSign}
           accent={true}
           onClick={() => navigate("/admin/analytics")}
         />
         <StatCard
-          title="Today's Revenue"
+          title={t("admin.dashboard.todaysRevenue")}
           value={formatPKR(todaysRevenue)}
-          subtitle={`${todaysLiveOrders.length} of ${todaysOrders.length} orders today${
-            todaysOrders.length - todaysLiveOrders.length === 1
-              ? " (1 cancelled)"
-              : todaysOrders.length - todaysLiveOrders.length > 1
-              ? ` (${todaysOrders.length - todaysLiveOrders.length} cancelled)`
-              : ""
-          }`}
+          subtitle={
+            todaysOrders.length - todaysLiveOrders.length > 0
+              ? t("admin.dashboard.ordersTodayWithCancelled", {
+                  live: todaysLiveOrders.length,
+                  total: todaysOrders.length,
+                  cancelled: todaysOrders.length - todaysLiveOrders.length,
+                })
+              : t("admin.dashboard.ordersToday", {
+                  live: todaysLiveOrders.length,
+                  total: todaysOrders.length,
+                })
+          }
           icon={TrendingUp}
         />
         <StatCard
-          title="Total Orders"
+          title={t("admin.dashboard.totalOrders")}
           value={orders.length}
           icon={ShoppingBag}
           onClick={() => navigate("/admin/orders")}
         />
         <StatCard
-          title="Pending Orders"
+          title={t("admin.dashboard.pendingOrders")}
           value={pendingOrders.length}
-          subtitle="Requires atelier review"
+          subtitle={t("admin.dashboard.requiresAtelierReview")}
           icon={Clock}
           onClick={() => navigate("/admin/orders?status=Pending")}
         />
         <StatCard
-          title="Processing Orders"
+          title={t("admin.dashboard.processingOrders")}
           value={processingOrders.length}
-          subtitle="In bottle packaging"
+          subtitle={t("admin.dashboard.inBottlePackaging")}
           icon={PackageCheck}
         />
         <StatCard
-          title="Delivered Orders"
+          title={t("admin.dashboard.deliveredOrders")}
           value={deliveredOrders.length}
-          subtitle="Completed deliveries"
+          subtitle={t("admin.dashboard.completedDeliveries")}
           icon={Truck}
         />
         <StatCard
-          title="Total Clients"
+          title={t("admin.customers.totalClients")}
           value={customers.length}
-          subtitle="Registered profiles"
+          subtitle={t("admin.dashboard.registeredProfiles")}
           icon={Users}
           onClick={() => navigate("/admin/customers")}
         />
         <StatCard
-          title="Total Fragrances"
+          title={t("admin.dashboard.totalFragrances")}
           value={activeProducts.length}
-          subtitle="Active catalog SKUs"
+          subtitle={t("admin.dashboard.activeCatalogSkus")}
           icon={Package}
           onClick={() => navigate("/admin/products")}
         />
         <StatCard
-          title="Low Stock Warning"
+          title={t("admin.dashboard.lowStockWarning")}
           value={lowStockProducts.length}
-          subtitle="Atelier restock alert"
+          subtitle={t("admin.dashboard.atelierRestockAlert")}
           icon={AlertTriangle}
           onClick={() => navigate("/admin/inventory")}
         />
         <StatCard
-          title="Delivered Rate"
+          title={t("admin.dashboard.deliveredRate")}
           value={`${deliveredRatePct}%`}
-          subtitle={`${deliveredOrdersCount} of ${totalOrdersCount} orders`}
+          subtitle={t("admin.dashboard.deliveredOfTotalOrders", {
+            delivered: deliveredOrdersCount,
+            total: totalOrdersCount,
+          })}
           icon={PackageCheck}
         />
       </div>
@@ -839,18 +855,18 @@ const FullAdminDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <ChartCard
-            title="Revenue Trend"
-            subtitle="Daily order value, last 90 days"
+            title={t("admin.dashboard.revenueTrend")}
+            subtitle={t("admin.dashboard.dailyOrderValueLastDays")}
             variant="line"
             points={trend.points}
             secondary={trend.orders}
             formatter={formatPKR}
-            secondaryFormatter={(n) => `${n} orders`}
-            primaryLabel="Revenue"
-            secondaryLabel="Orders"
-            axisLabel="Day"
-            caption="Computed from stored orders; cancelled orders are excluded."
-            emptyMessage="No order value recorded in this window yet."
+            secondaryFormatter={(n) => t("admin.dashboard.nOrders", { count: n })}
+            primaryLabel={t("admin.dashboard.revenue")}
+            secondaryLabel={t("admin.dashboard.orders")}
+            axisLabel={t("admin.dashboard.day")}
+            caption={t("admin.dashboard.computedFromStoredOrders")}
+            emptyMessage={t("admin.dashboard.noOrderValueInWindow")}
           />
         </div>
 
@@ -858,10 +874,10 @@ const FullAdminDashboard: React.FC = () => {
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-5 shadow-xl backdrop-blur-md">
           <div className="border-b border-gold/15 pb-3">
             <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-              Order Pipeline Distribution
+              {t("admin.dashboard.orderPipelineDistribution")}
             </h3>
             <p className="text-xs text-muted font-light mt-0.5">
-              Live status ratios computed from real order repository
+              {t("admin.dashboard.liveStatusRatiosComputed")}
             </p>
           </div>
 
@@ -875,7 +891,7 @@ const FullAdminDashboard: React.FC = () => {
                 Confirmed: "bg-gold",
                 Processing: "bg-amber-400",
                 Shipped: "bg-indigo-400",
-                "Out for Delivery": "bg-goldLight",
+"Out for Delivery": "bg-goldLight",
                 Delivered: "bg-emerald-400",
                 Cancelled: "bg-rose-400",
                 Returned: "bg-rose-300",
@@ -889,7 +905,7 @@ const FullAdminDashboard: React.FC = () => {
               if (pipeline.length === 0) {
                 return (
                   <p className="text-xs text-muted font-sans">
-                    No orders have been placed yet, so there is nothing to distribute.
+                    {t("admin.dashboard.noOrdersToDistribute")}
                   </p>
                 );
               }
@@ -900,9 +916,9 @@ const FullAdminDashboard: React.FC = () => {
                 return (
                   <div key={item.label} className="space-y-1.5 font-sans">
                     <div className="flex justify-between text-xs">
-                      <span className="text-ivory font-medium">{item.label}</span>
+                      <span className="text-ivory font-medium">{statusLabel(item.label)}</span>
                       <span className="text-gold font-mono num-lining">
-                        {item.count} orders ({pct}%)
+                        {t("admin.dashboard.statusOrdersPercent", { count: item.count, percent: pct })}
                       </span>
                     </div>
                     <div className="w-full h-2 bg-navy rounded-full overflow-hidden border border-gold/10">
@@ -919,9 +935,12 @@ const FullAdminDashboard: React.FC = () => {
 
           <div className="p-4 rounded bg-navy/60 border border-gold/15 text-xs text-muted leading-relaxed">
             <span className="text-gold font-bold uppercase tracking-wider block mb-1 font-serif">
-              Atelier Pipeline Telemetry:
+              {t("admin.dashboard.atelierPipelineTelemetry")}
             </span>
-            {pendingOrders.length} pending order(s) awaiting verification and {deliveredOrdersCount} completed delivery record(s) logged in the database.
+            {t("admin.dashboard.pipelineTelemetryNote", {
+              pending: pendingOrders.length,
+              delivered: deliveredOrdersCount,
+            })}
           </div>
         </div>
       </div>
@@ -932,31 +951,31 @@ const FullAdminDashboard: React.FC = () => {
           <div className="flex items-center justify-between border-b border-gold/15 pb-3">
             <div>
               <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-                Recent Client Orders
+                {t("admin.dashboard.recentClientOrders")}
               </h3>
               <p className="text-xs text-muted font-light">
-                Latest transactions requiring dispatch and review
+                {t("admin.dashboard.latestTransactionsRequiringDispatch")}
               </p>
             </div>
             <button
               onClick={() => navigate("/admin/orders")}
-              className="text-xs font-sans text-gold hover:text-goldLight flex items-center space-x-1 uppercase tracking-wider font-semibold"
+              className="text-xs font-sans text-gold hover:text-goldLight flex items-center gap-1 uppercase tracking-wider font-semibold"
             >
-              <span>View All</span>
+              <span>{t("admin.dashboard.viewAll")}</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans">
+            <table className="w-full text-start text-xs font-sans">
               <thead className="bg-navy text-gold uppercase tracking-widest text-[10px] border-b border-gold/15">
                 <tr>
-                  <th className="py-2.5 px-3">Order ID</th>
-                  <th className="py-2.5 px-3">Client</th>
-                  <th className="py-2.5 px-3">Total</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Date</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
+                  <th className="py-2.5 px-3">{t("admin.orders.orderId")}</th>
+                  <th className="py-2.5 px-3">{t("admin.dashboard.client")}</th>
+                  <th className="py-2.5 px-3">{t("common.total")}</th>
+                  <th className="py-2.5 px-3">{t("admin.shared.status")}</th>
+                  <th className="py-2.5 px-3">{t("admin.orders.date")}</th>
+                  <th className="py-2.5 px-3 text-end">{t("admin.orders.action")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gold/10 text-ivory">
@@ -973,11 +992,11 @@ const FullAdminDashboard: React.FC = () => {
                       <StatusBadge status={o.status} />
                     </td>
                     <td className="py-3 px-3 text-muted num-lining">{o.createdAt}</td>
-                    <td className="py-3 px-3 text-right">
+                    <td className="py-3 px-3 text-end">
                       <button
                         onClick={() => navigate(`/admin/orders/${o.id}`)}
                         className="p-1 rounded text-gold hover:text-ivory hover:bg-navy transition-colors"
-                        title="View order details"
+                        title={t("admin.dashboard.viewOrderDetails")}
                       >
                         <Eye className="w-4 h-4" />
                       </button>
@@ -992,25 +1011,35 @@ const FullAdminDashboard: React.FC = () => {
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 shadow-xl space-y-4 backdrop-blur-md">
           <div className="border-b border-gold/15 pb-3">
             <h3 className="font-serif text-lg font-bold text-ivory tracking-wide">
-              Top Perfumes
+              {t("admin.dashboard.topPerfumes")}
             </h3>
             <p className="text-xs text-muted font-light">
               {analytics?.topProducts?.length
-                ? `Highest revenue in the last ${analytics.windowDays} days`
-                : "Ranked once the first orders land"}
+                ? t("admin.dashboard.highestRevenueLastDays", { days: analytics.windowDays })
+                : t("admin.dashboard.rankedOnceFirstOrdersLand")}
             </p>
           </div>
 
           <div className="space-y-3">
             {(analytics?.topProducts || []).slice(0, 4).map((tp, idx) => {
               const match = products.find((p) => p.name === tp.name);
+              // English only adds an "s" here; the other five languages need their own
+              // singular forms, so every count combination carries its own key.
+              const unitsAcrossOrdersKey =
+                tp.units === 1
+                  ? tp.orders === 1
+                    ? "admin.dashboard.unitAcrossOrder"
+                    : "admin.dashboard.unitAcrossOrders"
+                  : tp.orders === 1
+                  ? "admin.dashboard.unitsAcrossOrder"
+                  : "admin.dashboard.unitsAcrossOrders";
               return (
               <div
                 key={tp.name}
                 onClick={() => match && navigate(`/admin/products/${match.id}`)}
                 className="flex items-center justify-between p-3 rounded bg-navy/60 border border-gold/10 hover:border-gold/30 cursor-pointer transition-colors"
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded bg-navy border border-gold/20 flex items-center justify-center shrink-0">
                     <span className="font-sans text-gold font-bold text-sm num-lining">
                       #{idx + 1}
@@ -1021,7 +1050,7 @@ const FullAdminDashboard: React.FC = () => {
                       {tp.name}
                     </h4>
                     <p className="text-[10px] font-mono text-muted num-lining">
-                      {tp.units} unit{tp.units === 1 ? "" : "s"} across {tp.orders} order{tp.orders === 1 ? "" : "s"}
+                      {t(unitsAcrossOrdersKey, { units: tp.units, orders: tp.orders })}
                     </p>
                   </div>
                 </div>
@@ -1033,7 +1062,7 @@ const FullAdminDashboard: React.FC = () => {
             })}
             {(analytics?.topProducts || []).length === 0 && (
               <p className="text-xs text-muted font-light py-4 text-center">
-                No sales recorded in the analytics window yet.
+                {t("admin.dashboard.noSalesInAnalyticsWindow")}
               </p>
             )}
           </div>

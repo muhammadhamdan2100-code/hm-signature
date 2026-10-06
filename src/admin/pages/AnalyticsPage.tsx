@@ -20,6 +20,7 @@ import {
 import { StatCard } from "../components/StatCard";
 import { fetchAnalyticsFromDB, type AnalyticsSnapshot } from "../../services/adminOps";
 import { formatPKR } from "../../utils/currency";
+import { useI18n } from "../../i18n/I18nProvider";
 
 /* ------------------------------------------------------------------ *
  * Window selector + formatting helpers
@@ -30,14 +31,13 @@ type WindowDays = (typeof WINDOWS)[number];
 
 const DAY_MS = 86_400_000;
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 /** Shared currency helper — renders e.g. "Rs 12,400". */
 const money = (n: number) => formatPKR(n);
 const whole = (n: number) => Math.round(n).toLocaleString("en-US");
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function parseIsoDay(iso: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
@@ -153,12 +153,14 @@ interface DetailRow {
 }
 
 const DetailPanel: React.FC<{
+  /** Stable ASCII id: the heading anchor cannot be derived from a translated title. */
+  id: string;
   title: string;
   note: string;
   icon: LucideIcon;
   rows: DetailRow[];
-}> = ({ title, note, icon: Icon, rows }) => {
-  const headingId = `detail-${title.replace(/[^A-Za-z0-9]/g, "").toLowerCase()}`;
+}> = ({ id, title, note, icon: Icon, rows }) => {
+  const headingId = `detail-${id}`;
   return (
     <section
       aria-labelledby={headingId}
@@ -176,7 +178,7 @@ const DetailPanel: React.FC<{
         {rows.map((row) => (
           <div key={row.label} className="flex items-baseline justify-between gap-3">
             <dt className="text-[11px] text-muted font-light">{row.label}</dt>
-            <dd className="text-xs font-mono text-ivory num-lining text-right whitespace-nowrap">
+            <dd className="text-xs font-mono text-ivory num-lining text-end whitespace-nowrap">
               {row.value}
             </dd>
           </div>
@@ -205,10 +207,15 @@ const SectionHeading: React.FC<{ id: string; title: string; note: string }> = ({
  * ------------------------------------------------------------------ */
 
 export const AnalyticsPage: React.FC = () => {
+  const { t } = useI18n();
   const [days, setDays] = useState<WindowDays>(30);
   const [snapshot, setSnapshot] = useState<AnalyticsSnapshot | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * Copy is stored as a dictionary key so a language change re-renders it; the raw server
+   * message is kept separately because it is data, not UI text.
+   */
+  const [failure, setFailure] = useState<{ key: string; detail: string | null } | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -221,9 +228,7 @@ export const AnalyticsPage: React.FC = () => {
         if (!mounted) return;
         if (!result) {
           setSnapshot(null);
-          setFailure(
-            "The analytics aggregation returned no result. This happens when the session is not a staff session or the RPC call failed."
-          );
+          setFailure({ key: "admin.analytics.noResultMessage", detail: null });
           setStatus("error");
           return;
         }
@@ -233,7 +238,10 @@ export const AnalyticsPage: React.FC = () => {
       .catch((error: unknown) => {
         if (!mounted) return;
         setSnapshot(null);
-        setFailure(error instanceof Error ? error.message : "Unexpected error while loading analytics.");
+        setFailure({
+          key: "admin.analytics.unexpectedError",
+          detail: error instanceof Error ? error.message : null,
+        });
         setStatus("error");
       });
 
@@ -264,7 +272,7 @@ export const AnalyticsPage: React.FC = () => {
       rangeText:
         weekly.from !== null && weekly.to !== null
           ? `${dayLabel(weekly.from)} – ${dayLabel(weekly.to)}`
-          : "no dated order rows in this window",
+          : null,
       trendRevenue,
       trendOrders,
       growthPoints: s.customerGrowth.map((g) => ({
@@ -303,31 +311,35 @@ export const AnalyticsPage: React.FC = () => {
     };
   }, [status, snapshot, days]);
 
+  /** English has one plural form; every other language needs its own noun per count. */
+  const countPhrase = (count: number, oneKey: string, manyKey: string) =>
+    t(count === 1 ? oneKey : manyKey, { count });
+
   const productColumns: BreakdownColumn<AnalyticsSnapshot["topProducts"][number]>[] = [
     {
-      header: "Rank",
+      header: t("admin.analytics.rank"),
       render: (_row, index) => (
         <span className="font-mono text-gold font-bold">#{index + 1}</span>
       ),
     },
     {
-      header: "Product",
+      header: t("admin.analytics.product"),
       render: (row) => (
         <span className="font-serif font-bold text-sm text-ivory">{row.name || "—"}</span>
       ),
     },
     {
-      header: "Units",
+      header: t("admin.analytics.units"),
       align: "right",
       render: (row) => <span className="font-mono num-lining">{whole(row.units)}</span>,
     },
     {
-      header: "Orders",
+      header: t("admin.analytics.orders"),
       align: "right",
       render: (row) => <span className="font-mono num-lining">{whole(row.orders)}</span>,
     },
     {
-      header: "Revenue",
+      header: t("admin.analytics.revenue"),
       align: "right",
       render: (row) => <span className="font-mono num-lining text-gold">{money(row.revenue)}</span>,
     },
@@ -335,7 +347,7 @@ export const AnalyticsPage: React.FC = () => {
 
   const couponColumns: BreakdownColumn<AnalyticsSnapshot["couponPerformance"][number]>[] = [
     {
-      header: "Code",
+      header: t("admin.analytics.code"),
       render: (row) => (
         <span className="font-mono text-[11px] font-bold text-gold uppercase">
           {row.code || "—"}
@@ -343,7 +355,7 @@ export const AnalyticsPage: React.FC = () => {
       ),
     },
     {
-      header: "Status",
+      header: t("admin.shared.status"),
       render: (row) => (
         <span
           className={`text-[9px] font-mono uppercase tracking-wider px-2 py-1 rounded border ${
@@ -357,12 +369,12 @@ export const AnalyticsPage: React.FC = () => {
       ),
     },
     {
-      header: "Uses",
+      header: t("admin.analytics.uses"),
       align: "right",
       render: (row) => <span className="font-mono num-lining">{whole(row.uses)}</span>,
     },
     {
-      header: "Discount Given",
+      header: t("admin.analytics.discountGivenHeader"),
       align: "right",
       render: (row) => (
         <span className="font-mono num-lining text-gold">{money(row.discountGiven)}</span>
@@ -376,15 +388,13 @@ export const AnalyticsPage: React.FC = () => {
       <header className="flex flex-col lg:flex-row lg:items-start justify-between gap-5 border-b border-gold/20 pb-4">
         <div className="min-w-0">
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            Telemetry & Business Intelligence
+            {t("admin.analytics.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Boutique Performance & Revenue Analytics
+            {t("admin.analytics.pageTitle")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5 max-w-prose">
-            Every figure is returned by the server-side aggregation RPC. Series, distributions and
-            money values are read straight from the snapshot — no sample data and no estimated
-            percentages.
+            {t("admin.analytics.pageIntro")}
           </p>
         </div>
 
@@ -393,7 +403,7 @@ export const AnalyticsPage: React.FC = () => {
             id="analytics-window-label"
             className="block text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold mb-2"
           >
-            Reporting window
+            {t("admin.analytics.reportingWindow")}
           </span>
           <div
             role="group"
@@ -412,13 +422,14 @@ export const AnalyticsPage: React.FC = () => {
                     : "text-muted hover:text-ivory"
                 }`}
               >
-                {value === 365 ? "12 months" : `${value} days`}
+                {value === 365
+                  ? t("admin.analytics.windowMonths")
+                  : t("admin.analytics.windowDays", { count: value })}
               </button>
             ))}
           </div>
           <p className="text-[10px] text-muted font-light mt-2 max-w-[18rem] leading-relaxed">
-            The window is applied by the aggregation to top products and bottle sizes, and is used
-            to slice the daily trend. Lifetime panels carry their own scope label.
+            {t("admin.analytics.windowHint")}
           </p>
         </div>
       </header>
@@ -428,7 +439,9 @@ export const AnalyticsPage: React.FC = () => {
         <div className="space-y-6">
           <p role="status" className="flex items-center gap-2 text-xs text-muted">
             <Loader2 className="w-4 h-4 text-gold animate-spin" aria-hidden="true" />
-            Querying the boutique analytics aggregation for {days === 365 ? "the last 12 months" : `the last ${days} days`}…
+            {days === 365
+              ? t("admin.analytics.loadingMonths")
+              : t("admin.analytics.loadingDays", { count: days })}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -458,9 +471,13 @@ export const AnalyticsPage: React.FC = () => {
             <AlertTriangle className="w-5 h-5 text-gold shrink-0 mt-0.5" aria-hidden="true" />
             <div>
               <h2 className="font-serif text-lg font-bold text-ivory tracking-wide">
-                Analytics unavailable
+                {t("admin.analytics.unavailableTitle")}
               </h2>
-              <p className="text-xs text-muted font-light mt-1 max-w-prose">{failure}</p>
+              <p className="text-xs text-muted font-light mt-1 max-w-prose">
+                {failure
+                  ? failure.detail ?? t(failure.key)
+                  : t("admin.analytics.unexpectedError")}
+              </p>
             </div>
           </div>
           <button
@@ -469,7 +486,7 @@ export const AnalyticsPage: React.FC = () => {
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded border border-gold/40 text-[11px] font-mono uppercase tracking-[1.5px] text-gold hover:bg-gold hover:text-navy focus:outline-none focus-visible:ring-1 focus-visible:ring-goldLight transition-colors shrink-0"
           >
             <RotateCcw className="w-4 h-4" aria-hidden="true" />
-            Retry request
+            {t("admin.analytics.retryRequest")}
           </button>
         </div>
       )}
@@ -480,11 +497,9 @@ export const AnalyticsPage: React.FC = () => {
           <div className="p-3 rounded-full bg-navy border border-gold/20 text-gold inline-flex mb-3">
             <Boxes className="w-6 h-6" aria-hidden="true" />
           </div>
-          <h2 className="font-serif text-lg text-ivory font-bold">No telemetry yet</h2>
+          <h2 className="font-serif text-lg text-ivory font-bold">{t("admin.analytics.emptyTitle")}</h2>
           <p className="text-xs text-muted mt-1 max-w-sm mx-auto font-light">
-            The aggregation answered for the last {snapshot?.windowDays ?? days} days, but there is
-            nothing to report yet: no orders, refunds, cancellations, signups, coupon usage or stock
-            alerts. Numbers appear as soon as real activity is recorded.
+            {t("admin.analytics.emptyBody", { days: snapshot?.windowDays ?? days })}
           </p>
         </div>
       )}
@@ -495,91 +510,107 @@ export const AnalyticsPage: React.FC = () => {
           <section aria-labelledby="kpis-heading" className="space-y-4">
             <SectionHeading
               id="kpis-heading"
-              title="Revenue & Volume"
-              note={`Aggregation window reported by the server: ${view.s.windowDays} days. Totals exclude cancelled orders; cancelled and returned rows are reported separately below.`}
+              title={t("admin.analytics.revenueVolume")}
+              note={t("admin.analytics.revenueVolumeNote", { days: view.s.windowDays })}
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <StatCard
-                title="Net Revenue"
+                title={t("admin.analytics.netRevenue")}
                 value={money(view.netRevenue)}
-                subtitle={`${money(view.s.totals.grossRevenue)} gross less ${money(view.s.refunds.processedAmount)} processed refunds`}
+                subtitle={t("admin.analytics.netRevenueSubtitle", {
+                  gross: money(view.s.totals.grossRevenue),
+                  refunds: money(view.s.refunds.processedAmount),
+                })}
                 icon={DollarSign}
                 accent={true}
               />
               <StatCard
-                title="Orders"
+                title={t("admin.analytics.orders")}
                 value={whole(view.s.totals.orders)}
-                subtitle="Non-cancelled order rows"
+                subtitle={t("admin.analytics.ordersSubtitle")}
                 icon={ShoppingCart}
               />
               <StatCard
-                title="Customers"
+                title={t("admin.analytics.customers")}
                 value={whole(view.s.totals.customers)}
-                subtitle="Distinct order emails on record"
+                subtitle={t("admin.analytics.customersSubtitle")}
                 icon={Users}
               />
               <StatCard
-                title="Average Order Value"
+                title={t("admin.analytics.averageOrderValue")}
                 value={money(view.s.totals.averageOrderValue)}
-                subtitle="Mean order total, cancellations excluded"
+                subtitle={t("admin.analytics.averageOrderValueSubtitle")}
                 icon={TrendingUp}
               />
               <StatCard
-                title="Units Sold"
+                title={t("admin.analytics.unitsSold")}
                 value={whole(view.s.totals.unitsSold)}
-                subtitle="Bottles across non-cancelled orders"
+                subtitle={t("admin.analytics.unitsSoldSubtitle")}
                 icon={Package}
               />
               <StatCard
-                title="Refund Records"
+                title={t("admin.refunds.refundRecords")}
                 value={whole(view.s.refunds.records)}
-                subtitle={`${money(view.s.refunds.processedAmount)} processed · ${money(view.s.refunds.pendingAmount)} pending`}
+                subtitle={t("admin.analytics.refundRecordsSubtitle", {
+                  processed: money(view.s.refunds.processedAmount),
+                  pending: money(view.s.refunds.pendingAmount),
+                })}
                 icon={RotateCcw}
               />
               <StatCard
-                title="Cancelled Orders"
+                title={t("admin.dashboard.cancelledOrders")}
                 value={whole(view.s.cancellations.cancelledOrders)}
-                subtitle={`${money(view.s.cancellations.cancelledValue)} cancelled · ${whole(view.s.cancellations.returnedOrders)} returned`}
+                subtitle={t("admin.analytics.cancelledOrdersSubtitle", {
+                  cancelled: money(view.s.cancellations.cancelledValue),
+                  returned: whole(view.s.cancellations.returnedOrders),
+                })}
                 icon={Ban}
               />
               <StatCard
-                title="Inventory Alerts"
+                title={t("admin.analytics.inventoryAlerts")}
                 value={whole(view.alertTotal)}
-                subtitle={`${view.s.inventoryAlerts.outOfStock} out of stock · ${view.s.inventoryAlerts.lowStock} low stock · ${view.s.inventoryAlerts.inactive} inactive`}
+                subtitle={t("admin.analytics.inventoryAlertsSubtitle", {
+                  outOfStock: view.s.inventoryAlerts.outOfStock,
+                  lowStock: view.s.inventoryAlerts.lowStock,
+                  inactive: view.s.inventoryAlerts.inactive,
+                })}
                 icon={Boxes}
               />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <DetailPanel
-                title="Refund Ledger"
+                id="refunds"
+                title={t("admin.refunds.refundLedger")}
                 icon={RotateCcw}
-                note="Refund rows are counted across all time, which is why they are deducted from lifetime gross revenue."
+                note={t("admin.analytics.refundLedgerNote")}
                 rows={[
-                  { label: "Refund records", value: whole(view.s.refunds.records) },
-                  { label: "Processed amount", value: money(view.s.refunds.processedAmount) },
-                  { label: "Pending amount", value: money(view.s.refunds.pendingAmount) },
-                  { label: "Rejected or failed", value: whole(view.s.refunds.rejectedOrFailed) },
+                  { label: t("admin.analytics.refundRecordsLabel"), value: whole(view.s.refunds.records) },
+                  { label: t("admin.analytics.processedAmount"), value: money(view.s.refunds.processedAmount) },
+                  { label: t("admin.analytics.pendingAmount"), value: money(view.s.refunds.pendingAmount) },
+                  { label: t("admin.analytics.rejectedOrFailed"), value: whole(view.s.refunds.rejectedOrFailed) },
                 ]}
               />
               <DetailPanel
-                title="Cancellations & Returns"
+                id="cancellations"
+                title={t("admin.analytics.cancellationsReturns")}
                 icon={Ban}
-                note="Reported for every order row, independent of the window selector."
+                note={t("admin.analytics.cancellationsNote")}
                 rows={[
-                  { label: "Cancelled orders", value: whole(view.s.cancellations.cancelledOrders) },
-                  { label: "Cancelled value", value: money(view.s.cancellations.cancelledValue) },
-                  { label: "Returned orders", value: whole(view.s.cancellations.returnedOrders) },
+                  { label: t("admin.analytics.cancelledOrdersLabel"), value: whole(view.s.cancellations.cancelledOrders) },
+                  { label: t("admin.analytics.cancelledValue"), value: money(view.s.cancellations.cancelledValue) },
+                  { label: t("admin.analytics.returnedOrders"), value: whole(view.s.cancellations.returnedOrders) },
                 ]}
               />
               <DetailPanel
-                title="Inventory Alerts"
+                id="inventory"
+                title={t("admin.analytics.inventoryAlerts")}
                 icon={Boxes}
-                note="Current state of every product variant, not a historical series."
+                note={t("admin.analytics.inventoryAlertsNote")}
                 rows={[
-                  { label: "Out of stock", value: whole(view.s.inventoryAlerts.outOfStock) },
-                  { label: "Low stock", value: whole(view.s.inventoryAlerts.lowStock) },
-                  { label: "Inactive variants", value: whole(view.s.inventoryAlerts.inactive) },
+                  { label: t("common.outOfStock"), value: whole(view.s.inventoryAlerts.outOfStock) },
+                  { label: t("admin.analytics.lowStockLabel"), value: whole(view.s.inventoryAlerts.lowStock) },
+                  { label: t("admin.analytics.inactiveVariants"), value: whole(view.s.inventoryAlerts.inactive) },
                 ]}
               />
             </div>
@@ -589,34 +620,36 @@ export const AnalyticsPage: React.FC = () => {
           <section aria-labelledby="trends-heading" className="space-y-6">
             <SectionHeading
               id="trends-heading"
-              title="Trends Over Time"
-              note="Derived from the daily and monthly rows the aggregation returns. Each chart exposes the same numbers in a collapsible table."
+              title={t("admin.analytics.trendsOverTime")}
+              note={t("admin.analytics.trendsNote")}
             />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-w-0">
               <ChartCard
-                title="Revenue & Order Volume"
-                subtitle={`Weekly buckets · ${view.rangeText}`}
+                title={t("admin.analytics.revenueOrderVolume")}
+                subtitle={t("admin.analytics.weeklyBucketsSubtitle", {
+                  range: view.rangeText ?? t("admin.analytics.noDatedOrderRows"),
+                })}
                 variant="line"
                 points={view.trendRevenue}
                 secondary={view.trendOrders}
                 formatter={money}
                 secondaryFormatter={whole}
-                primaryLabel="Revenue"
-                secondaryLabel="Orders"
-                axisLabel="Week starting"
-                emptyMessage="No dated order rows fall inside this window yet."
-                caption="The aggregation emits daily rows for the last 90 days; they are summed into 7-day buckets so the series stays readable. Weeks between the first and last order with no activity are true zeros."
+                primaryLabel={t("admin.analytics.revenue")}
+                secondaryLabel={t("admin.analytics.orders")}
+                axisLabel={t("admin.analytics.weekStarting")}
+                emptyMessage={t("admin.analytics.trendEmpty")}
+                caption={t("admin.analytics.trendCaption")}
               />
               <ChartCard
-                title="Customer Growth"
-                subtitle="Signups per calendar month · all time"
+                title={t("admin.analytics.customerGrowth")}
+                subtitle={t("admin.analytics.customerGrowthSubtitle")}
                 variant="line"
                 points={view.growthPoints}
                 formatter={whole}
-                primaryLabel="Signups"
-                axisLabel="Month"
-                emptyMessage="No customer profiles with the customer role yet."
-                caption="One row per month of profile creation. The aggregation is not windowed, so this series spans the full lifetime of the boutique."
+                primaryLabel={t("admin.analytics.signups")}
+                axisLabel={t("admin.analytics.month")}
+                emptyMessage={t("admin.analytics.customerGrowthEmpty")}
+                caption={t("admin.analytics.customerGrowthCaption")}
               />
             </div>
           </section>
@@ -625,45 +658,46 @@ export const AnalyticsPage: React.FC = () => {
           <section aria-labelledby="catalogue-heading" className="space-y-6">
             <SectionHeading
               id="catalogue-heading"
-              title="Catalogue Signals"
-              note={`Product and size rows are windowed by the aggregation to the last ${view.s.windowDays} days, ranked and capped at the server.`}
+              title={t("admin.analytics.catalogueSignals")}
+              note={t("admin.analytics.catalogueNote", { days: view.s.windowDays })}
             />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-w-0">
               <ChartCard
-                title="Top Products"
-                subtitle={`Revenue per product · last ${view.s.windowDays} days`}
+                title={t("admin.analytics.topProducts")}
+                subtitle={t("admin.analytics.topProductsSubtitle", { days: view.s.windowDays })}
                 variant="bar"
                 points={view.productPoints}
                 formatter={money}
-                primaryLabel="Revenue"
-                axisLabel="Product"
-                emptyMessage="No line items were sold inside this window."
-                caption="Revenue is the sum of order line totals per product name, with cancelled orders excluded."
+                primaryLabel={t("admin.analytics.revenue")}
+                axisLabel={t("admin.analytics.product")}
+                emptyMessage={t("admin.analytics.topProductsEmpty")}
+                caption={t("admin.analytics.topProductsCaption")}
               />
               <ChartCard
-                title="Top Bottle Sizes"
-                subtitle={`Units per variant size · last ${view.s.windowDays} days`}
+                title={t("admin.analytics.topBottleSizes")}
+                subtitle={t("admin.analytics.topBottleSizesSubtitle", { days: view.s.windowDays })}
                 variant="bar"
                 points={view.sizePoints}
                 secondary={view.sizeRevenue}
                 formatter={whole}
                 secondaryFormatter={money}
-                primaryLabel="Units"
-                secondaryLabel="Revenue"
-                axisLabel="Size"
-                emptyMessage="No sized variants were ordered inside this window."
-                caption="Bars show units sold; the ivory series shows the revenue those units generated, scaled to its own maximum."
+                primaryLabel={t("admin.analytics.units")}
+                secondaryLabel={t("admin.analytics.revenue")}
+                axisLabel={t("admin.inventory.size")}
+                emptyMessage={t("admin.analytics.topBottleSizesEmpty")}
+                caption={t("admin.analytics.topBottleSizesCaption")}
               />
             </div>
             <div className="min-w-0">
               <AnalyticsBreakdownTable
-                title="Top Products Detail"
-                subtitle={`Full names, units, orders and revenue · last ${view.s.windowDays} days`}
-                caption="Same rows that feed the Top Products chart, with the untruncated product name."
+                title={t("admin.analytics.topProductsDetail")}
+                sectionId="top-products"
+                subtitle={t("admin.analytics.topProductsDetailSubtitle", { days: view.s.windowDays })}
+                caption={t("admin.analytics.topProductsDetailCaption")}
                 rows={view.s.topProducts}
                 columns={productColumns}
                 rowKey={(row, index) => `${row.name}-${index}`}
-                emptyMessage="No products sold inside this window."
+                emptyMessage={t("admin.analytics.topProductsDetailEmpty")}
               />
             </div>
           </section>
@@ -672,48 +706,48 @@ export const AnalyticsPage: React.FC = () => {
           <section aria-labelledby="mix-heading" className="space-y-6">
             <SectionHeading
               id="mix-heading"
-              title="Order Status & Payment Mix"
-              note="Distributions are counted across every row in the database, so they describe the full order book rather than the selected window."
+              title={t("admin.analytics.orderStatusMix")}
+              note={t("admin.analytics.orderStatusMixNote")}
             />
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 min-w-0">
               <ChartCard
-                title="Order Status"
-                subtitle="Order rows by status · all time"
+                title={t("admin.analytics.orderStatus")}
+                subtitle={t("admin.analytics.orderStatusSubtitle")}
                 variant="bar"
                 points={view.statusPoints}
                 formatter={whole}
-                primaryLabel="Orders"
-                axisLabel="Status"
-                emptyMessage="No orders recorded yet."
-                caption="Every order row grouped by its current status, including cancelled and returned rows."
+                primaryLabel={t("admin.analytics.orders")}
+                axisLabel={t("admin.shared.status")}
+                emptyMessage={t("admin.analytics.orderStatusEmpty")}
+                caption={t("admin.analytics.orderStatusCaption")}
               />
               <ChartCard
-                title="Payment Method"
-                subtitle="Revenue by method · all time"
+                title={t("admin.analytics.paymentMethod")}
+                subtitle={t("admin.analytics.paymentMethodSubtitle")}
                 variant="bar"
                 points={view.methodPoints}
                 secondary={view.methodCounts}
                 formatter={money}
                 secondaryFormatter={whole}
-                primaryLabel="Revenue"
-                secondaryLabel="Orders"
-                axisLabel="Method"
-                emptyMessage="No payment method recorded on any order yet."
-                caption="Cancelled orders are excluded from the payment method rollup."
+                primaryLabel={t("admin.analytics.revenue")}
+                secondaryLabel={t("admin.analytics.orders")}
+                axisLabel={t("admin.analytics.method")}
+                emptyMessage={t("admin.analytics.paymentMethodEmpty")}
+                caption={t("admin.analytics.paymentMethodCaption")}
               />
               <ChartCard
-                title="Payment Status"
-                subtitle="Payment records by status · all time"
+                title={t("admin.analytics.paymentStatus")}
+                subtitle={t("admin.analytics.paymentStatusSubtitle")}
                 variant="bar"
                 points={view.payStatusPoints}
                 secondary={view.payStatusValues}
                 formatter={whole}
                 secondaryFormatter={money}
-                primaryLabel="Records"
-                secondaryLabel="Value"
-                axisLabel="Status"
-                emptyMessage="No payment records verified yet."
-                caption="Counted from the payments table, one row per recorded payment."
+                primaryLabel={t("admin.analytics.records")}
+                secondaryLabel={t("admin.chartCard.value")}
+                axisLabel={t("admin.shared.status")}
+                emptyMessage={t("admin.analytics.paymentStatusEmpty")}
+                caption={t("admin.analytics.paymentStatusCaption")}
               />
             </div>
           </section>
@@ -722,40 +756,50 @@ export const AnalyticsPage: React.FC = () => {
           <section aria-labelledby="promotions-heading" className="space-y-6">
             <SectionHeading
               id="promotions-heading"
-              title="Promotions"
-              note={`Coupon usage is counted across all time: ${plural(view.couponTracked, "redemption")} recorded against ${plural(view.s.couponPerformance.length, "coupon")} in the catalog.`}
+              title={t("admin.analytics.promotions")}
+              note={t("admin.analytics.promotionsNote", {
+                redemptions: countPhrase(
+                  view.couponTracked,
+                  "admin.analytics.redemptionOne",
+                  "admin.analytics.redemptions"
+                ),
+                coupons: countPhrase(
+                  view.s.couponPerformance.length,
+                  "admin.analytics.couponOne",
+                  "admin.analytics.coupons"
+                ),
+              })}
             />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-w-0">
               <ChartCard
-                title="Coupon Performance"
-                subtitle="Redemptions per coupon code · all time"
+                title={t("admin.analytics.couponPerformance")}
+                subtitle={t("admin.analytics.couponPerformanceSubtitle")}
                 variant="bar"
                 points={view.couponPoints}
                 secondary={view.couponDiscounts}
                 formatter={whole}
                 secondaryFormatter={money}
-                primaryLabel="Uses"
-                secondaryLabel="Discount given"
-                axisLabel="Code"
-                emptyMessage="No coupons exist in the catalog yet."
-                caption="Codes with zero redemptions are returned by the aggregation too, so unused promotions stay visible."
+                primaryLabel={t("admin.analytics.uses")}
+                secondaryLabel={t("admin.analytics.discountGivenLabel")}
+                axisLabel={t("admin.analytics.code")}
+                emptyMessage={t("admin.analytics.couponEmpty")}
+                caption={t("admin.analytics.couponPerformanceCaption")}
               />
               <AnalyticsBreakdownTable
-                title="Coupon Detail"
-                subtitle="Code, lifecycle status, uses and discount given"
-                caption="Same rows that feed the coupon chart, ranked by discount given."
+                title={t("admin.analytics.couponDetail")}
+                sectionId="coupons"
+                subtitle={t("admin.analytics.couponDetailSubtitle")}
+                caption={t("admin.analytics.couponDetailCaption")}
                 rows={view.s.couponPerformance}
                 columns={couponColumns}
                 rowKey={(row, index) => `${row.code}-${index}`}
-                emptyMessage="No coupons exist in the catalog yet."
+                emptyMessage={t("admin.analytics.couponEmpty")}
               />
             </div>
           </section>
 
           <p className="text-[10px] text-muted/80 font-light border-t border-gold/15 pt-4">
-            Figures are re-read from the server aggregation whenever this page mounts or the
-            reporting window changes. Where the aggregation carries no comparable prior window, no
-            trend or percentage is shown rather than an estimate.
+            {t("admin.analytics.footerNote")}
           </p>
         </>
       )}

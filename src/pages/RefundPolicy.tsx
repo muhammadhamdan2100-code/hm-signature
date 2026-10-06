@@ -1,40 +1,32 @@
 import LegalPage from "../components/LegalPage";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function RefundPolicy() {
+  const { t } = useI18n();
   return (
     <LegalPage
-      title="Refund Policy"
-      updated="September 2026"
+      title={t("footer.refundPolicy")}
+      updated={t("legal.updatedDate")}
       sections={[
         {
-          title: "Eligibility",
-          body: [
-            "Refunds are available for unopened, unused fragrances returned within 30 days of delivery in their original packaging. See our Returns & Exchanges page for the full process.",
-          ],
+          title: t("legal.refundEligibilityTitle"),
+          body: [t("legal.refundEligibilityBody1")],
         },
         {
-          title: "Refund Method",
-          body: [
-            "Approved refunds are issued to the account you paid from within 7 business days of us receiving the returned item. Cash-on-delivery orders are refunded via bank transfer.",
-          ],
+          title: t("legal.refundMethodTitle"),
+          body: [t("legal.refundMethodBody1")],
         },
         {
-          title: "Damaged or Defective Items",
-          body: [
-            "If your order arrives damaged or defective, contact us within 48 hours of delivery with photos of the item and packaging for a full refund or free replacement — no return shipping required.",
-          ],
+          title: t("legal.refundDamagedTitle"),
+          body: [t("legal.refundDamagedBody1")],
         },
         {
-          title: "Non-Refundable Situations",
-          body: [
-            "Opened or used fragrances, and items returned after the 30-day window, are not eligible for a refund.",
-          ],
+          title: t("legal.refundExcludedTitle"),
+          body: [t("legal.refundExcludedBody1")],
         },
         {
-          title: "Shipping Costs",
-          body: [
-            "Original shipping fees are non-refundable unless the return is due to our error (wrong or damaged item).",
-          ],
+          title: t("legal.refundShippingTitle"),
+          body: [t("legal.refundShippingBody1")],
         },
       ]}
     />

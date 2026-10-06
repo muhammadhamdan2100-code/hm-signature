@@ -3,6 +3,7 @@ import {
   fetchCommunicationPreferences,
   saveMarketingConsent,
 } from "../services/customerPreferences";
+import { useI18n } from "../i18n/I18nProvider";
 import { Mail, ShieldCheck } from "lucide-react";
 
 /**
@@ -12,6 +13,7 @@ import { Mail, ShieldCheck } from "lucide-react";
  * whenever this is off.
  */
 export default function CommunicationPreferences() {
+  const { t } = useI18n();
   const [marketing, setMarketing] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,11 +45,11 @@ export default function CommunicationPreferences() {
     if (result.ok) {
       setNotice(
         marketing
-          ? "Saved. A reminder may reach you if you leave a saved bag unpaid."
-          : "Saved. Promotional reminders are turned off for this account."
+          ? t("account.prefSavedMarketing")
+          : t("account.prefSavedOff")
       );
     } else {
-      setError(result.error || "Your choice could not be saved. Please try again.");
+      setError(result.error || t("account.prefSaveFailed"));
     }
   };
 
@@ -57,19 +59,19 @@ export default function CommunicationPreferences() {
       aria-labelledby="communication-preferences-title"
       className="bg-navy2/90 border border-gold/30 rounded-2xl p-6 sm:p-7 space-y-4 shadow-xl backdrop-blur-md"
     >
-      <div className="flex items-start space-x-2.5 border-b border-gold/20 pb-3">
+      <div className="flex items-start gap-2.5 border-b border-gold/20 pb-3">
         <Mail className="w-4 h-4 text-gold mt-0.5 shrink-0" />
         <div>
           <h3 id="communication-preferences-title" className="font-serif text-base font-bold text-ivory">
-            Email preferences
+            {t("account.emailPreferences")}
           </h3>
           <p className="text-[11px] text-muted font-light leading-relaxed mt-0.5">
-            Chosen by you and stored against your account.
+            {t("account.emailPreferencesHint")}
           </p>
         </div>
       </div>
 
-      <label className="flex items-start space-x-3 cursor-pointer">
+      <label className="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"
           checked={marketing}
@@ -81,19 +83,17 @@ export default function CommunicationPreferences() {
           className="mt-0.5 w-4 h-4 accent-gold shrink-0 disabled:opacity-50"
         />
         <span className="text-xs text-ivory leading-relaxed">
-          <span className="font-semibold">Promotional reminders</span>
+          <span className="font-semibold">{t("account.promotionalReminders")}</span>
           <span className="block text-muted font-light mt-0.5">
-            A single reminder if you leave a saved bag unpaid for a while. Nothing is sent about
-            promotions you have not asked for, and switching this off stops the reminder at once.
+            {t("account.promotionalRemindersBody")}
           </span>
         </span>
       </label>
 
-      <p className="text-[11px] text-muted font-light leading-relaxed flex items-start space-x-2">
+      <p className="text-[11px] text-muted font-light leading-relaxed flex items-start gap-2">
         <ShieldCheck className="w-3.5 h-3.5 text-gold mt-0.5 shrink-0" />
         <span>
-          Order confirmations, payment receipts and delivery notices are part of your purchase and
-          are not switched off here.
+          {t("account.transactionalEmailsBody")}
         </span>
       </p>
 
@@ -104,9 +104,9 @@ export default function CommunicationPreferences() {
           disabled={!loaded || busy}
           className="px-5 py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-bold rounded text-[11px] uppercase tracking-widest disabled:opacity-50 transition-colors"
         >
-          {busy ? "SAVING…" : "Save preference"}
+          {busy ? t("account.savingUpper") : t("account.savePreference")}
         </button>
-        {!loaded && <span className="text-[11px] text-muted font-light">Loading your choice…</span>}
+        {!loaded && <span className="text-[11px] text-muted font-light">{t("account.loadingChoice")}</span>}
       </div>
 
       {notice && (

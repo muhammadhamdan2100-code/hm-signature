@@ -3,23 +3,27 @@ import { Link } from "react-router-dom";
 import { X, Send, Sparkles, MessageCircle, RefreshCw } from "lucide-react";
 import { askConcierge, type ConciergeMessage, type ConciergeSource } from "../services/aiConcierge";
 import { useAuth } from "../context/AuthContext";
+import { useI18n } from "../i18n/I18nProvider";
 
 const WHATSAPP_NUMBER = "923218602034";
 const STORE_KEY = "hm-signature-concierge";
 const MAX_TURNS = 20;
 
-const SUGGESTIONS = [
-  "Which fragrances suit evening wear?",
-  "What bottle sizes do you offer?",
-  "How do I pay with Raast?",
-  "Where is my order?",
+// Translation keys, not copy: the chip renders the shopper's language and asks the
+// concierge in that same language.
+const SUGGESTION_KEYS = [
+"common.conciergeSuggestionEvening",
+"common.conciergeSuggestionSizes",
+"common.conciergeSuggestionRaast",
+"common.conciergeSuggestionOrder",
 ];
 
-const GREETING: ConciergeMessage = {
+// The greeting is built per render so it follows the interface language, while the
+// stored transcript keeps whatever was said at the time.
+const greetingMessage = (t: (key: string) => string): ConciergeMessage => ({
   role: "assistant",
-  content:
-    "Welcome. I can help with fragrance families and notes, bottle sizes and prices, gifting, delivery across Pakistan, and the status of an order placed with this account.",
-};
+  content: t("common.conciergeGreeting"),
+});
 
 function readStored(): ConciergeMessage[] {
   try {
@@ -71,9 +75,10 @@ export default function ConciergeChat({
   whatsappHref?: string;
 }) {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [history, setHistory] = useState<ConciergeMessage[]>(() => {
     const stored = readStored();
-    return stored.length ? stored : [GREETING];
+    return stored.length ? stored : [greetingMessage(t)];
   });
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
@@ -117,7 +122,7 @@ export default function ConciergeChat({
     }
     if (lastOwnerId.current === id) return;
     lastOwnerId.current = id;
-    setHistory([GREETING]);
+    setHistory([greetingMessage(t)]);
     setSources([]);
     setNotice(null);
   }, [user?.id]);
@@ -140,7 +145,7 @@ export default function ConciergeChat({
       setNotice(result.error);
       const apology: ConciergeMessage = {
         role: "assistant",
-        content: "I could not complete that request. Please try again, or reach our concierge directly.",
+        content: t("common.conciergeApology"),
       };
       setHistory([...next, apology].slice(-MAX_TURNS));
       return;
@@ -149,12 +154,12 @@ export default function ConciergeChat({
     const answer: ConciergeMessage = { role: "assistant", content: result.reply };
     setSources(result.sources);
     setDegraded(result.degraded);
-    if (!result.configured) setNotice("The assistant is not enabled on this deployment yet.");
+    if (!result.configured) setNotice(t("common.conciergeNotEnabled"));
     setHistory([...next, answer].slice(-MAX_TURNS));
   };
 
   const reset = () => {
-    setHistory([GREETING]);
+    setHistory([greetingMessage(t)]);
     setSources([]);
     setNotice(null);
     setDegraded(false);
@@ -169,11 +174,11 @@ export default function ConciergeChat({
       className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-3 pb-3 sm:p-6"
       role="dialog"
       aria-modal="true"
-      aria-label="HM Signature fragrance concierge"
+      aria-label={t("common.conciergeDialogLabel")}
     >
       <button
         type="button"
-        aria-label="Close concierge"
+        aria-label={t("common.closeConcierge")}
         onClick={onClose}
         className="absolute inset-0 bg-black/70 backdrop-blur-sm cursor-default"
       />
@@ -188,14 +193,14 @@ export default function ConciergeChat({
             <Sparkles className="w-4 h-4 text-gold" />
             <div>
               <p className="text-[9px] font-mono uppercase tracking-[2.5px] text-gold font-semibold">HM Signature</p>
-              <h2 className="font-serif text-sm text-ivory font-bold leading-tight">Fragrance Concierge</h2>
+              <h2 className="font-serif text-sm text-ivory font-bold leading-tight">{t("common.fragranceConcierge")}</h2>
             </div>
           </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={reset}
-              aria-label="Start a new conversation"
+              aria-label={t("common.startNewConversation")}
               className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center text-muted hover:text-gold rounded transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
@@ -203,7 +208,7 @@ export default function ConciergeChat({
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close concierge"
+              aria-label={t("common.closeConcierge")}
               className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center text-muted hover:text-ivory rounded transition-colors"
             >
               <X className="w-4 h-4" />
@@ -230,14 +235,14 @@ export default function ConciergeChat({
           {pending && (
             <div className="flex justify-start">
               <div className="rounded-xl px-3.5 py-2.5 bg-navy border border-gold/15 text-muted text-[11px] font-mono">
-                Consulting the atelier…
+                {t("common.consultingAtelier")}
               </div>
             </div>
           )}
 
           {degraded && (
             <p className="text-[11px] text-muted font-light">
-              Answers above are drawn directly from live catalogue and order records; the assistant could not add general guidance.
+              {t("common.conciergeDegradedBody")}
             </p>
           )}
           {notice && (
@@ -247,15 +252,15 @@ export default function ConciergeChat({
         </div>
 
         <div className="px-5 pt-3 pb-1 flex flex-wrap gap-1.5">
-          {SUGGESTIONS.map((s) => (
+          {SUGGESTION_KEYS.map((k) => (
             <button
-              key={s}
+              key={k}
               type="button"
               disabled={pending}
-              onClick={() => send(s)}
+              onClick={() => send(t(k))}
               className="text-[10px] font-sans px-2.5 py-1.5 rounded-full border border-gold/25 text-muted hover:text-ivory hover:border-gold/60 transition-colors disabled:opacity-40"
             >
-              {s}
+              {t(k)}
             </button>
           ))}
         </div>
@@ -268,7 +273,7 @@ export default function ConciergeChat({
           className="px-5 py-4 border-t border-gold/15 flex items-center gap-2"
         >
           <label htmlFor="concierge-input" className="sr-only">
-            Ask the concierge
+            {t("common.askTheConcierge")}
           </label>
           <input
             id="concierge-input"
@@ -276,13 +281,13 @@ export default function ConciergeChat({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={500}
-            placeholder={user ? "Ask about scents, sizes or your order…" : "Ask about scents, sizes or delivery…"}
+            placeholder={user ? t("common.conciergePlaceholderSignedIn") : t("common.conciergePlaceholderGuest")}
             className="flex-1 bg-navy border border-gold/25 rounded-lg px-3 py-2.5 text-xs text-ivory placeholder:text-muted/70 focus:outline-none focus:border-gold"
           />
           <button
             type="submit"
             disabled={pending || !draft.trim()}
-            aria-label="Send message"
+            aria-label={t("common.sendMessage")}
             className="w-10 h-10 shrink-0 rounded-lg bg-gold hover:bg-goldLight text-navy flex items-center justify-center transition-colors disabled:opacity-40"
           >
             <Send className="w-4 h-4" />
@@ -297,9 +302,9 @@ export default function ConciergeChat({
             className="flex items-center gap-1.5 hover:text-ivory transition-colors"
           >
             <MessageCircle className="w-3.5 h-3.5" />
-            WhatsApp concierge
+            {t("common.whatsappConcierge")}
           </a>
-          {!user && <span className="uppercase tracking-wider">Sign in for order status</span>}
+          {!user && <span className="uppercase tracking-wider">{t("common.signInForOrderStatus")}</span>}
         </div>
       </div>
     </div>

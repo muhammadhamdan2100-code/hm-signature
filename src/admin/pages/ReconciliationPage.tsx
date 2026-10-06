@@ -10,6 +10,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { StatCard } from "../components/StatCard";
 import { Scale, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { formatPKR } from "../../utils/currency";
+import { useI18n } from "../../i18n/I18nProvider";
 
 const WINDOWS = [30, 90, 365] as const;
 
@@ -30,6 +31,7 @@ const money = (value: number, currency: string) =>
 const shortDate = (iso: string | null) => (iso ? iso.replace("T", " ").slice(0, 16) : "—");
 
 export const ReconciliationPage: React.FC = () => {
+  const { t } = useI18n();
   const [days, setDays] = useState<number>(90);
   const [rows, setRows] = useState<ReconciliationRow[]>([]);
   const [duplicates, setDuplicates] = useState<Awaited<ReturnType<typeof fetchDuplicatePaymentEventsFromDB>>>([]);
@@ -70,7 +72,7 @@ export const ReconciliationPage: React.FC = () => {
 
   const columns: Column<ReconciliationRow>[] = [
     {
-      header: "Order",
+      header: t("admin.shared.order"),
       accessor: (r) => (
         <div>
           <Link to={`/admin/orders/${r.orderId}`} className="font-mono text-xs font-bold text-gold hover:text-goldLight block">
@@ -82,7 +84,7 @@ export const ReconciliationPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Provider / Method",
+      header: t("admin.reconciliation.providerMethod"),
       accessor: (r) => (
         <div>
           <span className="text-xs text-ivory block">{r.method}</span>
@@ -91,14 +93,14 @@ export const ReconciliationPage: React.FC = () => {
       ),
     },
     {
-      header: "Expected",
+      header: t("admin.reconciliation.expected"),
       accessor: (r) => (
         <span className="font-mono text-xs text-ivory">{money(r.expectedAmount, r.currency)}</span>
       ),
       sortable: true,
     },
     {
-      header: "Recorded",
+      header: t("admin.reconciliation.recorded"),
       accessor: (r) => (
         <span className={`font-mono text-xs ${r.difference === 0 ? "text-emerald-300" : "text-rose-300"}`}>
           {money(r.recordedAmount, r.currency)}
@@ -107,7 +109,7 @@ export const ReconciliationPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Difference",
+      header: t("admin.reconciliation.difference"),
       accessor: (r) =>
         r.difference === 0 ? (
           <span className="text-[10px] font-mono text-muted">—</span>
@@ -117,20 +119,20 @@ export const ReconciliationPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "References",
+      header: t("admin.reconciliation.references"),
       accessor: (r) => (
         <div className="space-y-0.5">
           <span className="text-[10px] font-mono text-gold/90 block truncate max-w-[150px]">
-            {r.providerReference || "no provider id"}
+            {r.providerReference || t("admin.reconciliation.noProviderId")}
           </span>
           <span className="text-[10px] font-mono text-muted block truncate max-w-[150px]">
-            {r.paymentReference || "no stated reference"}
+            {r.paymentReference || t("admin.reconciliation.noStatedReference")}
           </span>
         </div>
       ),
     },
     {
-      header: "Order / Payment status",
+      header: t("admin.reconciliation.orderPaymentStatus"),
       accessor: (r) => (
         <div>
           <span className="text-xs text-ivory block">{r.orderStatus}</span>
@@ -141,7 +143,7 @@ export const ReconciliationPage: React.FC = () => {
       ),
     },
     {
-      header: "Refunded",
+      header: t("admin.status.refunded"),
       accessor: (r) => (
         <span className="font-mono text-[10px] text-muted">
           {r.refundedAmount > 0 ? money(r.refundedAmount, r.currency) : "—"}
@@ -150,7 +152,7 @@ export const ReconciliationPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Reconciliation",
+      header: t("admin.nav.reconciliation"),
       accessor: (r) => (
         <span
           className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border ${STATE_TONE[r.state] ?? STATE_TONE.review}`}
@@ -161,7 +163,7 @@ export const ReconciliationPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Payment date",
+      header: t("admin.reconciliation.paymentDate"),
       accessor: (r) => <span className="text-[10px] font-mono text-muted">{shortDate(r.paymentDate)}</span>,
     },
   ];
@@ -171,19 +173,17 @@ export const ReconciliationPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            FINANCIAL CONTROL
+            {t("admin.reconciliation.financialControl")}
           </span>
-          <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5 flex items-center space-x-2">
+          <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5 flex items-center gap-2">
             <Scale className="w-5 h-5 text-gold" />
-            <span>Payment Reconciliation</span>
+            <span>{t("admin.reconciliation.paymentReconciliation")}</span>
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-1 max-w-2xl leading-relaxed">
-            Compares each order's recorded total with its payment record, provider transaction and processed
-            refunds. This view only reports: nothing here marks an order paid, and a mismatch is never
-            corrected automatically.
+            {t("admin.reconciliation.intro")}
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           {WINDOWS.map((w) => (
             <button
               key={w}
@@ -201,34 +201,34 @@ export const ReconciliationPage: React.FC = () => {
             onClick={load}
             className="px-3 py-1.5 rounded text-[11px] font-sans uppercase tracking-wider text-muted border border-gold/20 hover:text-gold hover:border-gold/40"
           >
-            Reload
+            {t("admin.reconciliation.reload")}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
-          title="Orders in window"
+          title={t("admin.reconciliation.ordersInWindow")}
           value={rows.length.toLocaleString()}
-          subtitle={loading ? "Loading…" : `Last ${days} days`}
+            subtitle={loading ? t("admin.shared.loading") : t("admin.reconciliation.lastDays", { days })}
           icon={Clock}
         />
         <StatCard
-          title="Matched"
+          title={t("admin.reconciliation.matched")}
           value={(counts.matched ?? 0).toLocaleString()}
-          subtitle="Recorded amount equals the order total"
+          subtitle={t("admin.reconciliation.recordedAmountEqualsTheOrder")}
           icon={CheckCircle2}
         />
         <StatCard
-          title="Awaiting payment"
+          title={t("admin.reconciliation.awaitingPayment")}
           value={(counts.pending ?? 0).toLocaleString()}
-          subtitle="No confirmation recorded yet"
+          subtitle={t("admin.reconciliation.noConfirmationRecordedYet")}
           icon={Clock}
         />
         <StatCard
-          title="Needs attention"
+          title={t("admin.reconciliation.needsAttention")}
           value={needsAttention.length.toLocaleString()}
-          subtitle="Mismatch, missing record or refund question"
+          subtitle={t("admin.reconciliation.mismatchMissingRecordOrRefund")}
           icon={AlertTriangle}
         />
       </div>
@@ -240,7 +240,7 @@ export const ReconciliationPage: React.FC = () => {
             stateFilter === "all" ? "text-navy bg-gold border-gold" : "text-muted border-gold/20 hover:text-ivory"
           }`}
         >
-          all ({rows.length})
+          {t("admin.reconciliation.allStatesCount", { count: rows.length })}
         </button>
         {RECONCILIATION_STATES.map((state) => (
           <button
@@ -258,19 +258,21 @@ export const ReconciliationPage: React.FC = () => {
       {!loading && rows.length === 0 && (
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6">
           <p className="text-xs text-muted font-sans leading-relaxed">
-            No orders were returned for this window. That is either a genuinely empty period or the
-            staff-only reconciliation query was refused for the current session — reloading with a staff
-            sign-in distinguishes the two.
+            {t("admin.reconciliation.emptyWindowBody")}
           </p>
         </div>
       )}
 
       {duplicates.length > 0 && (
         <div className="bg-rose-950/30 border border-rose-500/40 rounded-lg p-5 space-y-2">
-          <h2 className="font-serif text-base text-rose-100 font-bold">Repeated provider transactions</h2>
+          <h2 className="font-serif text-base text-rose-100 font-bold">{t("admin.reconciliation.repeatedProviderTransactions")}</h2>
           {duplicates.map((d) => (
             <p key={d.providerReference} className="text-xs font-mono text-rose-200">
-              {d.providerReference} recorded {d.occurrences} times for {d.orderNumbers}
+              {t("admin.reconciliation.duplicatePaymentNote", {
+                reference: d.providerReference,
+                count: d.occurrences,
+                orders: d.orderNumbers,
+              })}
             </p>
           ))}
         </div>
@@ -281,8 +283,8 @@ export const ReconciliationPage: React.FC = () => {
           columns={columns}
           data={visible}
           keyExtractor={(r) => r.orderId}
-          emptyMessage="No orders match this filter."
-          searchPlaceholder="Search order number or reference…"
+          emptyMessage={t("admin.reconciliation.noOrdersMatchThisFilter")}
+          searchPlaceholder={t("admin.reconciliation.searchOrderNumberOrReference")}
         />
       </div>
     </div>

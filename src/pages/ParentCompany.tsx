@@ -1,15 +1,17 @@
 import { motion } from "framer-motion";
 import { ExternalLink, BrainCircuit, Cog, Code2, Cloud, TrendingUp } from "lucide-react";
+import { useI18n } from "../i18n/I18nProvider";
 
 const pillars = [
-  { icon: BrainCircuit, label: "Artificial Intelligence" },
-  { icon: Cog, label: "Automation Solutions" },
-  { icon: Code2, label: "Software Development" },
-  { icon: Cloud, label: "Cloud & Enterprise" },
-  { icon: TrendingUp, label: "Digital Transformation" },
+  { icon: BrainCircuit, labelKey: "legal.parentPillarAi" },
+  { icon: Cog, labelKey: "legal.parentPillarAutomation" },
+  { icon: Code2, labelKey: "legal.parentPillarSoftware" },
+  { icon: Cloud, labelKey: "legal.parentPillarCloud" },
+  { icon: TrendingUp, labelKey: "legal.parentPillarTransformation" },
 ];
 
 export default function ParentCompany() {
+  const { t } = useI18n();
   return (
     <div className="pt-24 bg-navy min-h-screen">
       <section className="border-b border-gold/15">
@@ -21,12 +23,11 @@ export default function ParentCompany() {
             transition={{ duration: 0.7 }}
             className="mb-10 text-center"
           >
-            <div className="eyebrow mb-4">OUR PARENT COMPANY</div>
+            <div className="eyebrow mb-4">{t("legal.parentEyebrow")}</div>
             <img src="/xeltrio-logo.png" alt="Xeltrio Technologies" className="h-16 lg:h-20 mx-auto mb-6" />
             <h1 className="font-serif text-4xl lg:text-6xl mb-4">Xeltrio Technologies</h1>
             <p className="text-muted max-w-xl mx-auto leading-relaxed">
-              HM Signature is a brand under Xeltrio Technologies Private Limited — an AI product company
-              building intelligent solutions for a better tomorrow.
+              {t("legal.parentIntro")}
             </p>
           </motion.div>
 
@@ -47,21 +48,21 @@ export default function ParentCompany() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-8 text-center mb-16">
             {pillars.map((p, i) => (
               <motion.div
-                key={p.label}
+                key={p.labelKey}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-40px" }}
                 transition={{ duration: 0.5, delay: i * 0.06 }}
               >
                 <p.icon size={30} strokeWidth={1} className="text-gold mx-auto mb-4" />
-                <div className="text-xs tracking-[1.5px]">{p.label.toUpperCase()}</div>
+                <div className="text-xs tracking-[1.5px]">{t(p.labelKey).toUpperCase()}</div>
               </motion.div>
             ))}
           </div>
 
           <div className="text-center">
             <div className="text-[11px] tracking-[3px] text-muted mb-8">
-              INNOVATE &nbsp;•&nbsp; AUTOMATE &nbsp;•&nbsp; ELEVATE
+              {t("legal.parentTagline")}
             </div>
             <a
               href="https://xeltrio-technologies.vercel.app/"
@@ -69,7 +70,7 @@ export default function ParentCompany() {
               rel="noopener noreferrer"
               className="btn-gold-fill inline-flex items-center gap-2"
             >
-              VISIT XELTRIO TECHNOLOGIES <ExternalLink size={14} />
+              {t("legal.parentVisitCta")} <ExternalLink size={14} />
             </a>
           </div>
         </div>

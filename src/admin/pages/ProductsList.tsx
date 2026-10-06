@@ -16,10 +16,15 @@ import {
   Droplets,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const ProductsList: React.FC = () => {
+  const { t } = useI18n();
   const {
     products,
+    categories,
+    collections,
+    contentName,
     deleteProduct,
     bulkDeleteProducts,
     bulkToggleProductStatus,
@@ -46,13 +51,26 @@ export const ProductsList: React.FC = () => {
   });
 
   const categoriesList = Array.from(new Set(products.map((p) => p.category)));
+  // Merchandising copy is translated in the database. Rows keep their stored source text so an
+  // editor still edits the English source; only what is displayed follows the console language.
+  const categoryIdByName = new Map(categories.map((c) => [c.name, c.id]));
+  const collectionIdByName = new Map(collections.map((c) => [c.name, c.id]));
+  const showCategory = (name: string) => contentName("category", categoryIdByName.get(name), name);
+  const showCollection = (name: string) => contentName("collection", collectionIdByName.get(name), name);
+  const showGender = (gender: string) => {
+    const key = (gender || "").toLowerCase();
+    if (key === "men") return t("admin.shared.men");
+    if (key === "women") return t("admin.shared.women");
+    if (key === "unisex") return t("admin.shared.unisex");
+    return gender;
+  };
 
   // Table columns configuration
   const columns: Column<AdminProduct>[] = [
     {
-      header: "Fragrance",
+      header: t("admin.products.fragrance"),
       accessor: (p) => (
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded border border-gold/20 bg-navy flex items-center justify-center overflow-hidden shrink-0">
             {p.photos && p.photos[0] ? (
               <img src={p.photos[0]} alt={p.name} className="w-full h-full object-cover" />
@@ -62,7 +80,7 @@ export const ProductsList: React.FC = () => {
           </div>
           <div>
             <h4 className="font-serif font-bold text-sm text-ivory tracking-wide">
-              {p.name}
+              {contentName("product", p.id, p.name)}
             </h4>
             <span className="text-[10px] font-mono text-gold/80 block">{p.sku}</span>
           </div>
@@ -71,17 +89,17 @@ export const ProductsList: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Category & Gender",
+      header: t("admin.products.categoryGender"),
       accessor: (p) => (
         <div>
-          <span className="text-xs text-ivory block font-medium">{p.category}</span>
-          <span className="text-[10px] text-muted capitalize">{p.gender} • {p.variants?.length ? p.variants.map((v) => v.size).join(" / ") : p.size}</span>
+          <span className="text-xs text-ivory block font-medium">{showCategory(p.category)}</span>
+          <span className="text-[10px] text-muted capitalize">{showGender(p.gender)} • {p.variants?.length ? p.variants.map((v) => v.size).join(" / ") : p.size}</span>
         </div>
       ),
       sortable: true,
     },
     {
-      header: "Price",
+      header: t("admin.products.price"),
       accessor: (p) => (
         <div>
           <span className="text-xs font-mono font-semibold text-gold block">
@@ -97,7 +115,7 @@ export const ProductsList: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Stock (lowest size)",
+      header: t("admin.products.stockLowestSize"),
       accessor: (p) => {
         const isLow = p.stock <= p.lowStockThreshold;
         return (
@@ -107,11 +125,11 @@ export const ProductsList: React.FC = () => {
                 isLow ? "text-rose-400" : "text-emerald-300"
               }`}
             >
-              {p.stock} units
+              {t("admin.inventory.units", { count: p.stock })}
             </span>
             {isLow && (
               <span className="text-[9px] uppercase tracking-wider text-rose-400 block">
-                Low Stock
+                {t("admin.status.lowstock")}
               </span>
             )}
           </div>
@@ -120,53 +138,53 @@ export const ProductsList: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Status",
+      header: t("admin.shared.status"),
       accessor: (p) => (
         <div className="space-y-1">
           <StatusBadge status={p.active ? "Active" : "Inactive"} />
           {p.featured && (
-            <span className="inline-flex items-center text-[9px] font-mono uppercase tracking-wider text-gold bg-gold/10 px-1.5 py-0.5 rounded border border-gold/30 ml-1">
-              <Sparkles className="w-2.5 h-2.5 mr-0.5" /> Featured
+            <span className="inline-flex items-center text-[9px] font-mono uppercase tracking-wider text-gold bg-gold/10 px-1.5 py-0.5 rounded border border-gold/30 ms-1">
+              <Sparkles className="w-2.5 h-2.5 me-0.5" /> {t("admin.collections.featured")}
             </span>
           )}
         </div>
       ),
     },
     {
-      header: "Actions",
+      header: t("admin.products.actions"),
       accessor: (p) => (
-        <div className="flex items-center space-x-1.5 justify-end">
+        <div className="flex items-center gap-1.5 justify-end">
           <button
             onClick={() => setQuickViewProduct(p)}
             className="p-1.5 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
-            title="Quick view product details"
+            title={t("admin.products.quickViewProductDetails")}
           >
             <Eye className="w-4 h-4" />
           </button>
           <button
             onClick={() => navigate(`/admin/products/${p.id}`)}
             className="p-1.5 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
-            title="Edit product"
+            title={t("admin.products.editProduct")}
           >
             <Edit className="w-4 h-4" />
           </button>
           <button
             onClick={() => duplicateProduct(p.id)}
             className="p-1.5 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
-            title="Duplicate product"
+            title={t("admin.products.duplicateProduct")}
           >
             <Copy className="w-4 h-4" />
           </button>
           <button
             onClick={() => setDeleteTargetId(p.id)}
             className="p-1.5 rounded text-muted hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
-            title="Delete product"
+            title={t("admin.products.deleteProduct")}
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
       ),
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
@@ -176,21 +194,21 @@ export const ProductsList: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            CATALOG CONTROL
+            {t("admin.products.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Fragrance Products Directory
+            {t("admin.products.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manage luxury perfumes, stock levels, pricing, notes, and collection assignments.
+            {t("admin.products.introBody")}
           </p>
         </div>
         <button
           onClick={() => navigate("/admin/products/new")}
-          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center gap-2 shadow-lg shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Add New Perfume</span>
+          <span>{t("admin.products.addNewPerfume")}</span>
         </button>
       </div>
 
@@ -207,9 +225,9 @@ export const ProductsList: React.FC = () => {
           );
         }}
         onSelectAll={(ids) => setSelectedIds(ids)}
-        searchPlaceholder="Search by name, SKU, or category..."
-        emptyMessage="No perfumes found"
-        emptySubtitle="Try resetting your category or status filters, or add a new fragrance to the catalog."
+        searchPlaceholder={t("admin.products.searchByNameSkuOr")}
+        emptyMessage={t("admin.products.noPerfumesFound")}
+        emptySubtitle={t("admin.products.tryResettingYourCategoryOr")}
         filterControls={
           <div className="flex flex-wrap items-center gap-2">
             {/* Category Filter */}
@@ -218,10 +236,10 @@ export const ProductsList: React.FC = () => {
               onChange={(e) => setFilterCategory(e.target.value)}
               className="bg-navy border border-gold/20 rounded px-3 py-1.5 text-xs text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="all">All Families</option>
+              <option value="all">{t("admin.products.allFamilies")}</option>
               {categoriesList.map((cat) => (
                 <option key={cat} value={cat}>
-                  {cat}
+                  {showCategory(cat)}
                 </option>
               ))}
             </select>
@@ -232,10 +250,10 @@ export const ProductsList: React.FC = () => {
               onChange={(e) => setFilterGender(e.target.value)}
               className="bg-navy border border-gold/20 rounded px-3 py-1.5 text-xs text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="all">All Genders</option>
-              <option value="men">Men</option>
-              <option value="women">Women</option>
-              <option value="unisex">Unisex</option>
+              <option value="all">{t("admin.products.allGenders")}</option>
+              <option value="men">{t("admin.products.men")}</option>
+              <option value="women">{t("admin.products.women")}</option>
+              <option value="unisex">{t("admin.products.unisex")}</option>
             </select>
 
             {/* Status Filter */}
@@ -244,37 +262,37 @@ export const ProductsList: React.FC = () => {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="bg-navy border border-gold/20 rounded px-3 py-1.5 text-xs text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="all">All Statuses</option>
-              <option value="active">Active Only</option>
-              <option value="inactive">Inactive Only</option>
-              <option value="lowstock">Low Stock Only</option>
+              <option value="all">{t("admin.products.allStatuses")}</option>
+              <option value="active">{t("admin.products.activeOnly")}</option>
+              <option value="inactive">{t("admin.products.inactiveOnly")}</option>
+              <option value="lowstock">{t("admin.products.lowStockOnly")}</option>
             </select>
           </div>
         }
         actions={
           selectedIds.length > 0 ? (
-            <div className="flex items-center space-x-2 bg-navy p-1 rounded border border-gold/30">
+            <div className="flex items-center gap-2 bg-navy p-1 rounded border border-gold/30">
               <span className="text-[11px] font-mono text-gold px-2">
-                {selectedIds.length} Selected
+                {t("admin.products.nSelected", { count: selectedIds.length })}
               </span>
               <button
                 onClick={() => bulkToggleProductStatus(selectedIds, true)}
                 className="p-1 rounded text-emerald-300 hover:bg-emerald-950/60"
-                title="Activate Selected"
+                title={t("admin.products.activateSelected")}
               >
                 <CheckCircle className="w-4 h-4" />
               </button>
               <button
                 onClick={() => bulkToggleProductStatus(selectedIds, false)}
                 className="p-1 rounded text-amber-300 hover:bg-amber-950/60"
-                title="Deactivate Selected"
+                title={t("admin.products.deactivateSelected")}
               >
                 <XCircle className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setIsBulkDeleteOpen(true)}
                 className="p-1 rounded text-rose-400 hover:bg-rose-950/60"
-                title="Delete Selected"
+                title={t("admin.products.deleteSelected")}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -290,9 +308,9 @@ export const ProductsList: React.FC = () => {
         onConfirm={() => {
           if (deleteTargetId) deleteProduct(deleteTargetId);
         }}
-        title="Delete Fragrance Record"
-        message="Are you sure you want to delete this perfume from the catalog? This action cannot be undone."
-        confirmText="Delete Product"
+        title={t("admin.products.deleteFragranceRecord")}
+        message={t("admin.products.deleteConfirmMessage")}
+        confirmText={t("admin.products.deleteProduct2")}
         isDanger={true}
       />
 
@@ -304,9 +322,9 @@ export const ProductsList: React.FC = () => {
           bulkDeleteProducts(selectedIds);
           setSelectedIds([]);
         }}
-        title={`Delete ${selectedIds.length} Products`}
-        message={`Are you sure you want to permanently delete these ${selectedIds.length} products?`}
-        confirmText="Delete All Selected"
+        title={t("admin.products.deleteNProducts", { count: selectedIds.length })}
+        message={t("admin.products.bulkDeleteConfirmMessage", { count: selectedIds.length })}
+        confirmText={t("admin.products.deleteAllSelected")}
         isDanger={true}
       />
 
@@ -316,7 +334,10 @@ export const ProductsList: React.FC = () => {
           isOpen={Boolean(quickViewProduct)}
           onClose={() => setQuickViewProduct(null)}
           title={quickViewProduct.name}
-          subtitle={`SKU: ${quickViewProduct.sku} • ${quickViewProduct.category}`}
+          subtitle={t("admin.products.skuCategoryLine", {
+            sku: quickViewProduct.sku,
+            category: quickViewProduct.category,
+          })}
           maxWidth="2xl"
         >
           <div className="space-y-6">
@@ -334,11 +355,11 @@ export const ProductsList: React.FC = () => {
                     <div className="text-center space-y-2">
                       <Package className="w-12 h-12 text-gold mx-auto" />
                       <span className="text-xs text-muted font-serif italic block">
-                        HM Signature Extrait De Parfum
+                        {t("admin.products.placeholderCaption")}
                       </span>
                     </div>
                   )}
-                  <div className="absolute top-3 left-3">
+                  <div className="absolute top-3 start-3">
                     <StatusBadge status={quickViewProduct.active ? "Active" : "Inactive"} />
                   </div>
                 </div>
@@ -346,7 +367,7 @@ export const ProductsList: React.FC = () => {
                 <div className="grid grid-cols-2 gap-2 text-xs font-sans">
                   <div className="bg-navy/80 p-2.5 rounded border border-gold/15">
                     <span className="text-[10px] text-muted block uppercase tracking-wider">
-                      Price
+                      {t("admin.products.price")}
                     </span>
                     <span className="text-sm font-mono font-bold text-gold">
                       Rs. {quickViewProduct.price.toLocaleString()}
@@ -354,7 +375,7 @@ export const ProductsList: React.FC = () => {
                   </div>
                   <div className="bg-navy/80 p-2.5 rounded border border-gold/15">
                     <span className="text-[10px] text-muted block uppercase tracking-wider">
-                      Inventory Stock
+                      {t("admin.products.inventoryStock")}
                     </span>
                     <span
                       className={`text-sm font-mono font-bold ${
@@ -363,7 +384,7 @@ export const ProductsList: React.FC = () => {
                           : "text-emerald-300"
                       }`}
                     >
-                      {quickViewProduct.stock} units
+                      {t("admin.inventory.units", { count: quickViewProduct.stock })}
                     </span>
                   </div>
                 </div>
@@ -373,32 +394,32 @@ export const ProductsList: React.FC = () => {
               <div className="space-y-4 font-sans text-xs">
                 <div>
                   <span className="text-[10px] text-gold font-mono uppercase tracking-[2px] block">
-                    SPECS & CLASSIFICATION
+                    {t("admin.products.specsClassification")}
                   </span>
                   <div className="mt-1 space-y-1 text-ivory">
-                    <p><span className="text-muted">Collection:</span> {quickViewProduct.collection}</p>
-                    <p><span className="text-muted">Fragrance Type:</span> {quickViewProduct.fragranceType}</p>
-                    <p><span className="text-muted">Concentration:</span> {quickViewProduct.concentration}</p>
-                    <p><span className="text-muted">Target Gender:</span> <span className="capitalize">{quickViewProduct.gender}</span></p>
-                    <p><span className="text-muted">Available Sizes:</span> {quickViewProduct.variants?.length ? quickViewProduct.variants.map((v) => v.size).join(", ") : quickViewProduct.size}</p>
+                    <p><span className="text-muted">{t("admin.products.collection")}</span> {showCollection(quickViewProduct.collection)}</p>
+                    <p><span className="text-muted">{t("admin.products.fragranceType")}</span> {quickViewProduct.fragranceType}</p>
+                    <p><span className="text-muted">{t("admin.products.concentration")}</span> {quickViewProduct.concentration}</p>
+                    <p><span className="text-muted">{t("admin.products.targetGender")}</span> <span className="capitalize">{showGender(quickViewProduct.gender)}</span></p>
+                    <p><span className="text-muted">{t("admin.products.availableSizes")}</span> {quickViewProduct.variants?.length ? quickViewProduct.variants.map((v) => v.size).join(", ") : quickViewProduct.size}</p>
                   </div>
                 </div>
 
                 <div className="border-t border-gold/15 pt-3">
                   <span className="text-[10px] text-gold font-mono uppercase tracking-[2px] block flex items-center gap-1">
-                    <Droplets className="w-3 h-3" /> OLFACTORY PYRAMID
+                    <Droplets className="w-3 h-3" /> {t("admin.products.olfactoryPyramid")}
                   </span>
                   <div className="mt-2 space-y-2 bg-navy/60 p-3 rounded border border-gold/10">
                     <div>
-                      <span className="text-[10px] text-gold font-semibold uppercase block">Top Notes:</span>
+                      <span className="text-[10px] text-gold font-semibold uppercase block">{t("admin.products.topNotes")}</span>
                       <span className="text-ivory font-light">{quickViewProduct.topNotes.join(", ")}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-gold font-semibold uppercase block">Heart Notes:</span>
+                      <span className="text-[10px] text-gold font-semibold uppercase block">{t("admin.products.heartNotes")}</span>
                       <span className="text-ivory font-light">{quickViewProduct.heartNotes.join(", ")}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-gold font-semibold uppercase block">Base Notes:</span>
+                      <span className="text-[10px] text-gold font-semibold uppercase block">{t("admin.products.baseNotes")}</span>
                       <span className="text-ivory font-light">{quickViewProduct.baseNotes.join(", ")}</span>
                     </div>
                   </div>
@@ -409,7 +430,7 @@ export const ProductsList: React.FC = () => {
             {/* Description */}
             <div className="border-t border-gold/15 pt-3">
               <span className="text-[10px] text-gold font-mono uppercase tracking-[2px] block">
-                DESCRIPTION
+                {t("admin.products.descriptionLabel")}
               </span>
               <p className="text-xs text-muted leading-relaxed font-light mt-1">
                 {quickViewProduct.description}
@@ -417,13 +438,13 @@ export const ProductsList: React.FC = () => {
             </div>
 
             {/* Footer Action Buttons */}
-            <div className="flex items-center justify-end space-x-3 border-t border-gold/15 pt-4">
+            <div className="flex items-center justify-end gap-3 border-t border-gold/15 pt-4">
               <button
                 type="button"
                 onClick={() => setQuickViewProduct(null)}
                 className="px-4 py-2 rounded text-xs text-muted hover:text-ivory border border-gold/20"
               >
-                Close Preview
+                {t("admin.orderDetail.closePreview")}
               </button>
               <button
                 type="button"
@@ -432,10 +453,10 @@ export const ProductsList: React.FC = () => {
                   setQuickViewProduct(null);
                   navigate(`/admin/products/${id}`);
                 }}
-                className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors flex items-center space-x-2"
+                className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors flex items-center gap-2"
               >
                 <Edit className="w-4 h-4" />
-                <span>Edit Full Product</span>
+                <span>{t("admin.products.editFullProduct")}</span>
               </button>
             </div>
           </div>

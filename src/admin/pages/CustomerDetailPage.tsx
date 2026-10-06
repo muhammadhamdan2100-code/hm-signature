@@ -35,6 +35,7 @@ import {
 } from "../../services/customerAddresses";
 import type { Order, PaymentRecord, ReviewItem } from "../context/AdminDataContext";
 import { formatPKR } from "../../utils/currency";
+import { useI18n } from "../../i18n/I18nProvider";
 
 /* ------------------------------------------------------------------ *
  * Counters (orders, spend, segment, wishlist, reviews) come from the
@@ -44,13 +45,15 @@ import { formatPKR } from "../../utils/currency";
  * Staff-written order and refund notes are deliberately not rendered.
  * ------------------------------------------------------------------ */
 
+/* Tab labels are dictionary keys, resolved with t() where the tabs render:
+   t() is only available inside a component. */
 const SECTIONS = [
-  { key: "profile", label: "Profile", icon: User },
-  { key: "orders", label: "Orders", icon: ShoppingBag },
-  { key: "addresses", label: "Addresses", icon: MapPin },
-  { key: "wishlist", label: "Wishlist", icon: Heart },
-  { key: "reviews", label: "Reviews", icon: ScrollText },
-  { key: "activity", label: "Activity", icon: ActivityIcon },
+  { key: "profile", labelKey: "admin.shared.profile", icon: User },
+  { key: "orders", labelKey: "admin.nav.orders", icon: ShoppingBag },
+  { key: "addresses", labelKey: "admin.customerDetail.tabAddresses", icon: MapPin },
+  { key: "wishlist", labelKey: "nav.wishlist", icon: Heart },
+  { key: "reviews", labelKey: "admin.nav.reviews", icon: ScrollText },
+  { key: "activity", labelKey: "admin.customerDetail.tabActivity", icon: ActivityIcon },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
@@ -112,7 +115,7 @@ const toDateOnly = (value: string | null | undefined) =>
 const normalizePhone = (value?: string | null) => (value || "").replace(/[\s-]/g, "");
 
 const REFUND_STATUS_CLASS =
-  "text-[9px] font-mono uppercase tracking-wider px-2 py-1 rounded border ";
+"text-[9px] font-mono uppercase tracking-wider px-2 py-1 rounded border ";
 
 const refundStatusClass = (status: string) =>
   status === "processed"
@@ -122,7 +125,7 @@ const refundStatusClass = (status: string) =>
       : "bg-rose-950/60 text-rose-300 border-rose-800/50";
 
 const buttonClass =
-  "px-4 py-2 rounded bg-gold hover:bg-goldLight text-navy text-xs font-sans font-semibold uppercase tracking-wider transition-colors flex items-center gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold";
+"px-4 py-2 rounded bg-gold hover:bg-goldLight text-navy text-xs font-sans font-semibold uppercase tracking-wider transition-colors flex items-center gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold";
 
 const Panel: React.FC<{
   title: string;
@@ -159,6 +162,7 @@ const DetailSkeleton: React.FC = () => (
 );
 
 export const CustomerDetailPage: React.FC = () => {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -264,14 +268,18 @@ export const CustomerDetailPage: React.FC = () => {
     const events: ActivityEvent[] = [];
 
     orders.forEach((o) => {
-      o.timeline.forEach((t, idx) => {
+      // `entry` rather than `t` — the inner parameter would shadow the translator.
+      o.timeline.forEach((entry, idx) => {
         events.push({
           id: `${o.id}-timeline-${idx}`,
-          date: t.date,
+          date: entry.date,
           kind: "order",
-          title: `Order ${o.orderNumber}`,
-          statusLabel: t.status,
-          detail: `${o.items.length} item${o.items.length === 1 ? "" : "s"}`,
+          title: t("admin.customerDetail.orderActivityTitle", { number: o.orderNumber }),
+          statusLabel: entry.status,
+          detail:
+            o.items.length === 1
+              ? t("admin.customerDetail.itemCountOne", { count: o.items.length })
+              : t("admin.customerDetail.itemCountMany", { count: o.items.length }),
           orderId: o.id,
           orderNumber: o.orderNumber,
         });
@@ -283,7 +291,9 @@ export const CustomerDetailPage: React.FC = () => {
         id: `${p.id}-payment`,
         date: p.date,
         kind: "payment",
-        title: `Payment · ${p.method || "method not recorded"}`,
+        title: t("admin.customerDetail.paymentActivityTitle", {
+          method: p.method || t("admin.customerDetail.methodNotRecorded"),
+        }),
         statusLabel: p.status,
         amount: p.amount,
         currency: "PKR",
@@ -297,7 +307,7 @@ export const CustomerDetailPage: React.FC = () => {
         id: `${r.id}-refund`,
         date: r.date,
         kind: "refund",
-        title: "Refund requested",
+        title: t("admin.customerDetail.refundRequested"),
         statusLabel: r.status,
         detail: r.reason || undefined,
         amount: r.amount,
@@ -308,7 +318,8 @@ export const CustomerDetailPage: React.FC = () => {
     });
 
     return events.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  }, [orders, payments, refunds]);
+    // `t` is a dependency so the feed re-localises when the language changes.
+  }, [orders, payments, refunds, t]);
 
   const counts: Record<SectionKey, number | null> = {
     profile: null,
@@ -337,7 +348,7 @@ export const CustomerDetailPage: React.FC = () => {
   if (error) {
     return (
       <div className="space-y-4 animate-fade-in min-w-0">
-        <Breadcrumb items={[{ label: "Customers", path: "/admin/customers" }, { label: "Profile" }]} />
+        <Breadcrumb items={[{ label: t("admin.nav.customers"), path: "/admin/customers" }, { label: t("admin.shared.profile") }]} />
         <div
           role="alert"
           className="bg-navy2/90 border border-rose-500/30 rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -347,13 +358,13 @@ export const CustomerDetailPage: React.FC = () => {
               <AlertTriangle className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-serif text-base font-bold text-ivory">Client profile unavailable</h1>
+              <h1 className="font-serif text-base font-bold text-ivory">{t("admin.customerDetail.clientProfileUnavailable")}</h1>
               <p className="text-xs text-muted font-light mt-0.5 break-words">{error}</p>
             </div>
           </div>
           <button type="button" onClick={() => void load()} className={`${buttonClass} shrink-0`}>
             <RefreshCw className="w-3.5 h-3.5" />
-            Retry
+            {t("admin.customerDetail.retry")}
           </button>
         </div>
       </div>
@@ -363,17 +374,16 @@ export const CustomerDetailPage: React.FC = () => {
   if (!row) {
     return (
       <div className="space-y-4 animate-fade-in min-w-0 py-6">
-        <Breadcrumb items={[{ label: "Customers", path: "/admin/customers" }, { label: "Not found" }]} />
+        <Breadcrumb items={[{ label: t("admin.nav.customers"), path: "/admin/customers" }, { label: t("admin.customerDetail.notFound") }]} />
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-8 text-center space-y-4">
-          <h1 className="font-serif text-xl text-ivory font-bold">Client Profile Not Found</h1>
+          <h1 className="font-serif text-xl text-ivory font-bold">{t("admin.customerDetail.clientProfileNotFound")}</h1>
           <p className="text-xs text-muted font-light max-w-md mx-auto">
-            The client directory returned no record for this identifier. The account may have been
-            removed, or your staff role may not have visibility of it.
+            {t("admin.customerDetail.notFoundBody")}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button type="button" onClick={() => void load()} className={buttonClass}>
               <RefreshCw className="w-3.5 h-3.5" />
-              Retry
+              {t("admin.customerDetail.retry")}
             </button>
             <button
               type="button"
@@ -381,7 +391,7 @@ export const CustomerDetailPage: React.FC = () => {
               className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 transition-colors flex items-center gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Customers
+              {t("admin.customerDetail.backToCustomers")}
             </button>
           </div>
         </div>
@@ -402,12 +412,12 @@ export const CustomerDetailPage: React.FC = () => {
   );
 
   const rowClass =
-    "rounded bg-navy/60 border border-gold/10 hover:border-gold/30 transition-colors p-4";
+"rounded bg-navy/60 border border-gold/10 hover:border-gold/30 transition-colors p-4";
 
   return (
     <div className="space-y-6 animate-fade-in min-w-0">
       <Breadcrumb
-        items={[{ label: "Customers", path: "/admin/customers" }, { label: row.name }]}
+        items={[{ label: t("admin.nav.customers"), path: "/admin/customers" }, { label: row.name }]}
       />
 
       {/* Header */}
@@ -416,7 +426,7 @@ export const CustomerDetailPage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate("/admin/customers")}
-            aria-label="Back to customers"
+            aria-label={t("admin.customerDetail.backToCustomers")}
             className="p-2 rounded text-muted hover:text-gold hover:bg-navy2 transition-colors border border-gold/20 shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -430,14 +440,16 @@ export const CustomerDetailPage: React.FC = () => {
               <StatusBadge status={toStatusLabel(row.status)} />
             </div>
             <p className="text-xs text-muted font-sans font-light mt-0.5">
-              Client since {toDateOnly(row.joinedDate) || "date not recorded"}
+              {t("admin.customerDetail.clientSince", {
+                date: toDateOnly(row.joinedDate) || t("admin.customerDetail.noDateRecorded"),
+              })}
             </p>
           </div>
         </div>
         <button
           type="button"
           onClick={() => void load()}
-          aria-label="Reload client profile"
+          aria-label={t("admin.customerDetail.reloadClientProfile")}
           className="p-2 rounded text-muted hover:text-gold hover:bg-navy2 transition-colors border border-gold/20 shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
         >
           <RefreshCw className="w-4 h-4" />
@@ -446,20 +458,20 @@ export const CustomerDetailPage: React.FC = () => {
 
       {/* Recorded metrics (RPC-provided) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {metricTile("Orders", String(row.ordersCount), "Excludes cancelled")}
-        {metricTile("Lifetime Spend", formatPKR(row.totalSpent), "Excludes cancelled")}
+        {metricTile(t("admin.nav.orders"), String(row.ordersCount), t("admin.customerDetail.excludesCancelled"))}
+        {metricTile(t("admin.customerDetail.lifetimeSpend"), formatPKR(row.totalSpent), t("admin.customerDetail.excludesCancelled"))}
         {metricTile(
-          "Last Order",
-          row.lastOrderDate ? toDateOnly(row.lastOrderDate) : "None recorded",
-          "Any status"
+          t("admin.customers.lastOrder"),
+          row.lastOrderDate ? toDateOnly(row.lastOrderDate) : t("admin.customerDetail.noneRecorded"),
+          t("admin.customerDetail.anyStatus")
         )}
-        {metricTile("Segment", row.segment, "Computed by the database")}
+        {metricTile(t("admin.customerDetail.segment"), row.segment, t("admin.customerDetail.computedByTheDatabase"))}
       </div>
 
       {/* Section tabs */}
       <div
         role="tablist"
-        aria-label="Client profile sections"
+        aria-label={t("admin.customerDetail.clientProfileSections")}
         className="flex flex-wrap gap-2 border-b border-gold/15 pb-3"
       >
         {SECTIONS.map((tab, index) => {
@@ -488,7 +500,7 @@ export const CustomerDetailPage: React.FC = () => {
               }`}
             >
               <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span>{tab.label}</span>
+              <span>{t(tab.labelKey)}</span>
               {count !== null && (
                 <span className="font-mono num-lining text-[10px] opacity-80">({count})</span>
               )}
@@ -506,11 +518,11 @@ export const CustomerDetailPage: React.FC = () => {
           className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0"
         >
           <div className="lg:col-span-2">
-            <Panel title="Profile">
+            <Panel title={t("admin.shared.profile")}>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div className="space-y-1">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Name
+                    {t("admin.customerDetail.name")}
                   </dt>
                   <dd className="font-serif text-sm text-ivory font-bold break-words">
                     {row.name}
@@ -518,7 +530,7 @@ export const CustomerDetailPage: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Account Status
+                    {t("admin.customers.accountStatus")}
                   </dt>
                   <dd>
                     <StatusBadge status={toStatusLabel(row.status)} />
@@ -526,7 +538,7 @@ export const CustomerDetailPage: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Email
+                    {t("admin.customerDetail.email")}
                   </dt>
                   <dd className="min-w-0">
                     {row.email ? (
@@ -538,13 +550,13 @@ export const CustomerDetailPage: React.FC = () => {
                         <span className="break-all">{row.email}</span>
                       </a>
                     ) : (
-                      <span className="text-muted">No email on file</span>
+                      <span className="text-muted">{t("admin.customerDetail.noEmailOnFile")}</span>
                     )}
                   </dd>
                 </div>
                 <div className="space-y-1">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Phone
+                    {t("admin.customers.phone")}
                   </dt>
                   <dd>
                     {row.phone ? (
@@ -556,22 +568,22 @@ export const CustomerDetailPage: React.FC = () => {
                         {row.phone}
                       </a>
                     ) : (
-                      <span className="text-muted">No phone on file</span>
+                      <span className="text-muted">{t("admin.customerDetail.noPhoneOnFile")}</span>
                     )}
                   </dd>
                 </div>
                 <div className="space-y-1">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Joined
+                    {t("admin.customerDetail.joined")}
                   </dt>
                   <dd className="text-ivory font-mono flex items-center gap-1.5">
                     <CalendarDays className="w-3.5 h-3.5 text-gold shrink-0" />
-                    {toDateOnly(row.joinedDate) || "Not recorded"}
+                    {toDateOnly(row.joinedDate) || t("admin.customerDetail.notRecorded")}
                   </dd>
                 </div>
                 <div className="space-y-1">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Segment
+                    {t("admin.customerDetail.segment")}
                   </dt>
                   <dd>
                     <StatusBadge status={row.segment} />
@@ -579,7 +591,7 @@ export const CustomerDetailPage: React.FC = () => {
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <dt className="text-[10px] font-mono uppercase tracking-widest text-gold">
-                    Client ID
+                    {t("admin.customerDetail.clientId")}
                   </dt>
                   <dd className="font-mono text-[11px] text-muted break-all">{row.id}</dd>
                 </div>
@@ -587,32 +599,33 @@ export const CustomerDetailPage: React.FC = () => {
             </Panel>
           </div>
 
-          <Panel title="Recorded Counts" subtitle="All values returned by the customer aggregates query.">
+          <Panel title={t("admin.customerDetail.recordedCounts")} subtitle={t("admin.customerDetail.allValuesReturnedByThe")}>
             <ul className="space-y-3 text-xs">
               <li className="flex items-center justify-between gap-3">
-                <span className="text-muted">Orders</span>
+                <span className="text-muted">{t("admin.nav.orders")}</span>
                 <span className="font-mono text-ivory num-lining">{row.ordersCount}</span>
               </li>
               <li className="flex items-center justify-between gap-3">
-                <span className="text-muted">Lifetime spend</span>
+                <span className="text-muted">{t("admin.customerDetail.lifetimeSpend")}</span>
                 <span className="font-mono text-gold font-bold num-lining">
                   {formatPKR(row.totalSpent)}
                 </span>
               </li>
               <li className="flex items-center justify-between gap-3">
-                <span className="text-muted">Wishlist items</span>
+                <span className="text-muted">{t("admin.customerDetail.wishlistItems")}</span>
                 <span className="font-mono text-ivory num-lining">{row.wishlistCount}</span>
               </li>
               <li className="flex items-center justify-between gap-3">
-                <span className="text-muted">Reviews</span>
+                <span className="text-muted">{t("admin.nav.reviews")}</span>
                 <span className="font-mono text-ivory num-lining">{row.reviewCount}</span>
               </li>
             </ul>
             {orders.length !== row.ordersCount && (
               <p className="text-[10px] text-muted font-light pt-3 border-t border-gold/10">
-                Note: the aggregates query counts orders linked to this account id
-                ({row.ordersCount}); the orders feed scoped to this profile returned {orders.length}{" "}
-                (matched by email or phone).
+                {t("admin.customerDetail.orderCountMismatchNote", {
+                  aggregateCount: row.ordersCount,
+                  feedCount: orders.length,
+                })}
               </p>
             )}
           </Panel>
@@ -623,13 +636,13 @@ export const CustomerDetailPage: React.FC = () => {
       {section === "orders" && (
         <div role="tabpanel" id="panel-orders" aria-labelledby="tab-orders">
           <Panel
-            title="Orders"
-            subtitle="Order records returned by the admin orders feed for this client."
+            title={t("admin.nav.orders")}
+            subtitle={t("admin.customerDetail.orderRecordsReturnedByThe")}
           >
             {orders.length === 0 ? (
               <NotAvailable
-                title="No orders available"
-                reason="No order records were returned for this client, so there is nothing to show here."
+                title={t("admin.customerDetail.noOrdersAvailable")}
+                reason={t("admin.customerDetail.noOrderRecordsReason")}
               />
             ) : (
               <ul className="space-y-3">
@@ -645,13 +658,17 @@ export const CustomerDetailPage: React.FC = () => {
                           <StatusBadge status={o.paymentStatus} />
                         </div>
                         <p className="text-xs text-muted break-words">
-                          {o.items.length} item{o.items.length === 1 ? "" : "s"} ·{" "}
-                          {o.items.map((i) => i.name).join(", ") || "No line items returned"}
+                          {o.items.length === 1
+                            ? t("admin.customerDetail.itemCountOne", { count: o.items.length })
+                            : t("admin.customerDetail.itemCountMany", { count: o.items.length })}
+                          {" · "}
+                          {o.items.map((i) => i.name).join(", ") ||
+                            t("admin.customerDetail.noLineItemsReturned")}
                         </p>
                         <p className="text-[10px] text-muted font-mono">
-                          {toDateOnly(o.createdAt) || "Date not recorded"}
+                          {toDateOnly(o.createdAt) || t("admin.customerDetail.dateNotRecorded")}
                           {" · "}
-                          {o.paymentMethod || "Payment method not recorded"}
+                          {o.paymentMethod || t("admin.customerDetail.paymentMethodNotRecorded")}
                         </p>
                       </div>
                       <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 shrink-0">
@@ -662,7 +679,7 @@ export const CustomerDetailPage: React.FC = () => {
                           to={`/admin/orders/${o.id}`}
                           className="text-[10px] uppercase font-bold text-gold hover:text-goldLight flex items-center gap-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded px-1"
                         >
-                          Open order
+                          {t("admin.customerDetail.openOrder")}
                           <ExternalLink className="w-3 h-3" />
                         </Link>
                       </div>
@@ -680,8 +697,8 @@ export const CustomerDetailPage: React.FC = () => {
         <div role="tabpanel" id="panel-addresses" aria-labelledby="tab-addresses">
           {savedAddressBook.length > 0 && (
             <Panel
-              title="Saved address book"
-              subtitle="Addresses the client saved to their account. Read-only for staff, and only visible here because staff policies grant SELECT on the address table."
+              title={t("admin.customerDetail.savedAddressBook")}
+              subtitle={t("admin.customerDetail.addressesTheClientSavedTo")}
             >
               <ul className="space-y-3">
                 {savedAddressBook.map((a) => (
@@ -692,10 +709,11 @@ export const CustomerDetailPage: React.FC = () => {
                       </div>
                       <div className="min-w-0 space-y-1 text-xs">
                         <p className="text-ivory font-medium break-words">
-                          {[a.label, a.isDefault ? "Default" : null].filter(Boolean).join(" · ")}
+                          {[a.label, a.isDefault ? t("account.defaultWord") : null].filter(Boolean).join(" · ")}
                         </p>
                         <p className="text-muted break-words">
-                          {[a.fullName, a.phone].filter(Boolean).join(" · ") || "No recipient recorded"}
+                          {[a.fullName, a.phone].filter(Boolean).join(" · ") ||
+                            t("admin.customerDetail.noRecipientRecorded")}
                         </p>
                         <p className="text-ivory break-words">
                           {[a.addressLine1, a.addressLine2].filter(Boolean).join(", ")}
@@ -712,16 +730,16 @@ export const CustomerDetailPage: React.FC = () => {
           )}
 
           <Panel
-            title="Addresses used on orders"
-            subtitle="Derived from the shipping address on this client's orders. These are the destinations actually used at checkout, which can differ from the saved address book above."
+            title={t("admin.customerDetail.addressesUsedOnOrders")}
+            subtitle={t("admin.customerDetail.derivedFromTheShippingAddress")}
           >
             {addresses.length === 0 ? (
               <NotAvailable
-                title="Not available"
+                title={t("admin.customerDetail.notAvailable")}
                 reason={
                   orders.length === 0
-                    ? "This client has no orders in the admin feed, so there are no shipping addresses to derive."
-                    : "The orders linked to this client did not include a shipping address."
+                    ? t("admin.customerDetail.noOrdersToDeriveAddresses")
+                    : t("admin.customerDetail.ordersWithoutShippingAddress")
                 }
               />
             ) : (
@@ -738,9 +756,16 @@ export const CustomerDetailPage: React.FC = () => {
                         </p>
                         <p className="text-gold font-mono uppercase text-[11px]">{a.country}</p>
                         <p className="text-[10px] text-muted">
-                          Last used {toDateOnly(a.lastUsed) || "date not recorded"} ·{" "}
-                          {a.orderRefs.length} order
-                          {a.orderRefs.length === 1 ? "" : "s"}
+                          {t("admin.customerDetail.lastUsedOn", {
+                            date:
+                              toDateOnly(a.lastUsed) || t("admin.customerDetail.noDateRecorded"),
+                          })}
+                          {" · "}
+                          {a.orderRefs.length === 1
+                            ? t("admin.customerDetail.orderCountOne", { count: a.orderRefs.length })
+                            : t("admin.customerDetail.orderCountMany", {
+                                count: a.orderRefs.length,
+                              })}
                         </p>
                         <div className="flex flex-wrap gap-2 pt-1">
                           {a.orderRefs.map((ref) => (
@@ -767,13 +792,13 @@ export const CustomerDetailPage: React.FC = () => {
       {section === "wishlist" && (
         <div role="tabpanel" id="panel-wishlist" aria-labelledby="tab-wishlist">
           <Panel
-            title="Wishlist"
-            subtitle="Count from the customer aggregates query (wishlist_items joined through this client's wishlist)."
+            title={t("admin.customerDetail.wishlist")}
+            subtitle={t("admin.customerDetail.countFromTheCustomerAggregates")}
           >
             <div className="flex items-center justify-between gap-3 p-4 rounded bg-navy/60 border border-gold/10">
               <span className="text-xs text-muted flex items-center gap-2">
                 <Heart className="w-4 h-4 text-gold" />
-                Saved items
+                {t("admin.customerDetail.savedItems")}
               </span>
               <span className="font-serif text-xl text-ivory font-bold num-lining">
                 {row.wishlistCount}
@@ -781,11 +806,11 @@ export const CustomerDetailPage: React.FC = () => {
             </div>
 
             <NotAvailable
-              title="Item-level wishlist: not available"
+              title={t("admin.customerDetail.itemLevelWishlistNotAvailable")}
               reason={
                 row.wishlistCount > 0
-                  ? "The admin services expose the wishlist count but no query for the individual saved products, so the items themselves are not shown rather than guessed."
-                  : "This client has no saved wishlist items, and no item list is available through the admin services."
+                  ? t("admin.customerDetail.wishlistCountOnlyBody")
+                  : t("admin.customerDetail.noWishlistItemsBody")
               }
             />
           </Panel>
@@ -796,16 +821,20 @@ export const CustomerDetailPage: React.FC = () => {
       {section === "reviews" && (
         <div role="tabpanel" id="panel-reviews" aria-labelledby="tab-reviews">
           <Panel
-            title="Reviews"
-            subtitle="Review rows returned by the admin reviews feed that match this client's email."
+            title={t("admin.nav.reviews")}
+            subtitle={t("admin.customerDetail.reviewRowsReturnedByThe")}
           >
             {reviews.length === 0 ? (
               <NotAvailable
-                title={row.reviewCount > 0 ? "No review rows available" : "Not available"}
+                title={
+                  row.reviewCount > 0
+                    ? t("admin.customerDetail.noReviewRowsAvailable")
+                    : t("admin.customerDetail.notAvailable")
+                }
                 reason={
                   row.reviewCount > 0
-                    ? `The database reports ${row.reviewCount} review(s) for this account, but the reviews feed returned no matching rows (they are counted by account id, and the feed exposes email only).`
-                    : "This client has not submitted any reviews."
+                    ? t("admin.customerDetail.reviewRowsFeedMismatchBody", { count: row.reviewCount })
+                    : t("admin.customerDetail.noReviewsSubmitted")
                 }
               />
             ) : (
@@ -830,11 +859,11 @@ export const CustomerDetailPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setOpenReview(r)}
-                        aria-label={`Read full review for ${r.productName}`}
+                        aria-label={t("admin.customerDetail.readFullReviewFor", { product: r.productName })}
                         className="text-[10px] uppercase font-bold text-gold hover:text-goldLight border border-gold/20 rounded px-2.5 py-1.5 flex items-center gap-1.5 shrink-0 self-start focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                       >
                         <ScrollText className="w-3 h-3" />
-                        Read
+                        {t("admin.customerDetail.read")}
                       </button>
                     </div>
                   </li>
@@ -849,13 +878,13 @@ export const CustomerDetailPage: React.FC = () => {
       {section === "activity" && (
         <div role="tabpanel" id="panel-activity" aria-labelledby="tab-activity">
           <Panel
-            title="Activity"
-            subtitle="Merged chronological feed of order status events, payments and refunds for this client. Status-change notes and payment references are omitted here."
+            title={t("admin.customerDetail.activity")}
+            subtitle={t("admin.customerDetail.mergedChronologicalFeedOfOrder")}
           >
             {activity.length === 0 ? (
               <NotAvailable
-                title="Not available"
-                reason="No order, payment or refund events were returned for this client."
+                title={t("admin.customerDetail.notAvailable")}
+                reason={t("admin.customerDetail.noActivityEvents")}
               />
             ) : (
               <ol className="space-y-3">
@@ -900,7 +929,7 @@ export const CustomerDetailPage: React.FC = () => {
                           to={`/admin/orders/${ev.orderId}`}
                           className="text-[10px] uppercase font-bold text-gold hover:text-goldLight inline-flex items-center gap-1 mt-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
                         >
-                          Open order
+                          {t("admin.customerDetail.openOrder")}
                           <ExternalLink className="w-3 h-3" />
                         </Link>
                       )}
@@ -916,7 +945,7 @@ export const CustomerDetailPage: React.FC = () => {
       <Modal
         isOpen={openReview !== null}
         onClose={() => setOpenReview(null)}
-        title="Client review"
+        title={t("admin.customerDetail.clientReview")}
         subtitle={openReview ? `${openReview.productName} · ${openReview.date}` : undefined}
         maxWidth="md"
       >

@@ -3,9 +3,11 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Lock, Mail, User, X, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
 import { useAuth, isStaffRole } from "../context/AuthContext";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function Login() {
   const { user, login, signup, forgotPassword, completePasswordReset, isLoading } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -79,14 +81,14 @@ export default function Login() {
     setSuccessMessage("");
 
     if (!email || !password) {
-      setErrorMessage("Please complete all required fields.");
+      setErrorMessage(t("validation.requiredFields"));
       return;
     }
 
     if (mode === "signin") {
       const result = await login(email, password, rememberMe);
       if (!result.success) {
-        setErrorMessage(result.error || "Invalid email or password");
+        setErrorMessage(result.error || t("auth.invalidCredentials"));
         return;
       }
 
@@ -101,22 +103,22 @@ export default function Login() {
       }
     } else {
       if (!fullName) {
-        setErrorMessage("Please enter your full name.");
+        setErrorMessage(t("validation.fullNameRequired"));
         return;
       }
 
       const result = await signup(email, password, fullName);
       if (!result.success) {
-        setErrorMessage(result.error || "Failed to create account.");
+        setErrorMessage(result.error || t("auth.signUpFailed"));
         return;
       }
 
       if (result.needsEmailConfirmation) {
-        setSuccessMessage("Account created. Please check your inbox to confirm your email, then sign in.");
+        setSuccessMessage(t("auth.emailConfirmationSent"));
         return;
       }
 
-      setSuccessMessage("Account created successfully. Welcome to HM Signature.");
+      setSuccessMessage(t("auth.accountCreated"));
       setTimeout(() => {
         navigate("/account", { replace: true });
       }, 1000);
@@ -130,17 +132,17 @@ export default function Login() {
     if (resetMode) {
       // Completing reset: session already established via the emailed link
       if (newPassword.length < 6) {
-        setErrorMessage("Please choose a password of at least 6 characters.");
+        setErrorMessage(t("validation.passwordMinCharacters"));
         return;
       }
       setResetBusy(true);
       const res = await completePasswordReset(newPassword);
       setResetBusy(false);
       if (!res.success) {
-        setErrorMessage(res.error || "Could not reset password.");
+        setErrorMessage(res.error || t("auth.resetFailed"));
         return;
       }
-      setSuccessMessage("Password updated. You are signed in.");
+      setSuccessMessage(t("auth.passwordUpdated"));
       setTimeout(() => {
         setIsResetOpen(false);
         navigate("/account", { replace: true });
@@ -150,7 +152,7 @@ export default function Login() {
 
     const res = await forgotPassword(resetEmail);
     if (!res.success) {
-      setErrorMessage(res.error || "Could not send reset instructions.");
+      setErrorMessage(res.error || t("auth.resetSendFailed"));
       return;
     }
     setResetSuccess(true);
@@ -164,7 +166,7 @@ export default function Login() {
   return (
     <main className="min-h-dvh bg-navy flex items-center justify-center p-4 relative overflow-hidden pt-24 pb-12">
       {/* Background Radial Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-gold/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-gold/10 rounded-full blur-[140px] pointer-events-none" />
 
       <div className="w-full max-w-[440px] z-10 space-y-6">
         {/* Brand Header */}
@@ -173,15 +175,15 @@ export default function Login() {
             <img src="/logo.png" alt="HM Signature" className="h-10 mx-auto" />
           </Link>
           <p className="text-[10px] font-mono tracking-[4px] uppercase text-gold">
-            LUXURY PERFUMERY WORKSPACE
+            {t("auth.tagline")}
           </p>
           <h1 className="text-2xl font-serif font-bold text-ivory tracking-wide">
-            {mode === "signin" ? "Sign In to HM Signature" : "Join the House of HM Signature"}
+            {mode === "signin" ? t("auth.signInTitle") : t("auth.signUpTitle")}
           </h1>
           <p className="text-xs font-sans text-muted font-light">
             {mode === "signin"
-              ? "Access your client concierge or staff administrative portal."
-              : "Create your personal client account to experience bespoke fragrances."}
+              ? t("auth.signInSubtitle")
+              : t("auth.signUpSubtitle")}
           </p>
         </div>
 
@@ -198,7 +200,7 @@ export default function Login() {
                 id="login-form-error"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
-                className="mb-5 p-3 rounded-lg bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs flex items-start space-x-2"
+                className="mb-5 p-3 rounded-lg bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2"
               >
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
@@ -209,7 +211,7 @@ export default function Login() {
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
-                className="mb-5 p-3 rounded-lg bg-emerald-950/50 border border-emerald-500/40 text-emerald-200 text-xs flex items-start space-x-2"
+                className="mb-5 p-3 rounded-lg bg-emerald-950/50 border border-emerald-500/40 text-emerald-200 text-xs flex items-start gap-2"
               >
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <span>{successMessage}</span>
@@ -222,18 +224,18 @@ export default function Login() {
             {mode === "signup" && (
               <div>
                 <label htmlFor="login-full-name" className="block text-xs font-sans text-ivory/80 font-medium mb-1.5">
-                  Full Name <span className="text-gold">*</span>
+                  {t("auth.fullNameLabel")} <span className="text-gold">*</span>
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <User className="w-4 h-4 text-gold/60 absolute start-3 top-1/2 -translate-y-1/2" />
                   <input
                     id="login-full-name"
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="As you would like it on your orders"
-                    className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                    placeholder={t("auth.fullNamePlaceholder")}
+                    className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg ps-10 pe-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -242,10 +244,10 @@ export default function Login() {
             {/* Email Field */}
             <div>
               <label htmlFor="login-email" className="block text-xs font-sans text-ivory/80 font-medium mb-1.5">
-                Email Address <span className="text-gold">*</span>
+                {t("auth.emailLabel")} <span className="text-gold">*</span>
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-gold/60 absolute start-3 top-1/2 -translate-y-1/2" />
                 <input
                   id="login-email"
                   type="email"
@@ -256,7 +258,7 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@domain.com"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg ps-10 pe-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -265,7 +267,7 @@ export default function Login() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label htmlFor="login-password" className="block text-xs font-sans text-ivory/80 font-medium">
-                  Password <span className="text-gold">*</span>
+                  {t("auth.passwordLabel")} <span className="text-gold">*</span>
                 </label>
                 {mode === "signin" && (
                   <button
@@ -276,12 +278,12 @@ export default function Login() {
                     }}
                     className="px-1 -mx-1 py-2 -my-2 rounded text-[11px] font-sans text-gold hover:text-goldLight transition-colors"
                   >
-                    Forgot Password?
+                    {t("auth.forgotPassword")}
                   </button>
                 )}
               </div>
               <div className="relative">
-                <Lock className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-gold/60 absolute start-3 top-1/2 -translate-y-1/2" />
                 <input
                   id="login-password"
                   type={showPassword ? "text" : "password"}
@@ -292,13 +294,13 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-12 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg ps-10 pe-12 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-gold transition-colors"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute end-0 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-gold transition-colors"
+                  aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -307,7 +309,7 @@ export default function Login() {
 
             {/* Remember Me Checkbox (Signin Mode) */}
             {mode === "signin" && (
-              <div className="flex items-center space-x-2 pt-1">
+              <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
                   id="remember"
@@ -316,7 +318,7 @@ export default function Login() {
                   className="rounded border-gold/30 bg-navy text-gold focus:ring-gold focus:ring-offset-navy"
                 />
                 <label htmlFor="remember" className="text-xs font-sans text-muted select-none py-1.5 -my-1.5">
-                  Remember me on this browser
+                  {t("auth.rememberMe")}
                 </label>
               </div>
             )}
@@ -325,13 +327,13 @@ export default function Login() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
+              className="w-full py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-navy border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>{mode === "signin" ? "Sign In" : "Create Client Account"}</span>
+                  <span>{mode === "signin" ? t("auth.signIn") : t("auth.signUpCta")}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -342,7 +344,7 @@ export default function Login() {
           <div className="mt-6 pt-5 border-t border-gold/15 text-center">
             {mode === "signin" ? (
               <p className="text-xs text-muted">
-                Don't have an account?{" "}
+                {t("auth.noAccount")}{" "}
                 <button
                   onClick={() => {
                     setMode("signup");
@@ -350,12 +352,12 @@ export default function Login() {
                   }}
                   className="text-gold font-semibold hover:text-goldLight underline underline-offset-4 transition-colors"
                 >
-                  Create account
+                  {t("auth.createAccount")}
                 </button>
               </p>
             ) : (
               <p className="text-xs text-muted">
-                Already have an account?{" "}
+                {t("auth.haveAccount")}{" "}
                 <button
                   onClick={() => {
                     setMode("signin");
@@ -363,7 +365,7 @@ export default function Login() {
                   }}
                   className="text-gold font-semibold hover:text-goldLight underline underline-offset-4 transition-colors"
                 >
-                  Sign in here
+                  {t("auth.signInHere")}
                 </button>
               </p>
             )}
@@ -396,12 +398,12 @@ export default function Login() {
             >
               <div className="flex items-center justify-between border-b border-gold/20 pb-3">
                 <h3 id="password-recovery-title" className="font-serif font-bold text-lg text-ivory">
-                  Password Recovery
+                  {t("auth.passwordRecoveryTitle")}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setIsResetOpen(false)}
-                  aria-label="Close password recovery"
+                  aria-label={t("auth.closePasswordRecovery")}
                   className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-ivory hover:bg-navy transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -411,9 +413,9 @@ export default function Login() {
               {resetSuccess ? (
                 <div role="status" className="py-4 text-center space-y-2">
                   <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                  <p className="text-sm text-ivory font-serif font-bold">Password Reset Instructions Sent</p>
+                  <p className="text-sm text-ivory font-serif font-bold">{t("auth.resetInstructionsSent")}</p>
                   <p className="text-xs text-muted">
-                    Check your inbox at <span className="text-gold font-mono">{resetEmail}</span> for further steps.
+                    {t("auth.resetCheckInboxPrefix")} <span className="text-gold font-mono">{resetEmail}</span> {t("auth.resetCheckInboxSuffix")}
                   </p>
                 </div>
               ) : (
@@ -426,11 +428,11 @@ export default function Login() {
                   {resetMode ? (
                     <>
                       <p className="text-xs text-muted">
-                        Your reset link was verified. Choose a new password for your account.
+                        {t("auth.resetLinkVerified")}
                       </p>
                       <div>
                         <label htmlFor="recovery-password" className="block text-xs text-ivory mb-1">
-                          New Password
+                          {t("auth.newPasswordLabel")}
                         </label>
                         <input
                           id="recovery-password"
@@ -444,17 +446,17 @@ export default function Login() {
                           placeholder="••••••••"
                           className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
                         />
-                        <p className="text-[10px] text-muted mt-1">At least 6 characters.</p>
+                        <p className="text-[10px] text-muted mt-1">{t("auth.newPasswordHint")}</p>
                       </div>
                     </>
                   ) : (
                     <>
                       <p className="text-xs text-muted">
-                        Enter the email address associated with your account and we will send you instructions to reset your password.
+                        {t("auth.forgotPasswordHelp")}
                       </p>
                       <div>
                         <label htmlFor="recovery-email" className="block text-xs text-ivory mb-1">
-                          Email Address
+                          {t("auth.emailLabel")}
                         </label>
                         <input
                           id="recovery-email"
@@ -470,20 +472,20 @@ export default function Login() {
                       </div>
                     </>
                   )}
-                  <div className="flex justify-end space-x-2 pt-2">
+                  <div className="flex justify-end gap-2 pt-2">
                     <button
                       type="button"
                       onClick={() => setIsResetOpen(false)}
                       className="px-4 py-2 min-h-11 rounded text-xs text-muted hover:text-ivory"
                     >
-                      Cancel
+                      {t("common.cancel")}
                     </button>
                     <button
                       type="submit"
                       disabled={resetBusy}
                       className="px-4 py-2 min-h-11 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-50"
                     >
-                      {resetMode ? "Set New Password" : "Send Instructions"}
+                      {resetMode ? t("auth.setNewPassword") : t("auth.sendInstructions")}
                     </button>
                   </div>
                 </form>

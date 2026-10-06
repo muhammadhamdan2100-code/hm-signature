@@ -1,16 +1,19 @@
+import { useI18n } from "../i18n/I18nProvider";
+
 interface Section {
   title: string;
   body: string[];
 }
 
 export default function LegalPage({ title, updated, sections }: { title: string; updated: string; sections: Section[] }) {
+  const { t } = useI18n();
   return (
     <div className="pt-24 bg-navy min-h-screen">
       <section className="py-20 border-b border-gold/15 text-center">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
-          <div className="eyebrow mb-4">LEGAL</div>
+          <div className="eyebrow mb-4">{t("legal.eyebrow")}</div>
           <h1 className="font-serif text-4xl lg:text-6xl mb-4">{title}</h1>
-          <p className="text-muted text-sm">Last updated: {updated}</p>
+          <p className="text-muted text-sm">{t("legal.lastUpdated", { date: updated })}</p>
         </div>
       </section>
 

@@ -11,6 +11,7 @@ import {
 } from "../services/customerOrders";
 import { saveCustomerOrderNotes } from "../services/tracking";
 import AddressBook from "../components/AddressBook";
+import AccountRewards from "../components/AccountRewards";
 import CommunicationPreferences from "../components/CommunicationPreferences";
 import {
   Package,
@@ -29,16 +30,19 @@ import {
   AlertTriangle,
   CreditCard,
 } from "lucide-react";
-import { formatPKR } from "../utils/currency";
+import { useI18n } from "../i18n/I18nProvider";
+import { useCurrency } from "../context/CurrencyContext";
 
 // Standard Stepper Order Pipeline
-const STEPPER_STAGES: { status: OrderStatus; label: string; desc: string }[] = [
-  { status: "Pending", label: "Order Placed", desc: "Acquisition registered" },
-  { status: "Confirmed", label: "Payment Confirmed", desc: "Order validated" },
-  { status: "Processing", label: "Atelier Handcrafting", desc: "Batch formulation" },
-  { status: "Shipped", label: "Dispatched", desc: "Handed to courier" },
-  { status: "Out for Delivery", label: "Out for Delivery", desc: "Arriving today" },
-  { status: "Delivered", label: "Delivered", desc: "Signed by recipient" },
+// The `status` values are the persisted database strings the stepper is keyed on; only the
+// label keys travel to the shopper's language.
+const STEPPER_STAGES: { status: OrderStatus; labelKey: string; descKey: string }[] = [
+  { status: "Pending", labelKey: "account.stageOrderPlaced", descKey: "account.stageOrderPlacedDesc" },
+  { status: "Confirmed", labelKey: "account.stagePaymentConfirmed", descKey: "account.stagePaymentConfirmedDesc" },
+  { status: "Processing", labelKey: "account.stageAtelierHandcrafting", descKey: "account.stageAtelierHandcraftingDesc" },
+  { status: "Shipped", labelKey: "status.dispatched", descKey: "account.stageDispatchedDesc" },
+  { status: "Out for Delivery", labelKey: "status.outfordelivery", descKey: "account.stageOutForDeliveryDesc" },
+  { status: "Delivered", labelKey: "status.delivered", descKey: "account.stageDeliveredDesc" },
 ];
 
 function getStageIndex(status: OrderStatus): number {
@@ -61,19 +65,20 @@ function getStageIndex(status: OrderStatus): number {
 }
 
 // Payment Method Icon & Color Helper
+// The case values are the stored payment method ids; only the badge label is translated.
 function getPaymentMethodBadge(method: PaymentMethod | string) {
   switch (method) {
     case "JazzCash":
-      return { label: "JazzCash Wallet", icon: Smartphone, color: "text-rose-400 border-rose-500/30 bg-rose-950/30" };
+      return { labelKey: "account.jazzCashWallet", icon: Smartphone, color: "text-rose-400 border-rose-500/30 bg-rose-950/30" };
     case "Raast":
-      return { label: "Raast Instant ID", icon: Banknote, color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/30" };
+      return { labelKey: "account.raastInstantId", icon: Banknote, color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/30" };
     case "Bank Transfer":
-      return { label: "Bank Wire Transfer", icon: Building2, color: "text-amber-400 border-amber-500/30 bg-amber-950/30" };
+      return { labelKey: "account.bankWireTransfer", icon: Building2, color: "text-amber-400 border-amber-500/30 bg-amber-950/30" };
     case "PayFast":
     case "payfast":
-      return { label: "PayFast Card Gateway", icon: CreditCard, color: "text-sky-400 border-sky-500/30 bg-sky-950/30" };
+      return { labelKey: "account.payfastCardGateway", icon: CreditCard, color: "text-sky-400 border-sky-500/30 bg-sky-950/30" };
     default:
-      return { label: "Cash on Delivery", icon: Truck, color: "text-gold border-gold/30 bg-gold/10" };
+      return { labelKey: "account.cashOnDelivery", icon: Truck, color: "text-gold border-gold/30 bg-gold/10" };
   }
 }
 
@@ -82,16 +87,16 @@ function getPaymentStatusBadge(status: PaymentStatus | string) {
   switch (status) {
     case "Paid":
     case "Verified":
-      return { label: "Paid & Verified", bg: "bg-emerald-950/60 text-emerald-300 border-emerald-800/40" };
+      return { labelKey: "status.paidandverified", bg: "bg-emerald-950/60 text-emerald-300 border-emerald-800/40" };
     case "Verification Pending":
-      return { label: "Verification Pending", bg: "bg-amber-950/60 text-amber-300 border-amber-800/40" };
+      return { labelKey: "status.verificationpending", bg: "bg-amber-950/60 text-amber-300 border-amber-800/40" };
     case "Failed":
     case "Rejected":
-      return { label: "Payment Failed / Rejected", bg: "bg-rose-950/60 text-rose-300 border-rose-800/40" };
+      return { labelKey: "status.paymentfailedrejected", bg: "bg-rose-950/60 text-rose-300 border-rose-800/40" };
     case "Refunded":
-      return { label: "Refunded", bg: "bg-sky-950/60 text-sky-300 border-sky-800/40" };
+      return { labelKey: "status.refunded", bg: "bg-sky-950/60 text-sky-300 border-sky-800/40" };
     default:
-      return { label: "Payment Pending", bg: "bg-navy/80 text-muted border-gold/20" };
+      return { labelKey: "status.paymentpending", bg: "bg-navy/80 text-muted border-gold/20" };
   }
 }
 
@@ -128,6 +133,7 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
   order,
   onSubmitted,
 }) => {
+  const { t } = useI18n();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [storedProofUrl, setStoredProofUrl] = useState<string | null>(null);
@@ -177,13 +183,13 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
 
     // Validate image format
     if (!PROOF_IMAGE_TYPES.includes(file.type)) {
-      setErrorMsg("Please select a valid image file (.jpg, .png, or .webp).");
+      setErrorMsg(t("validation.proofImageType"));
       return;
     }
 
     // Validate size (max 10MB)
     if (file.size > PROOF_MAX_BYTES) {
-      setErrorMsg("File size must be less than 10MB.");
+      setErrorMsg(t("validation.proofImageSize"));
       return;
     }
 
@@ -199,11 +205,11 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
 
   const handleSubmitProof = async () => {
     if (!selectedFile) {
-      setErrorMsg("Select a receipt screenshot first.");
+      setErrorMsg(t("validation.proofSelectFirst"));
       return;
     }
     if (!isSupabaseConfigured()) {
-      setErrorMsg("Payment proof upload is unavailable right now. Please contact the concierge.");
+      setErrorMsg(t("account.proofUnavailable"));
       return;
     }
 
@@ -219,7 +225,7 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
       const { data: userData } = await supabase.auth.getUser();
       const authorId = userData.user?.id;
       if (!authorId) {
-        setErrorMsg("Your session has expired. Please sign in again to submit your payment proof.");
+        setErrorMsg(t("account.proofSessionExpired"));
         return;
       }
 
@@ -230,32 +236,29 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
 
       if (uploadError) {
         console.error("Payment screenshot upload failed:", uploadError.message);
-        setErrorMsg("Your payment screenshot could not be uploaded. Please try again.");
+        setErrorMsg(t("account.proofUploadFailed"));
         return;
       }
 
       const submitted = await submitPaymentProofRpc(order.id, {
         proofPath,
+        // Stored on the payment record for the atelier: kept in English on purpose.
         note: `Payment receipt uploaded: ${fileName}`,
       });
 
       if (!submitted.success) {
         console.error("Payment proof could not be attached:", submitted.error);
-        setErrorMsg(
-          "The screenshot was uploaded but could not be attached to your order. Please try again."
-        );
+        setErrorMsg(t("account.proofAttachFailed"));
         return;
       }
 
       setSelectedFile(null);
       setLocalPreviewUrl(null);
-      setSuccessMsg(
-        "Your payment screenshot is with us. The atelier confirms receipt once it has been reviewed."
-      );
+      setSuccessMsg(t("account.proofSubmitted"));
       onSubmitted();
     } catch (err) {
       console.error("Payment proof submission failed:", err);
-      setErrorMsg("Your payment screenshot could not be submitted. Please try again.");
+      setErrorMsg(t("account.proofSubmitFailed"));
     } finally {
       setIsSubmitting(false);
     }
@@ -264,34 +267,34 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
   return (
     <div className="mt-4 p-4 rounded-lg bg-navy border border-gold/25 space-y-3 font-sans text-xs">
       <div className="flex items-center justify-between border-b border-gold/15 pb-2">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           <Upload className="w-4 h-4 text-gold" />
           <span className="font-serif font-bold text-sm text-ivory">
-            Payment Receipt & Screenshot Upload
+            {t("account.proofHeading")}
           </span>
         </div>
         <span className="text-[10px] font-mono text-gold uppercase tracking-wider">
-          {order.paymentMethod} Payment
+          {t("account.paymentMethodTag", { method: order.paymentMethod })}
         </span>
       </div>
 
       <p className="text-muted text-xs leading-relaxed font-light">
-        Payment proof will be reviewed by our team. Order status remains pending verification until approved.
+        {t("account.proofReviewNote")}
       </p>
 
       {/* Success Banner */}
       {(successMsg || order.paymentStatus === "Verification Pending") && (
-        <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-lg text-amber-200 text-xs flex items-center space-x-2">
+        <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-lg text-amber-200 text-xs flex items-center gap-2">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
           <span>
-            {successMsg || "Your payment screenshot is with us. The atelier confirms receipt once it has been reviewed."}
+            {successMsg || t("account.proofSubmitted")}
           </span>
         </div>
       )}
 
       {/* Error Banner */}
       {errorMsg && (
-        <div className="p-3 bg-rose-950/40 border border-rose-500/30 rounded-lg text-rose-200 text-xs flex items-center space-x-2">
+        <div className="p-3 bg-rose-950/40 border border-rose-500/30 rounded-lg text-rose-200 text-xs flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
           <span>{errorMsg}</span>
         </div>
@@ -299,26 +302,26 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
 
       {/* Image Preview or Drop Area */}
       {proofImage ? (
-        <div className="relative rounded-lg border border-gold/30 bg-navy2 p-3 flex items-center space-x-4">
+        <div className="relative rounded-lg border border-gold/30 bg-navy2 p-3 flex items-center gap-4">
           <div className="w-16 h-16 rounded border border-gold/20 overflow-hidden bg-black shrink-0 relative group">
-            <img src={proofImage} alt="Payment Receipt" className="w-full h-full object-cover" />
+            <img src={proofImage} alt={t("account.proofImageAlt")} className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0 space-y-1">
             <p className="text-ivory font-medium text-xs truncate">
-              {selectedFile ? selectedFile.name : "Payment Proof Attached"}
+              {selectedFile ? selectedFile.name : t("account.proofAttached")}
             </p>
             <p className="text-[10px] text-gold font-mono uppercase">
-              {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : "Uploaded Receipt"}
+              {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : t("account.uploadedReceipt")}
             </p>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             {selectedFile ? (
               <>
                 <button
                   type="button"
                   onClick={handleRemoveFile}
                   className="p-1.5 rounded bg-navy text-muted hover:text-rose-400 transition-colors border border-gold/20"
-                  title="Remove the selected screenshot"
+                  title={t("account.removeProofTitle")}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -326,14 +329,14 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
                   type="button"
                   disabled={isSubmitting}
                   onClick={handleSubmitProof}
-                  className="px-3 py-1.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow flex items-center space-x-1"
+                  className="px-3 py-1.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow flex items-center gap-1"
                 >
                   {isSubmitting ? (
                     <div className="w-3.5 h-3.5 border-2 border-navy border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
                       <Check className="w-3.5 h-3.5" />
-                      <span>Submit Proof</span>
+                      <span>{t("account.submitProof")}</span>
                     </>
                   )}
                 </button>
@@ -341,9 +344,9 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
             ) : (
               <label
                 className="px-3 py-1.5 border border-gold/30 hover:border-gold text-ivory font-bold text-[10px] uppercase tracking-wider rounded cursor-pointer transition-colors"
-                title="Attach a new payment screenshot"
+                title={t("account.replaceProofTitle")}
               >
-                Replace Proof
+                {t("account.replaceProof")}
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
@@ -357,8 +360,8 @@ const PaymentProofUploadSection: React.FC<{ order: Order; onSubmitted: () => voi
       ) : (
         <label className="flex flex-col items-center justify-center p-5 rounded-lg border-2 border-dashed border-gold/30 bg-navy2/60 hover:bg-navy2 hover:border-gold/60 transition-all cursor-pointer text-center">
           <ImageIcon className="w-8 h-8 text-gold/60 mb-2" />
-          <span className="text-xs text-ivory font-medium">Click to select receipt screenshot</span>
-          <span className="text-[10px] text-muted font-mono mt-1">Supports JPG, PNG, WEBP (Max 10MB)</span>
+          <span className="text-xs text-ivory font-medium">{t("account.proofDropzoneLabel")}</span>
+          <span className="text-[10px] text-muted font-mono mt-1">{t("account.proofFormatsHint")}</span>
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -377,6 +380,7 @@ const OrderNotesAndActions: React.FC<{
   onSaveNotes: (value: string) => void;
   onCancel: () => void;
 }> = ({ order, busy, onSaveNotes, onCancel }) => {
+  const { t } = useI18n();
   const [notes, setNotes] = useState(order.customerNotes || "");
   const [editing, setEditing] = useState(false);
 
@@ -387,22 +391,22 @@ const OrderNotesAndActions: React.FC<{
     <div className="pt-2 space-y-3 border-t border-gold/15">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="text-[11px] text-muted font-light">
-          <span className="text-[10px] font-mono uppercase text-gold font-semibold block">DELIVERY NOTES</span>
+          <span className="text-[10px] font-mono uppercase text-gold font-semibold block">{t("account.deliveryNotesHeading")}</span>
           {order.customerNotes && !editing ? (
             <p className="text-ivory mt-1 leading-relaxed">{order.customerNotes}</p>
           ) : notesEditable ? (
-            <p className="mt-1">Add delivery instructions while the order is still being prepared.</p>
+            <p className="mt-1">{t("account.notesEditableHint")}</p>
           ) : (
-            <p className="mt-1">Notes can no longer be edited on this order.</p>
+            <p className="mt-1">{t("account.notesLockedHint")}</p>
           )}
         </div>
 
-        <div className="flex items-center space-x-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Link
             to={`/track-order?id=${encodeURIComponent(order.trackingNumber || order.orderNumber)}`}
             className="px-4 py-2 border border-gold/30 text-ivory hover:border-gold rounded text-[11px] uppercase font-bold tracking-wider transition-colors"
           >
-            Track
+            {t("account.track")}
           </Link>
           {notesEditable && (
             <button
@@ -411,7 +415,7 @@ const OrderNotesAndActions: React.FC<{
               onClick={() => (editing ? onSaveNotes(notes) : setEditing(true))}
               className="px-4 py-2 bg-gold hover:bg-goldLight disabled:opacity-40 disabled:hover:bg-gold text-navy rounded text-[11px] uppercase font-bold tracking-wider transition-colors"
             >
-              {editing ? "Save Note" : "Add Note"}
+              {editing ? t("account.saveNote") : t("account.addNote")}
             </button>
           )}
           {order.canCancel && (
@@ -421,7 +425,7 @@ const OrderNotesAndActions: React.FC<{
               onClick={onCancel}
               className="px-4 py-2 border border-rose-500/40 text-rose-300 hover:bg-rose-950/40 disabled:opacity-40 rounded text-[11px] uppercase font-bold tracking-wider transition-colors"
             >
-              {busy ? "Working…" : "Cancel Order"}
+              {busy ? t("account.working") : t("account.cancelOrder")}
             </button>
           )}
         </div>
@@ -433,8 +437,8 @@ const OrderNotesAndActions: React.FC<{
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           maxLength={500}
-          aria-label="Delivery notes for this order"
-          placeholder="e.g. Please call on arrival, the gate code is 4412."
+          aria-label={t("account.notesAriaLabel")}
+          placeholder={t("account.notesPlaceholder")}
           className="w-full bg-navy border border-gold/30 rounded-lg px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
         />
       )}
@@ -443,10 +447,13 @@ const OrderNotesAndActions: React.FC<{
 };
 
 export default function Account() {
+  const { t } = useI18n();
+  const { format } = useCurrency();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const isAddressesView = location.pathname.endsWith("/addresses");
+  const isRewardsView = location.pathname.endsWith("/rewards");
   const [clientOrders, setClientOrders] = useState<CustomerOrderView[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
@@ -463,7 +470,7 @@ export default function Account() {
         if (mounted) setClientOrders(rows);
       })
       .catch((e: any) => {
-        if (mounted) setOrdersError(e?.message || "We could not load your orders.");
+        if (mounted) setOrdersError(e?.message || t("account.ordersLoadError"));
       })
       .finally(() => {
         if (mounted) setOrdersLoading(false);
@@ -477,15 +484,12 @@ export default function Account() {
     return <Navigate to="/login?next=/account" replace />;
   }
 
-  const customerName = user.fullName || "Valued Patron";
+  const customerName = user.fullName || t("account.valuedPatron");
 
   const refreshOrders = () => setReloadToken((t) => t + 1);
 
   const handleSelfCancel = async (order: CustomerOrderView) => {
-    const reason = window.prompt(
-      `Cancel order ${order.orderNumber}? Please tell us briefly why (optional).`,
-      ""
-    );
+    const reason = window.prompt(t("account.cancelPrompt", { number: order.orderNumber }), "");
     if (reason === null) return;
     setBusyOrderId(order.id);
     setActionMessage(null);
@@ -494,11 +498,11 @@ export default function Account() {
     if (res.success) {
       setActionMessage({
         tone: "ok",
-        text: `Order ${order.orderNumber} was cancelled. Any reserved stock has been returned to the atelier.`,
+        text: t("account.orderCancelled", { number: order.orderNumber }),
       });
       refreshOrders();
     } else {
-      setActionMessage({ tone: "err", text: res.error || "This order could not be cancelled." });
+      setActionMessage({ tone: "err", text: res.error || t("account.cancelFailed") });
     }
   };
 
@@ -508,8 +512,8 @@ export default function Account() {
     setBusyOrderId(null);
     setActionMessage(
       res.success
-        ? { tone: "ok", text: "Your note was added to this order." }
-        : { tone: "err", text: res.error || "Your note could not be saved." }
+        ? { tone: "ok", text: t("account.noteSaved") }
+        : { tone: "err", text: res.error || t("account.noteSaveFailed") }
     );
     if (res.success) refreshOrders();
   };
@@ -519,42 +523,42 @@ export default function Account() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8">
         {/* Luxury Welcome Hero Card */}
         <div className="relative overflow-hidden bg-navy2/90 border border-gold/30 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-gold/10 rounded-full blur-[100px] pointer-events-none" />
+          <div className="absolute top-0 end-0 w-80 h-80 bg-gold/10 rounded-full blur-[100px] pointer-events-none" />
 
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-center space-x-5">
+            <div className="flex items-center gap-5">
               <div className="w-16 h-16 rounded-full bg-gold/15 border-2 border-gold flex items-center justify-center font-serif text-gold font-bold text-3xl shadow-lg shrink-0">
                 {customerName.charAt(0).toUpperCase()}
               </div>
               <div className="space-y-1">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono uppercase tracking-[2.5px] text-gold font-bold bg-gold/10 px-2 py-0.5 rounded border border-gold/30">
-                    HM SIGNATURE PRIVILEGED MEMBER
+                    {t("account.privilegedMember")}
                   </span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-serif font-bold text-ivory tracking-wide">
-                  Welcome back, {customerName}
+                  {t("account.welcomeBack", { name: customerName })}
                 </h1>
                 <p className="text-xs text-muted font-mono font-light">{user.email}</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
               {user.role !== "customer" && (
                 <button
                   onClick={() => navigate("/admin/dashboard")}
-                  className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded-lg text-xs uppercase tracking-wider flex items-center space-x-2 shadow-lg transition-colors"
+                  className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded-lg text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-colors"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Admin Workspace</span>
+                  <span>{t("account.adminWorkspace")}</span>
                 </button>
               )}
               <button
                 onClick={logout}
-                className="px-4 py-2.5 border border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-lg text-xs uppercase tracking-wider flex items-center space-x-2 transition-colors"
+                className="px-4 py-2.5 border border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-lg text-xs uppercase tracking-wider flex items-center gap-2 transition-colors"
               >
                 <LogOut className="w-4 h-4 text-rose-400" />
-                <span>Sign Out</span>
+                <span>{t("nav.signOut")}</span>
               </button>
             </div>
           </div>
@@ -570,7 +574,7 @@ export default function Account() {
                 : "border-gold/60 text-navy bg-gold font-semibold"
             }`}
           >
-            Orders
+            {t("account.ordersTab")}
           </Link>
           <Link
             to="/account/addresses"
@@ -580,12 +584,24 @@ export default function Account() {
                 : "border-gold/25 text-muted hover:text-ivory"
             }`}
           >
-            Saved addresses
+            {t("account.addressesTab")}
+          </Link>
+          <Link
+            to="/account/rewards"
+            className={`px-3.5 py-2.5 rounded-lg border transition-colors min-h-11 ${
+              location.pathname.endsWith("/rewards")
+                ? "border-gold/60 text-navy bg-gold font-semibold"
+                : "border-gold/25 text-muted hover:text-ivory"
+            }`}
+          >
+            {t("account.rewardsTab")}
           </Link>
         </div>
 
         {isAddressesView ? (
           <AddressBook />
+        ) : isRewardsView ? (
+          <AccountRewards />
         ) : (
         <>
         {/* Customer Fragrance Order Portal */}
@@ -593,17 +609,17 @@ export default function Account() {
           <div className="flex items-center justify-between border-b border-gold/20 pb-4">
             <div>
               <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-                HAUTE PARFUMERIE ACQUISITIONS
+                {t("account.ordersEyebrow")}
               </span>
               <h2 className="text-2xl font-serif font-bold text-ivory mt-0.5">
-                Your Fragrance Orders ({clientOrders.length})
+                {t("account.ordersTitle", { count: clientOrders.length })}
               </h2>
             </div>
             <Link
               to="/collections"
-              className="hidden sm:inline-flex items-center space-x-1 text-xs text-gold hover:text-goldLight font-semibold uppercase tracking-wider"
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-gold hover:text-goldLight font-semibold uppercase tracking-wider"
             >
-              <span>Browse Catalog</span>
+              <span>{t("account.browseCatalog")}</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -625,7 +641,7 @@ export default function Account() {
           {/* Loading / Error / Empty states */}
           {ordersLoading ? (
             <div className="space-y-4" role="status" aria-live="polite">
-              <span className="sr-only">Loading your orders</span>
+              <span className="sr-only">{t("account.loadingOrders")}</span>
               {[0, 1].map((i) => (
                 <div key={i} className="bg-navy2/70 border border-gold/15 rounded-2xl p-6 animate-pulse space-y-4">
                   <div className="h-4 w-40 bg-navy/80 rounded" />
@@ -636,13 +652,13 @@ export default function Account() {
             </div>
           ) : ordersError ? (
             <div className="bg-rose-950/40 border border-rose-500/40 rounded-2xl p-8 text-center space-y-4">
-              <p className="text-sm font-serif text-ivory">We could not load your orders.</p>
+              <p className="text-sm font-serif text-ivory">{t("account.ordersLoadError")}</p>
               <p className="text-xs text-rose-200/80 font-light">{ordersError}</p>
               <button
                 onClick={refreshOrders}
                 className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors"
               >
-                Try Again
+                {t("account.tryAgain")}
               </button>
             </div>
           ) : clientOrders.length === 0 ? (
@@ -650,16 +666,16 @@ export default function Account() {
               <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/30 text-gold mx-auto flex items-center justify-center">
                 <Package className="w-8 h-8 text-gold" />
               </div>
-              <h3 className="font-serif text-xl text-ivory font-bold">No Orders Found</h3>
+              <h3 className="font-serif text-xl text-ivory font-bold">{t("account.noOrdersTitle")}</h3>
               <p className="text-xs text-muted leading-relaxed font-light">
-                Your haute parfumerie acquisitions will appear here alongside real-time laboratory status and tracking details.
+                {t("account.noOrdersBody")}
               </p>
               <div className="pt-2">
                 <Link
                   to="/collections"
                   className="inline-flex items-center px-6 py-3 bg-gold hover:bg-goldLight text-navy font-bold rounded-lg text-xs uppercase tracking-wider shadow-lg transition-colors"
                 >
-                  Explore Fragrances
+                  {t("account.exploreFragrances")}
                 </Link>
               </div>
             </div>
@@ -683,42 +699,42 @@ export default function Account() {
                     {/* Card Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
                       <div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center gap-2">
                           <span className="text-[10px] font-mono uppercase text-gold tracking-widest font-semibold">
-                            REF #
+                            {t("account.refLabel")}
                           </span>
                           <span className="font-mono font-bold text-lg text-ivory">
                             {order.orderNumber}
                           </span>
                         </div>
                         <p className="text-[11px] text-muted font-light mt-0.5">
-                          Placed on <span className="text-ivory font-medium">{order.createdAt}</span>
+                          {t("account.placedOn")} <span className="text-ivory font-medium">{order.createdAt}</span>
                         </p>
                       </div>
 
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center gap-3">
                         {/* Payment Method Badge */}
-                        <div className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-semibold border ${pmBadge.color}`}>
+                        <div className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold border ${pmBadge.color}`}>
                           <PMIcon className="w-3.5 h-3.5" />
-                          <span>{pmBadge.label}</span>
+                          <span>{t(pmBadge.labelKey)}</span>
                         </div>
 
                         {/* Payment Status Badge */}
                         <span className={`px-3 py-1 rounded text-xs font-semibold border ${psBadge.bg}`}>
-                          {psBadge.label}
+                          {t(psBadge.labelKey)}
                         </span>
 
                         {refundedTotal > 0 && (
                           <span className="px-3 py-1 rounded text-xs font-mono border border-sky-800/40 bg-sky-950/40 text-sky-300">
-                            Refunded {formatPKR(refundedTotal)}
+                            {t("status.refunded")} {format(refundedTotal)}
                           </span>
                         )}
 
                         {/* Total Amount */}
-                        <div className="text-right">
-                          <span className="text-[10px] text-muted block uppercase font-mono">Total</span>
+                        <div className="text-end">
+                          <span className="text-[10px] text-muted block uppercase font-mono">{t("common.total")}</span>
                           <span className="font-mono font-bold text-sm sm:text-base text-gold">
-                            {formatPKR(order.total)}
+                            {format(order.total)}
                           </span>
                         </div>
                       </div>
@@ -728,7 +744,7 @@ export default function Account() {
                     {!isSpecialState ? (
                       <div className="space-y-3 pt-2">
                         <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
-                          DISPATCH PROGRESS & LAB STATUS
+                          {t("account.stepperHeading")}
                         </span>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                           {STEPPER_STAGES.map((stage, idx) => {
@@ -738,7 +754,7 @@ export default function Account() {
                             return (
                               <div
                                 key={stage.status}
-                                className={`p-2.5 rounded-lg border transition-all text-left space-y-1 ${
+                                className={`p-2.5 rounded-lg border transition-all text-start space-y-1 ${
                                   isCurrent
                                     ? "bg-navy border-gold shadow-lg ring-1 ring-gold/40"
                                     : isDone
@@ -764,10 +780,10 @@ export default function Account() {
                                 </div>
                                 <div>
                                   <p className={`text-xs font-serif font-bold ${isCurrent ? "text-gold" : isDone ? "text-ivory" : "text-muted"}`}>
-                                    {stage.label}
+                                    {t(stage.labelKey)}
                                   </p>
                                   <p className="text-[9px] text-muted font-sans line-clamp-1">
-                                    {stage.desc}
+                                    {t(stage.descKey)}
                                   </p>
                                 </div>
                               </div>
@@ -777,16 +793,16 @@ export default function Account() {
                       </div>
                     ) : (
                       /* Special State Banner (Cancelled / Returned) */
-                      <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 flex items-center space-x-3">
+                      <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 flex items-center gap-3">
                         <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
                         <div>
                           <p className="font-serif font-bold text-sm text-ivory">
-                            Order Status: {order.status}
+                            {t("account.orderStatusPrefix")} {order.status}
                           </p>
                           <p className="text-xs text-rose-300/80 font-light">
                             {order.status === "Cancelled"
-                              ? "This order was cancelled. Please contact atelier concierge for refunds or assistance."
-                              : "Items from this order were returned and processed at our atelier."}
+                              ? t("account.cancelledOrderBody")
+                              : t("account.returnedOrderBody")}
                           </p>
                         </div>
                       </div>
@@ -795,12 +811,12 @@ export default function Account() {
                     {/* Inline Product Item Breakdown */}
                     <div className="space-y-3">
                       <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
-                        ORDERED EXTRAITS & ACQUISITIONS
+                        {t("account.itemsHeading")}
                       </span>
                       <div className="bg-navy/70 border border-gold/15 rounded-xl divide-y divide-gold/10 overflow-hidden">
                         {order.items?.map((item, i) => (
                           <div key={i} className="p-3.5 flex items-center justify-between gap-4 font-sans">
-                            <div className="flex items-center space-x-3.5 min-w-0">
+                            <div className="flex items-center gap-3.5 min-w-0">
                               <div className="w-12 h-12 rounded border border-gold/20 bg-black overflow-hidden shrink-0 flex items-center justify-center">
                                 {item.image?.startsWith("http") || item.image?.startsWith("/") ? (
                                   <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
@@ -812,20 +828,20 @@ export default function Account() {
                                 <h4 className="font-serif font-bold text-sm text-ivory truncate">
                                   {item.name}
                                 </h4>
-                                <div className="flex items-center space-x-2 text-[11px] text-muted">
+                                <div className="flex items-center gap-2 text-[11px] text-muted">
                                   <span className="font-mono text-gold">{item.size || "50ML"}</span>
                                   <span>•</span>
-                                  <span>Qty: {item.quantity}</span>
-                                  {item.sku && <span>• SKU: {item.sku}</span>}
+                                  <span>{t("account.quantityPrefix")} {item.quantity}</span>
+                                  {item.sku && <span>• {t("account.skuLabel")} {item.sku}</span>}
                                 </div>
                               </div>
                             </div>
-                            <div className="text-right shrink-0">
+                            <div className="text-end shrink-0">
                               <span className="text-xs font-mono font-bold text-gold">
-                                {formatPKR(item.price * item.quantity)}
+                                {format(item.price * item.quantity)}
                               </span>
                               <span className="text-[10px] text-muted block">
-                                ({formatPKR(item.price)} each)
+                                ({format(item.price)} {t("account.each")})
                               </span>
                             </div>
                           </div>
@@ -838,10 +854,10 @@ export default function Account() {
                       {/* Shipping Address */}
                       <div className="p-4 rounded-xl bg-navy/60 border border-gold/15 space-y-1 text-xs">
                         <span className="text-[10px] font-mono uppercase text-gold font-semibold block">
-                          DELIVERY DESTINATION
+                          {t("account.deliveryHeading")}
                         </span>
                         <p className="text-ivory font-medium">
-                          {order.shippingAddress?.street || "Address provided at checkout"}
+                          {order.shippingAddress?.street || t("account.addressFallback")}
                         </p>
                         <p className="text-muted">
                           {[order.shippingAddress?.city, order.shippingAddress?.zip, order.shippingAddress?.country]
@@ -850,7 +866,7 @@ export default function Account() {
                         </p>
                         {order.estimatedDelivery && (
                           <p className="text-[11px] text-ivory pt-1">
-                            Estimated delivery:{" "}
+                            {t("account.estimatedDelivery")}{" "}
                             <span className="font-mono text-gold">{String(order.estimatedDelivery).slice(0, 10)}</span>
                           </p>
                         )}
@@ -859,34 +875,34 @@ export default function Account() {
                       {/* Tracking Information */}
                       <div className="p-4 rounded-xl bg-navy/60 border border-gold/15 space-y-1 text-xs">
                         <span className="text-[10px] font-mono uppercase text-gold font-semibold block">
-                          COURIER &amp; TRACKING DETAILS
+                          {t("account.courierHeading")}
                         </span>
                         {order.trackingNumber || order.courier ? (
                           <div className="space-y-1">
                             <p className="text-ivory font-medium flex items-center justify-between">
-                              <span>Courier: {order.courier || "To be advised"}</span>
+                              <span>{t("account.courierLabel")} {order.courier || t("account.toBeAdvised")}</span>
                               <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase">
                                 {order.shipmentStatus || order.shippingStatus}
                               </span>
                             </p>
                             <p className="text-gold font-mono font-bold">
-                              Tracking ID: {order.trackingNumber || "Awaiting issue"}
+                              {t("account.trackingIdLabel")} {order.trackingNumber || t("account.awaitingIssue")}
                             </p>
                             {order.trackingUrl && (
                               <a
                                 href={order.trackingUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center space-x-1.5 text-[11px] text-ivory underline decoration-gold/50 underline-offset-2 hover:text-gold"
+                                className="inline-flex items-center gap-1.5 text-[11px] text-ivory underline decoration-gold/50 underline-offset-2 hover:text-gold"
                               >
-                                <span>Open courier tracking</span>
+                                <span>{t("account.openCourierTracking")}</span>
                                 <ExternalLink className="w-3 h-3" />
                               </a>
                             )}
                           </div>
                         ) : (
                           <p className="text-muted italic text-[11px] leading-relaxed">
-                            Tracking will appear here once your order has been dispatched.
+                            {t("account.trackingPending")}
                           </p>
                         )}
                       </div>
@@ -896,14 +912,14 @@ export default function Account() {
                     {timeline.length > 0 && (
                       <div className="space-y-3 pt-1">
                         <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
-                          ORDER TIMELINE
+                          {t("account.timelineHeading")}
                         </span>
-                        <ol className="relative border-l border-gold/20 ml-1.5 space-y-4">
+                        <ol className="relative border-l border-gold/20 ms-1.5 space-y-4">
                           {[...timeline]
                             .slice()
                             .reverse()
                             .map((event, i) => (
-                              <li key={`${event.date}-${i}`} className="ml-5">
+                              <li key={`${event.date}-${i}`} className="ms-5">
                                 <span
                                   className={`absolute -left-[7px] w-3.5 h-3.5 rounded-full border ${
                                     i === 0 ? "bg-gold border-gold" : "bg-navy border-gold/40"
@@ -921,12 +937,12 @@ export default function Account() {
                     {order.refundRecords.length > 0 && (
                       <div className="space-y-2 pt-1">
                         <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
-                          REFUND RECORDS
+                          {t("account.refundHeading")}
                         </span>
                         <ul className="space-y-1 text-[11px] text-muted font-mono">
                           {order.refundRecords.map((r) => (
                             <li key={`${r.reference || "refund"}-${r.date}`}>
-                              {formatPKR(r.amount)} — {r.status}
+                              {format(r.amount)} — {r.status}
                               {r.reference ? ` · ref ${r.reference}` : ""} · {r.date}
                             </li>
                           ))}

@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Product } from "../data/products";
 import { useAuth } from "./AuthContext";
+import { useCurrency } from "./CurrencyContext";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { previewCoupon } from "../services/checkoutOps";
 import { fetchShippingConfig, DEFAULT_SHIPPING_CONFIG, type ShippingConfig } from "../services/storeConfig";
 import { clearServerCart, fetchServerCart, pushCartToServer } from "../services/cartSync";
+import { captureEvent } from "../services/analyticsCapture";
 
 export interface CartItem {
   id: string; // unique item id: e.g. `${product.id}-${selectedSize}`
@@ -79,6 +81,7 @@ function readStoredCart(): CartItem[] {
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { country } = useCurrency();
   const [items, setItems] = useState<CartItem[]>(readStoredCart);
   const [isOpen, setIsOpen] = useState(false);
   const [promoCode, setPromoCode] = useState(readStoredPromo);
@@ -188,6 +191,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       return [...prev, { id: cartItemId, product, selectedSize: size, price, sku, quantity }];
     });
+
+    // 9.4 — only a basket that really grew counts as an add. The ceiling check is
+    // re-read here against the same inputs the updater uses, so a blocked attempt
+    // is recorded as nothing, exactly as it behaves.
+    const already = items.find((i) => i.id === cartItemId);
+    const wanted = (already?.quantity ?? 0) + quantity;
+    if (stockCeiling <= 0 || wanted <= stockCeiling) {
+      captureEvent({ event: "add_to_cart", productId: product.id });
+    }
     setIsOpen(true);
   };
 
@@ -326,10 +338,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
     Math.round(rawSubtotal)
   );
   const subtotalAfterDiscount = Math.max(0, rawSubtotal - promoDiscountAmount);
+
+  // The destination rule is the same one the database will price with; the store-wide
+  // shipping_config remains the fallback until a destination is resolved.
+  const destination = country?.enabled && country.shippingFee != null ? country : null;
+  const freeThreshold =
+    destination && destination.freeShippingThreshold != null
+      ? destination.freeShippingThreshold
+      : shippingConfig.freeThreshold;
+  const standardCost = destination ? Number(destination.shippingFee) : shippingConfig.standardCost;
+
   const shipping =
-    items.length === 0 || subtotalAfterDiscount >= shippingConfig.freeThreshold
-      ? 0
-      : shippingConfig.standardCost;
+    items.length === 0 || subtotalAfterDiscount >= freeThreshold ? 0 : standardCost;
   const total = subtotalAfterDiscount + shipping;
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -353,7 +373,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         clearPromo,
         promoError,
         promoDiscountAmount,
-        freeShippingThreshold: shippingConfig.freeThreshold,
+        freeShippingThreshold: freeThreshold,
         syncing,
       }}
     >

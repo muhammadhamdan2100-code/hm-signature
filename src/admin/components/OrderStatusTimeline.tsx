@@ -1,6 +1,8 @@
 import React from "react";
 import type { OrderStatus, OrderTimelineItem } from "../context/AdminDataContext";
 import { CheckCircle, Clock, Truck, Package, ShieldCheck, XCircle } from "lucide-react";
+import { useStatusLabel } from "./StatusBadge";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface OrderStatusTimelineProps {
   timeline: OrderTimelineItem[];
@@ -9,12 +11,12 @@ interface OrderStatusTimelineProps {
 }
 
 const ALL_STEPS: OrderStatus[] = [
-  "Pending",
-  "Confirmed",
-  "Processing",
-  "Shipped",
-  "Out for Delivery",
-  "Delivered",
+"Pending",
+"Confirmed",
+"Processing",
+"Shipped",
+"Out for Delivery",
+"Delivered",
 ];
 
 export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
@@ -22,6 +24,8 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
   currentStatus,
   onUpdateStatus,
 }) => {
+  const { t } = useI18n();
+  const statusLabel = useStatusLabel();
   const isCancelled = currentStatus === "Cancelled" || currentStatus === "Returned";
   const isRefunded = currentStatus === "Returned";
 
@@ -50,16 +54,16 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
       <div className="flex items-center justify-between border-b border-gold/15 pb-4">
         <div>
           <h4 className="font-serif text-base font-bold text-ivory tracking-wide">
-            Order Fulfilment Pipeline
+            {t("admin.orderStatusTimeline.fulfilmentPipeline")}
           </h4>
           <p className="text-xs text-muted">
-            Live lifecycle history from reception to customer delivery.
+            {t("admin.orderStatusTimeline.lifecycleHistory")}
           </p>
         </div>
         {onUpdateStatus && !isCancelled && !isRefunded && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <span className="text-xs text-gold uppercase tracking-wider font-sans">
-              Update Status:
+              {t("admin.orderStatusTimeline.updateStatus")}
             </span>
             <select
               value={currentStatus}
@@ -68,10 +72,10 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
             >
               {ALL_STEPS.map((st) => (
                 <option key={st} value={st}>
-                  {st}
+                  {statusLabel(st)}
                 </option>
               ))}
-              <option value="Cancelled">Cancelled</option>
+              <option value="Cancelled">{statusLabel("Cancelled")}</option>
             </select>
           </div>
         )}
@@ -79,14 +83,16 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
 
       {/* Progress Steps */}
       {isCancelled || isRefunded ? (
-        <div className="p-4 rounded bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs flex items-center space-x-3">
+        <div className="p-4 rounded bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs flex items-center gap-3">
           <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
           <div>
             <p className="font-semibold uppercase tracking-wider">
-              Order {currentStatus}
+              {t("admin.orderStatusTimeline.orderStatus", { status: statusLabel(currentStatus) })}
             </p>
             <p className="text-[11px] text-rose-300/80">
-              This order has been marked as {currentStatus.toLowerCase()}.
+              {t("admin.orderStatusTimeline.markedAs", {
+                status: statusLabel(currentStatus).toLowerCase(),
+              })}
             </p>
           </div>
         </div>
@@ -120,7 +126,7 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({
                       isCurrent ? "text-gold" : isPassed ? "text-ivory" : "text-muted/50"
                     }`}
                   >
-                    {step}
+                    {statusLabel(step)}
                   </span>
                   {timelineMatch && (
                     <span className="text-[10px] text-muted mt-1 font-mono">

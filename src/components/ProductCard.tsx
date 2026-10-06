@@ -5,12 +5,15 @@ import type { Product } from "../data/products";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import ProductVisual from "./ProductVisual";
-import { formatPKR } from "../utils/currency";
+import { useI18n } from "../i18n/I18nProvider";
+import { useCurrency } from "../context/CurrencyContext";
 import { effectiveVariantPrice } from "../data/products";
 
 export default function ProductCard({ product, onQuickView }: { product: Product; onQuickView?: (p: Product) => void }) {
   const { addToCart } = useCart();
   const { toggleWishlist, isWishlisted } = useWishlist();
+  const { t } = useI18n();
+  const { format } = useCurrency();
   const wishlisted = isWishlisted(product.id);
 
   const variants = (product.variants || []).filter((v) => v.active !== false);
@@ -62,22 +65,22 @@ export default function ProductCard({ product, onQuickView }: { product: Product
         {!soldOut && (
           <div className="absolute inset-0 bg-navy/0 group-hover:bg-navy/40 transition-colors duration-300 flex items-center justify-center pointer-events-none">
             <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-[11px] tracking-[2px] text-goldLight">
-              VIEW DETAILS →
+              {t("product.viewDetailsHint")}
             </span>
           </div>
         )}
       </Link>
 
       {/* Status badges */}
-      <div className="absolute top-4 left-4 flex flex-col gap-2 items-start pointer-events-none">
+      <div className="absolute top-4 start-4 flex flex-col gap-2 items-start pointer-events-none">
         {soldOut ? (
           <span className="text-[9px] tracking-[1.5px] font-mono uppercase bg-navy/80 border border-gold/30 text-muted px-2 py-1">
-            Sold Out
+            {t("product.soldOutBadge")}
           </span>
         ) : (
           product.newArrival && (
             <span className="text-[9px] tracking-[1.5px] font-mono uppercase bg-navy/80 border border-gold/40 text-goldLight px-2 py-1">
-              New
+              {t("product.newBadge")}
             </span>
           )
         )}
@@ -86,7 +89,7 @@ export default function ProductCard({ product, onQuickView }: { product: Product
             role="status"
             className="text-[9px] tracking-[1.5px] font-mono uppercase bg-navy/80 border border-gold/50 text-gold px-2 py-1"
           >
-            Only {lowStockVariant.stock} left ({lowStockVariant.size})
+            {t("product.onlyLeft", { count: lowStockVariant.stock, size: lowStockVariant.size })}
           </span>
         )}
       </div>
@@ -97,8 +100,8 @@ export default function ProductCard({ product, onQuickView }: { product: Product
           toggleWishlist(product.id);
         }}
         aria-pressed={wishlisted}
-        aria-label={wishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
-        className="absolute top-4 right-4 w-11 h-11 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+        aria-label={wishlisted ? t("product.removeFromWishlist", { name: product.name }) : t("product.addToWishlist", { name: product.name })}
+        className="absolute top-4 end-4 w-11 h-11 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
       >
         <Heart size={15} fill={wishlisted ? "#C8A96B" : "none"} color={wishlisted ? "#C8A96B" : "#F6F1E7"} />
       </button>
@@ -109,8 +112,8 @@ export default function ProductCard({ product, onQuickView }: { product: Product
             e.preventDefault();
             onQuickView(product);
           }}
-          aria-label={`Quick view ${product.name}`}
-          className="absolute top-16 right-4 w-11 h-11 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+          aria-label={t("product.quickView", { name: product.name })}
+          className="absolute top-16 end-4 w-11 h-11 rounded-full border border-gold/30 flex items-center justify-center hover:border-gold transition-colors bg-navy/40 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
         >
           <Eye size={14} />
         </button>
@@ -125,18 +128,18 @@ export default function ProductCard({ product, onQuickView }: { product: Product
           <Link to={`/product/${product.slug}`} className="min-w-0">
             <h3 className="font-serif text-xl truncate">{product.name}</h3>
           </Link>
-          <div className="flex flex-col text-right shrink-0">
+          <div className="flex flex-col text-end shrink-0">
             {minPrice !== maxPrice ? (
               <span className="text-goldLight text-sm font-mono font-bold">
-                {formatPKR(minPrice)} – {formatPKR(maxPrice)}
+                {format(minPrice)} – {format(maxPrice)}
               </span>
             ) : (
               <span className="text-goldLight text-sm font-mono font-bold">
-                {minPrice > 0 ? formatPKR(minPrice) : "Price on request"}
+                {minPrice > 0 ? format(minPrice) : t("product.priceOnRequest")}
               </span>
             )}
             <span className="text-[9px] text-muted font-mono">
-              {minPrice !== maxPrice ? "By bottle size" : product.concentration}
+              {minPrice !== maxPrice ? t("product.byBottleSize") : product.concentration}
             </span>
           </div>
         </div>
@@ -145,15 +148,15 @@ export default function ProductCard({ product, onQuickView }: { product: Product
             to={`/product/${product.slug}`}
             className="flex-1 min-h-[44px] inline-flex items-center justify-center text-center text-[11px] tracking-[1.5px] border border-gold/30 hover:border-gold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
-            VIEW DETAILS
+            {t("product.viewDetails")}
           </Link>
           <button
             onClick={handleAdd}
             disabled={soldOut}
-            aria-label={soldOut ? `${product.name} is sold out` : `Add ${product.name} to bag`}
+            aria-label={soldOut ? t("product.soldOutName", { name: product.name }) : t("product.addToBagName", { name: product.name })}
             className="flex-1 min-h-[44px] inline-flex items-center justify-center text-[11px] tracking-[1.5px] bg-gold text-navy hover:bg-goldLight transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gold/20 disabled:text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-goldLight focus-visible:ring-offset-1 focus-visible:ring-offset-navy"
           >
-            {soldOut ? "SOLD OUT" : "ADD TO BAG"}
+            {soldOut ? t("product.soldOut") : t("product.addToBag")}
           </button>
         </div>
       </div>

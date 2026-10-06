@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
+import { useI18n } from "../../i18n/I18nProvider";
 import { StatCard } from "../components/StatCard";
 import { formatPKR } from "../../utils/currency";
 import {
@@ -38,30 +39,36 @@ const MAX_VALUE_LENGTH = 120;
 const MAX_SHORT_LENGTH = 60;
 
 /** Guard rail copy shown when the owner tries to switch off the only available method. */
-const LAST_METHOD_MESSAGE = "At least one payment method must stay available.";
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+
+const lastMethodMessage = (t: TFn) => t("admin.settings.atLeastOneMethodAvailable");
 
 /** The only payment ids the storefront understands. No card gateway exists yet. */
 const SUPPORTED_PAYMENT_IDS: string[] = ["Cash on Delivery", "JazzCash", "Raast", "Bank Transfer"];
 
 /** Anything that smells like a credential must never reach public settings. */
-const SECRET_SIGNATURES: { pattern: RegExp; label: string }[] = [
-  { pattern: /sk_[a-z0-9_]{4,}/i, label: "a secret API key (sk_…)" },
-  { pattern: /bearer\s+[a-z0-9._~+/=-]{8,}/i, label: "a Bearer token" },
-  { pattern: /eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/, label: "a JWT-style token" },
+const SECRET_SIGNATURES: { pattern: RegExp; label: "secretApiKey" | "bearerToken" | "jwtToken" }[] = [
+  { pattern: /sk_[a-z0-9_]{4,}/i, label: "secretApiKey" },
+  { pattern: /bearer\s+[a-z0-9._~+/=-]{8,}/i, label: "bearerToken" },
+  { pattern: /eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/, label: "jwtToken" },
 ];
 
-function findSecret(text: string): string | null {
+function findSecret(t: TFn, text: string): string | null {
   for (const signature of SECRET_SIGNATURES) {
-    if (signature.pattern.test(text)) return signature.label;
+    if (signature.pattern.test(text)) {
+      if (signature.label === "secretApiKey") return t("admin.settings.secretApiKey");
+      if (signature.label === "bearerToken") return t("admin.settings.bearerToken");
+      return t("admin.settings.jwtToken");
+    }
   }
   return null;
 }
 
 /** Inline warning so the owner sees the problem before pressing save. */
-function secretWarning(text: string): string | undefined {
-  const secret = findSecret(text);
+function secretWarning(t: TFn, text: string): string | undefined {
+  const secret = findSecret(t, text);
   if (!secret) return undefined;
-  return `This looks like ${secret}. These settings are readable by anyone, so it cannot be saved.`;
+  return t("admin.settings.thisLooksLikeSecret", { secret });
 }
 
 const slug = (value: string) =>
@@ -131,50 +138,54 @@ function normalizeMethod(method: PaymentMethodConfig): PaymentMethodConfig {
   };
 }
 
-function validateMethods(list: PaymentMethodConfig[]): string[] {
+function validateMethods(t: TFn, list: PaymentMethodConfig[]): string[] {
   const problems: string[] = [];
 
   if (!list.some((m) => m.enabled)) {
-    problems.push(LAST_METHOD_MESSAGE);
+    problems.push(lastMethodMessage(t));
   }
 
   list.forEach((method) => {
     const name = method.label.trim() || method.id;
 
-    if (!method.label.trim()) problems.push(`${name}: the display label cannot be empty.`);
+    if (!method.label.trim()) problems.push(t("admin.settings.labelEmptyError", { name }));
     if (!method.instructionHeading.trim()) {
-      problems.push(`${name}: add the instruction heading shoppers see above the details.`);
+      problems.push(t("admin.settings.headingMissingError", { name }));
     }
     if (method.enabled && method.details.length === 0) {
-      problems.push(`${name}: keep at least one payment detail row so there is something to pay into.`);
+      problems.push(t("admin.settings.keepOneDetailError", { name }));
     }
     if (method.enabled && method.requiresReference && (!method.referenceLabel.trim() || !method.referencePlaceholder.trim())) {
-      problems.push(`${name}: a mandatory reference needs both a label and a placeholder.`);
+      problems.push(t("admin.settings.referenceNeedsBothError", { name }));
     }
 
     method.details.forEach((detail, index) => {
-      const where = `${name} → detail ${index + 1}`;
+      const where = t("admin.settings.detailRowRef", { name, number: index + 1 });
       if (!detail.label.trim() || !detail.value.trim()) {
-        problems.push(`${where}: label and value are both required.`);
+        problems.push(t("admin.settings.labelValueRequiredError", { where }));
       }
       if (detail.value.trim().length > MAX_VALUE_LENGTH) {
-        problems.push(`${where}: value is longer than ${MAX_VALUE_LENGTH} characters.`);
+        problems.push(t("admin.settings.valueTooLongError", { where, max: MAX_VALUE_LENGTH }));
       }
       [detail.label, detail.value, detail.copyValue ?? ""].forEach((field, fieldIndex) => {
-        const secret = findSecret(field);
+        const secret = findSecret(t, field);
         if (secret) {
-          problems.push(
-            `${where}: ${["label", "value", "copy value"][fieldIndex]} looks like ${secret}. Checkout instructions are readable by anyone — remove it before saving.`
-          );
+          const fieldName =
+            fieldIndex === 0
+              ? t("admin.settings.fieldLabelWord")
+              : fieldIndex === 1
+                ? t("admin.settings.fieldValueWord")
+                : t("admin.settings.fieldCopyValueWord");
+          problems.push(t("admin.settings.secretInFieldError", { where, field: fieldName, secret }));
         }
       });
     });
 
     [method.label, method.description, method.instructionHeading, method.referenceLabel, method.referencePlaceholder].forEach(
       (field) => {
-        const secret = findSecret(field);
+        const secret = findSecret(t, field);
         if (secret) {
-          problems.push(`${name}: one of the text fields looks like ${secret}. Nothing was saved.`);
+          problems.push(t("admin.settings.secretInMethodError", { name, secret }));
         }
       }
     );
@@ -210,7 +221,7 @@ type SectionStatus =
 const stampNow = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 const inputClass =
-  "w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold disabled:opacity-60";
+"w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold disabled:opacity-60";
 
 interface TextFieldProps {
   id: string;
@@ -304,7 +315,7 @@ const SwitchField: React.FC<SwitchFieldProps> = ({ id, title, hint, checked, onC
       <span
         aria-hidden="true"
         className={`absolute top-0.5 h-4 w-4 rounded-full transition-all ${
-          checked ? "left-[26px] bg-navy" : "left-1 bg-muted"
+          checked ? "end-1 bg-navy" : "start-1 bg-muted"
         }`}
       />
     </button>
@@ -319,7 +330,7 @@ const ProblemList: React.FC<{ heading: string; problems: string[] }> = ({ headin
         <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
         {heading}
       </p>
-      <ul className="list-disc pl-5 space-y-1 text-[11px] text-rose-100/90 font-light leading-relaxed">
+      <ul className="list-disc ps-5 space-y-1 text-[11px] text-rose-100/90 font-light leading-relaxed">
         {problems.map((problem, index) => (
           <li key={`${index}-${problem}`} className="break-words">
             {problem}
@@ -340,6 +351,7 @@ interface SaveStatusProps {
 }
 
 const SaveStatus: React.FC<SaveStatusProps> = ({ status, dirty, savedLabel, loadingLabel, retryLabel, onRetry }) => {
+  const { t } = useI18n();
   let body: React.ReactNode;
   if (status.kind === "saving") {
     body = (
@@ -364,11 +376,11 @@ const SaveStatus: React.FC<SaveStatusProps> = ({ status, dirty, savedLabel, load
       </>
     );
   } else if (dirty) {
-    body = <span className="text-amber-300">Unsaved changes.</span>;
+    body = <span className="text-amber-300">{t("admin.settings.unsavedChanges")}</span>;
   } else if (status.kind === "saved") {
-    body = <span className="text-emerald-300">{savedLabel} at {status.stamp}.</span>;
+    body = <span className="text-emerald-300">{t("admin.settings.savedAtLine", { label: savedLabel, stamp: status.stamp })}</span>;
   } else {
-    body = <span className="text-muted">Loaded from site settings.</span>;
+    body = <span className="text-muted">{t("admin.settings.loadedFromSettings")}</span>;
   }
 
   return (
@@ -407,13 +419,14 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
   onRemoveDetail,
   onRestoreMethod,
 }) => {
+  const { t } = useI18n();
   const key = slug(method.id) || `method-${index}`;
   const knownId = SUPPORTED_PAYMENT_IDS.includes(method.id);
   const isBankTransfer = method.id === "Bank Transfer";
 
   return (
     <fieldset className="bg-navy2/90 border border-gold/20 rounded-lg p-5 sm:p-6 space-y-5 shadow-xl">
-      <legend className="sr-only">{`Settings for the ${method.label || method.id} payment method`}</legend>
+      <legend className="sr-only">{t("admin.settings.methodSettingsLegend", { label: method.label || method.id })}</legend>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -433,30 +446,29 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
                 : "bg-navy text-muted border-gold/20"
             }`}
           >
-            {method.enabled ? "Shown at checkout" : "Hidden"}
+            {method.enabled ? t("admin.settings.shownAtCheckout") : t("admin.settings.hidden")}
           </span>
           <button
             type="button"
             onClick={() => onRestoreMethod(index)}
             className="px-3 py-1 rounded border border-gold/25 text-[10px] font-mono uppercase tracking-[1.5px] text-gold hover:text-ivory hover:border-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold transition-colors"
           >
-            Restore default fields
+            {t("admin.settings.restoreDefaultFields")}
           </button>
         </div>
       </div>
 
       {!knownId && (
         <p className="text-[11px] text-amber-300 font-light leading-relaxed">
-          Unrecognised method id. The storefront only offers Cash on Delivery, JazzCash, Raast and Bank Transfer, so this row is
-          ignored at checkout.
+          {t("admin.settings.unrecognisedMethodNote")}
         </p>
       )}
 
       <div className="space-y-2">
         <SwitchField
           id={`${key}-enabled`}
-          title="Available at checkout"
-          hint="Turn off to hide this method from every shopper. At least one payment method must stay available."
+          title={t("admin.settings.availableAtCheckout")}
+          hint={t("admin.settings.availableAtCheckoutHint")}
           checked={method.enabled}
           disabled={disabled}
           onChange={(next) => onPatch(index, { enabled: next })}
@@ -466,50 +478,50 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <TextField
           id={`${key}-label`}
-          label="Method label"
+          label={t("admin.settings.methodLabelField")}
           required
           value={method.label}
           maxLength={MAX_SHORT_LENGTH}
-          hint="Name shown on the payment step."
+          hint={t("admin.settings.methodLabelHint")}
           onChange={(value) => onPatch(index, { label: value })}
         />
         <TextField
           id={`${key}-heading`}
-          label="Instruction heading"
+          label={t("admin.settings.instructionHeadingField")}
           required
           value={method.instructionHeading}
           maxLength={MAX_VALUE_LENGTH}
           mono
-          hint="Headline above the account details in the checkout panel."
+          hint={t("admin.settings.instructionHeadingHint")}
           onChange={(value) => onPatch(index, { instructionHeading: value })}
         />
       </div>
 
       <TextField
         id={`${key}-description`}
-        label="Short description"
+        label={t("admin.settings.shortDescriptionField")}
         value={method.description}
         maxLength={MAX_VALUE_LENGTH}
-        hint="One line under the method name, e.g. “Instant mobile wallet transfer”."
+        hint={t("admin.settings.shortDescriptionHint")}
         onChange={(value) => onPatch(index, { description: value })}
       />
 
       <fieldset className="rounded border border-gold/15 bg-navy/40 p-4 space-y-3">
-        <legend className="px-1 text-[10px] font-mono uppercase tracking-[2px] text-gold">Checkout requirements</legend>
+        <legend className="px-1 text-[10px] font-mono uppercase tracking-[2px] text-gold">{t("admin.settings.checkoutRequirements")}</legend>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <SwitchField
             id={`${key}-reference`}
-            title="Reference required"
-            hint="Shopper must type a transaction reference with the order."
+            title={t("admin.settings.referenceRequired")}
+            hint={t("admin.settings.referenceRequiredHint")}
             checked={method.requiresReference}
             disabled={disabled}
             onChange={(next) => onPatch(index, { requiresReference: next })}
           />
           <SwitchField
             id={`${key}-proof`}
-            title="Payment screenshot required"
-            hint="Shopper must attach the bank or wallet confirmation image."
+            title={t("admin.settings.paymentScreenshotRequired")}
+            hint={t("admin.settings.paymentScreenshotRequiredHint")}
             checked={method.requiresProof}
             disabled={disabled}
             onChange={(next) => onPatch(index, { requiresProof: next })}
@@ -520,22 +532,22 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
             <TextField
               id={`${key}-reference-label`}
-              label="Reference field label"
+              label={t("admin.settings.referenceFieldLabel")}
               required
               value={method.referenceLabel}
               maxLength={MAX_VALUE_LENGTH}
-              hint="Example: Transaction Reference / TID (12 Digits)."
-              warning={secretWarning(method.referenceLabel)}
+              hint={t("admin.settings.referenceFieldLabelHint")}
+              warning={secretWarning(t, method.referenceLabel)}
               onChange={(value) => onPatch(index, { referenceLabel: value })}
             />
             <TextField
               id={`${key}-reference-placeholder`}
-              label="Reference placeholder"
+              label={t("admin.settings.referencePlaceholderField")}
               required
               value={method.referencePlaceholder}
               maxLength={MAX_SHORT_LENGTH}
-              hint="Example: e.g. 098234112984."
-              warning={secretWarning(method.referencePlaceholder)}
+              hint={t("admin.settings.referencePlaceholderHint")}
+              warning={secretWarning(t, method.referencePlaceholder)}
               onChange={(value) => onPatch(index, { referencePlaceholder: value })}
             />
           </div>
@@ -543,13 +555,13 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
       </fieldset>
 
       <fieldset className="rounded border border-gold/15 bg-navy/40 p-4 space-y-3">
-        <legend className="px-1 text-[10px] font-mono uppercase tracking-[2px] text-gold">Payment details</legend>
+        <legend className="px-1 text-[10px] font-mono uppercase tracking-[2px] text-gold">{t("admin.settings.paymentDetails")}</legend>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <p className="text-[11px] text-muted font-light leading-relaxed min-w-0">
             {isBankTransfer
-              ? "Bank Name, Account Title, Account Number and IBAN are editable rows below."
-              : "Every row is printed in the checkout instruction card."}
+              ? t("admin.settings.bankTransferRowsHint")
+              : t("admin.settings.everyRowPrintedHint")}
           </p>
           <button
             type="button"
@@ -557,13 +569,13 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-[10px] font-sans uppercase tracking-wider transition-colors shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-            Add detail row
+            {t("admin.settings.addDetailRow")}
           </button>
         </div>
 
         {method.details.length === 0 ? (
           <p className="text-[11px] text-muted font-light italic">
-            No detail rows yet — add one so shoppers know where to send the money.
+            {t("admin.settings.noDetailRowsYet")}
           </p>
         ) : (
           <div className="space-y-3">
@@ -572,53 +584,53 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
               return (
                 <div key={rowKey} className="rounded border border-gold/15 bg-navy p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold/80">Detail {detailIndex + 1}</span>
+                    <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold/80">{t("admin.settings.detailRowNumber", { number: detailIndex + 1 })}</span>
                     <button
                       type="button"
                       onClick={() => onRemoveDetail(index, detailIndex)}
                       disabled={method.details.length <= 1 || disabled}
-                      title="Keep at least one payment detail row"
+                      title={t("admin.settings.keepOneDetailRow")}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-gold/20 text-[10px] font-sans uppercase tracking-wider text-muted hover:text-rose-300 hover:border-rose-500/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                     >
                       <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                      Remove
+                      {t("admin.settings.remove")}
                     </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <TextField
                       id={`${rowKey}-label`}
-                      label="Row label"
+                      label={t("admin.settings.rowLabel")}
                       required
                       value={detail.label}
                       maxLength={MAX_SHORT_LENGTH}
                       placeholder="IBAN"
-                      hint="Shown on the left of the row."
+                      hint={t("admin.settings.rowLabelHint")}
                       onChange={(value) => onPatchDetail(index, detailIndex, { label: value })}
                     />
                     <TextField
                       id={`${rowKey}-value`}
-                      label="Displayed value"
+                      label={t("admin.settings.displayedValue")}
                       required
                       mono
                       value={detail.value}
                       maxLength={MAX_VALUE_LENGTH}
                       placeholder="PK36 MEZN 0001 0293 8475 6101"
-                      hint="Exactly what the shopper reads."
-                      warning={secretWarning(detail.value)}
+                      hint={t("admin.settings.displayedValueHint")}
+                      warning={secretWarning(t, detail.value)}
                       onChange={(value) => onPatchDetail(index, detailIndex, { value })}
                     />
                   </div>
 
                   <TextField
                     id={`${rowKey}-copy`}
-                    label="Copy value (optional)"
+                    label={t("admin.settings.copyValueOptional")}
                     mono
                     value={detail.copyValue ?? ""}
                     maxLength={MAX_VALUE_LENGTH}
                     placeholder="PK36MEZN0001029384756101"
-                    hint="Copied to the clipboard when it differs from the displayed value; leave blank to copy as shown."
-                    warning={secretWarning(detail.copyValue ?? "")}
+                    hint={t("admin.settings.copyValueHint")}
+                    warning={secretWarning(t, detail.copyValue ?? "")}
                     onChange={(value) => onPatchDetail(index, detailIndex, { copyValue: value })}
                   />
                 </div>
@@ -636,6 +648,7 @@ const PaymentMethodCard: React.FC<PaymentMethodCardProps> = ({
  * ------------------------------------------------------------------ */
 
 export const SettingsPage: React.FC = () => {
+  const { t } = useI18n();
   const { storeSettings, updateStoreSettings, showToast } = useAdminData();
 
   const [activeTab, setActiveTab] = useState<"general" | "store" | "account" | "payment">("general");
@@ -714,7 +727,7 @@ export const SettingsPage: React.FC = () => {
       setConfigError(null);
     } catch (err) {
       if (!alive.current) return;
-      setConfigError(err instanceof Error ? err.message : "The payment and delivery settings could not be read.");
+      setConfigError(err instanceof Error ? err.message : t("admin.settings.readSettingsFailed"));
     } finally {
       if (alive.current) setConfigLoading(false);
     }
@@ -771,10 +784,12 @@ export const SettingsPage: React.FC = () => {
     if (wasLastEnabled) {
       // Guard rail: the shopper always needs one way to pay, but the switch stays
       // usable so another method can be enabled before saving.
-      setPaymentProblems((prev) => (prev.includes(LAST_METHOD_MESSAGE) ? prev : [...prev, LAST_METHOD_MESSAGE]));
-      setPaymentStatus({ kind: "failed", message: LAST_METHOD_MESSAGE });
+      const message = lastMethodMessage(t);
+      setPaymentProblems((prev) => (prev.includes(message) ? prev : [...prev, message]));
+      setPaymentStatus({ kind: "failed", message });
     } else if (patch.enabled === true) {
-      setPaymentProblems((prev) => prev.filter((problem) => problem !== LAST_METHOD_MESSAGE));
+      const message = lastMethodMessage(t);
+      setPaymentProblems((prev) => prev.filter((problem) => problem !== message));
     }
   };
 
@@ -817,13 +832,13 @@ export const SettingsPage: React.FC = () => {
 
   const savePaymentConfig = async () => {
     const cleaned = methods.map(normalizeMethod);
-    const problems = validateMethods(cleaned);
+    const problems = validateMethods(t, cleaned);
 
     if (problems.length > 0) {
       setMethods(cleaned);
       setPaymentProblems(problems);
-      setPaymentStatus({ kind: "failed", message: `Nothing was saved — ${problems.length} item(s) need attention.` });
-      showToast("error", "Checkout payment instructions not saved: fix the listed problems first.");
+      setPaymentStatus({ kind: "failed", message: t("admin.settings.nothingSavedCount", { count: problems.length }) });
+      showToast("error", t("admin.settings.checkoutNotSavedToast"));
       return;
     }
 
@@ -837,14 +852,14 @@ export const SettingsPage: React.FC = () => {
       setMethods(cleaned);
       setMethodsBaseline(cleaned.map(cloneMethod));
       setPaymentStatus({ kind: "saved", stamp: stampNow() });
-      showToast("success", "Checkout payment instructions saved.");
+      showToast("success", t("admin.settings.checkoutSavedToast"));
     } else {
       setMethods(cleaned);
       setPaymentStatus({
         kind: "failed",
-        message: "The settings service rejected the write, so checkout still shows the previous instructions. Your edits are kept here — retry, or confirm your staff sign-in.",
+        message: t("admin.settings.settingsRejectedPaymentWrite"),
       });
-      showToast("error", "Checkout payment instructions could not be saved.");
+      showToast("error", t("admin.settings.checkoutCouldNotBeSaved"));
     }
   };
 
@@ -858,17 +873,17 @@ export const SettingsPage: React.FC = () => {
     const standardCost = Number(standardCostText);
 
     if (!freeThresholdText || !Number.isFinite(freeThreshold) || freeThreshold < 0 || freeThreshold > 100000000) {
-      problems.push("Free-delivery threshold must be a rupee amount between 0 and 100,000,000.");
+      problems.push(t("admin.settings.freeThresholdRangeError"));
     }
     if (!standardCostText || !Number.isFinite(standardCost) || standardCost < 0 || standardCost > 100000000) {
-      problems.push("Standard delivery cost must be a rupee amount between 0 and 100,000,000.");
+      problems.push(t("admin.settings.standardCostRangeError"));
     }
     if (!estimatedDaysText) {
-      problems.push("Estimated delivery time cannot be empty — shoppers read it beside the shipping cost.");
+      problems.push(t("admin.settings.estimatedDaysEmptyError"));
     }
-    const secret = findSecret(estimatedDaysText);
+    const secret = findSecret(t, estimatedDaysText);
     if (secret) {
-      problems.push(`Estimated delivery time looks like ${secret}. Delivery pricing is public; remove it before saving.`);
+      problems.push(t("admin.settings.estimatedDaysSecretError", { secret }));
     }
 
     const cleaned: ShippingDraft = {
@@ -880,8 +895,8 @@ export const SettingsPage: React.FC = () => {
     if (problems.length > 0) {
       setDraft(cleaned);
       setDeliveryProblems(problems);
-      setDeliveryStatus({ kind: "failed", message: `Nothing was saved — ${problems.length} item(s) need attention.` });
-      showToast("error", "Delivery pricing not saved: fix the listed problems first.");
+      setDeliveryStatus({ kind: "failed", message: t("admin.settings.nothingSavedCount", { count: problems.length }) });
+      showToast("error", t("admin.settings.deliveryNotSavedToast"));
       return;
     }
 
@@ -902,14 +917,14 @@ export const SettingsPage: React.FC = () => {
       setDraft(nextDraft);
       setDraftBaseline({ ...nextDraft });
       setDeliveryStatus({ kind: "saved", stamp: stampNow() });
-      showToast("success", "Delivery pricing saved.");
+      showToast("success", t("admin.settings.deliverySavedToast"));
     } else {
       setDraft(cleaned);
       setDeliveryStatus({
         kind: "failed",
-        message: "The settings service rejected the write, so order pricing still uses the previous amounts. Retry, or confirm your staff sign-in.",
+        message: t("admin.settings.settingsRejectedDeliveryWrite"),
       });
-      showToast("error", "Delivery pricing could not be saved.");
+      showToast("error", t("admin.settings.deliveryCouldNotBeSaved"));
     }
   };
 
@@ -917,21 +932,21 @@ export const SettingsPage: React.FC = () => {
     const threshold = Number(draft.freeThreshold);
     const cost = Number(draft.standardCost);
     if (!Number.isFinite(threshold) || !Number.isFinite(cost) || draft.freeThreshold.trim() === "" || draft.standardCost.trim() === "") {
-      return "Enter both rupee amounts to preview the delivery rule.";
+      return t("admin.settings.enterAmountsToPreview");
     }
-    const window = draft.estimatedDays.trim() || "no transit time set";
-    return `Subtotal above ${formatPKR(threshold)} ships free — otherwise ${formatPKR(cost)} standard delivery, ${window}.`;
-  }, [draft]);
+    const window = draft.estimatedDays.trim() || t("admin.settings.noTransitTimeSetLower");
+    return t("admin.settings.deliveryPreviewLine", { threshold: formatPKR(threshold), cost: formatPKR(cost), window });
+  }, [draft, t]);
 
   const methodSummary = useMemo(
-    () => `${enabledCount} of ${methods.length} methods available`,
-    [enabledCount, methods.length]
+    () => t("admin.settings.methodsAvailableSummary", { enabled: enabledCount, total: methods.length }),
+    [enabledCount, methods.length, t]
   );
 
   // Rupee text for the summary cards: never print a fake amount mid-edit.
   const rupeeCell = (text: string) => {
     const value = Number(text);
-    return text.trim() !== "" && Number.isFinite(value) && value >= 0 ? formatPKR(value) : "Check the value";
+    return text.trim() !== "" && Number.isFinite(value) && value >= 0 ? formatPKR(value) : t("admin.settings.checkTheValue");
   };
 
   return (
@@ -940,25 +955,24 @@ export const SettingsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            SYSTEM CONTROL PANEL
+            {t("admin.settings.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Website & Atelier Storefront Settings
+            {t("admin.settings.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Configure boutique contact details, currency standards, tax rules, checkout payment instructions, delivery pricing,
-            maintenance flags, and account security.
+            {t("admin.settings.introBody")}
           </p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center space-x-2 border-b border-gold/15 pb-1 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-gold/15 pb-1 overflow-x-auto">
         {[
-          { id: "general", label: "General & Social", icon: Globe },
-          { id: "store", label: "Store & Currency", icon: Radio },
-          { id: "account", label: "Admin Security", icon: Shield },
-          { id: "payment", label: "Payment & Delivery", icon: CreditCard },
+          { id: "general", label: t("admin.settings.tabGeneral"), icon: Globe },
+          { id: "store", label: t("admin.settings.tabStore"), icon: Radio },
+          { id: "account", label: t("admin.settings.tabAccount"), icon: Shield },
+          { id: "payment", label: t("admin.settings.tabPayment"), icon: CreditCard },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -966,7 +980,7 @@ export const SettingsPage: React.FC = () => {
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               aria-pressed={activeTab === tab.id}
-              className={`px-4 py-2 rounded-t text-xs font-sans uppercase tracking-wider flex items-center space-x-2 transition-all border-b-2 whitespace-nowrap ${
+              className={`px-4 py-2 rounded-t text-xs font-sans uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 whitespace-nowrap ${
                 activeTab === tab.id
                   ? "border-gold text-gold font-bold bg-navy2/60"
                   : "border-transparent text-muted hover:text-ivory"
@@ -983,13 +997,13 @@ export const SettingsPage: React.FC = () => {
       {activeTab === "general" && (
         <form onSubmit={handleSaveGeneral} className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-6 shadow-xl">
           <h3 className="font-serif text-lg font-bold text-ivory border-b border-gold/15 pb-3">
-            Boutique Contact & Brand Information
+            {t("admin.settings.boutiqueContactHeading")}
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Store Name *
+                {t("admin.settings.storeName")} *
               </label>
               <input
                 type="text"
@@ -1002,7 +1016,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Tagline
+                {t("admin.settings.tagline")}
               </label>
               <input
                 type="text"
@@ -1016,7 +1030,7 @@ export const SettingsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Concierge Email
+                {t("admin.settings.conciergeEmail")}
               </label>
               <input
                 type="email"
@@ -1028,7 +1042,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Phone Number
+                {t("admin.settings.phoneNumber")}
               </label>
               <input
                 type="text"
@@ -1040,7 +1054,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                WhatsApp Business Number
+                {t("admin.settings.whatsappBusinessNumber")}
               </label>
               <input
                 type="text"
@@ -1053,7 +1067,7 @@ export const SettingsPage: React.FC = () => {
 
           <div>
             <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-              Atelier Address
+              {t("admin.settings.atelierAddress")}
             </label>
             <input
               type="text"
@@ -1066,7 +1080,7 @@ export const SettingsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gold/15 pt-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Instagram URL
+                {t("admin.settings.instagramUrl")}
               </label>
               <input
                 type="text"
@@ -1078,7 +1092,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Facebook URL
+                {t("admin.settings.facebookUrl")}
               </label>
               <input
                 type="text"
@@ -1092,10 +1106,10 @@ export const SettingsPage: React.FC = () => {
           <div className="flex justify-end pt-2">
             <button
               type="submit"
-              className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5"
+              className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center gap-1.5"
             >
               <Save className="w-4 h-4" />
-              <span>Save General Settings</span>
+              <span>{t("admin.settings.saveGeneralSettings")}</span>
             </button>
           </div>
         </form>
@@ -1105,13 +1119,13 @@ export const SettingsPage: React.FC = () => {
       {activeTab === "store" && (
         <form onSubmit={handleSaveStore} className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-6 shadow-xl">
           <h3 className="font-serif text-lg font-bold text-ivory border-b border-gold/15 pb-3">
-            Currency & Store Maintenance Control
+            {t("admin.settings.currencyMaintenanceHeading")}
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Base Currency Code
+                {t("admin.settings.baseCurrencyCode")}
               </label>
               <input
                 type="text"
@@ -1123,7 +1137,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Currency Symbol
+                {t("admin.settings.currencySymbol")}
               </label>
               <input
                 type="text"
@@ -1135,7 +1149,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Sales Tax Rate (%)
+                {t("admin.settings.salesTaxRate")}
               </label>
               <input
                 type="number"
@@ -1148,10 +1162,10 @@ export const SettingsPage: React.FC = () => {
 
           <div>
             <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-              Storefront Status
+              {t("admin.settings.storefrontStatus")}
             </label>
-            <div className="flex items-center space-x-4">
-              <label className="flex items-center space-x-2 cursor-pointer">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="radio"
                   name="status"
@@ -1161,10 +1175,10 @@ export const SettingsPage: React.FC = () => {
                   className="text-gold focus:ring-0"
                 />
                 <span className="text-xs text-emerald-300 font-bold uppercase">
-                  Live Online
+                  {t("admin.settings.liveOnline")}
                 </span>
               </label>
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="radio"
                   name="status"
@@ -1174,7 +1188,7 @@ export const SettingsPage: React.FC = () => {
                   className="text-gold focus:ring-0"
                 />
                 <span className="text-xs text-amber-300 font-bold uppercase">
-                  Maintenance Mode
+                  {t("admin.settings.maintenanceMode")}
                 </span>
               </label>
             </div>
@@ -1183,10 +1197,10 @@ export const SettingsPage: React.FC = () => {
           <div className="flex justify-end pt-2">
             <button
               type="submit"
-              className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5"
+              className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center gap-1.5"
             >
               <Save className="w-4 h-4" />
-              <span>Save Store Settings</span>
+              <span>{t("admin.settings.saveStoreSettings")}</span>
             </button>
           </div>
         </form>
@@ -1196,13 +1210,13 @@ export const SettingsPage: React.FC = () => {
       {activeTab === "account" && (
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-6 shadow-xl">
           <h3 className="font-serif text-lg font-bold text-ivory border-b border-gold/15 pb-3">
-            Admin Profile & Security Authentication
+            {t("admin.settings.adminSecurityHeading")}
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Current Password
+                {t("admin.settings.currentPassword")}
               </label>
               <input
                 type="password"
@@ -1213,7 +1227,7 @@ export const SettingsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                New Password
+                {t("admin.settings.newPassword")}
               </label>
               <input
                 type="password"
@@ -1225,13 +1239,13 @@ export const SettingsPage: React.FC = () => {
 
           <div className="p-4 rounded bg-navy border border-gold/15 flex items-center justify-between text-xs font-sans">
             <div>
-              <p className="font-bold text-ivory">Two-Factor Authentication (2FA)</p>
+              <p className="font-bold text-ivory">{t("admin.settings.twoFactor")}</p>
               <p className="text-muted text-[11px]">
-                Require an authenticator app OTP when accessing /admin console.
+                {t("admin.settings.twoFactorHint")}
               </p>
             </div>
             <span className="text-emerald-400 font-mono uppercase font-bold text-[10px]">
-              Enabled
+              {t("admin.settings.enabled")}
             </span>
           </div>
         </div>
@@ -1244,7 +1258,7 @@ export const SettingsPage: React.FC = () => {
             <div role="status" aria-live="polite" className="space-y-4">
               <p className="flex items-center gap-2 text-xs text-muted font-sans">
                 <Loader2 className="w-4 h-4 text-gold animate-spin" aria-hidden="true" />
-                Loading checkout payment instructions and delivery rules…
+                {t("admin.settings.loadingCheckoutConfig")}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[0, 1, 2].map((i) => (
@@ -1263,7 +1277,7 @@ export const SettingsPage: React.FC = () => {
               <div className="flex items-start gap-3 min-w-0">
                 <AlertTriangle className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="min-w-0">
-                  <h3 className="font-serif text-base font-bold text-ivory">Checkout settings unavailable</h3>
+                  <h3 className="font-serif text-base font-bold text-ivory">{t("admin.settings.checkoutSettingsUnavailable")}</h3>
                   <p className="text-xs text-muted font-light mt-0.5 break-words">{configError}</p>
                 </div>
               </div>
@@ -1273,7 +1287,7 @@ export const SettingsPage: React.FC = () => {
                 className="px-4 py-2 rounded bg-gold hover:bg-goldLight text-navy text-xs font-sans font-semibold uppercase tracking-wider transition-colors flex items-center gap-2 shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               >
                 <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
-                Retry
+                {t("admin.settings.retry")}
               </button>
             </div>
           )}
@@ -1282,17 +1296,22 @@ export const SettingsPage: React.FC = () => {
             <>
               {/* Summary strip */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <StatCard title="Methods Available" value={methodSummary} subtitle="Cash on Delivery · JazzCash · Raast · Bank Transfer" icon={Banknote} />
                 <StatCard
-                  title="Free Delivery Above"
+                  title={t("admin.settings.methodsAvailable")}
+                  value={methodSummary}
+                  subtitle={t("admin.settings.paymentMethodsSummary")}
+                  icon={Banknote}
+                />
+                <StatCard
+                  title={t("admin.settings.freeDeliveryAbove")}
                   value={rupeeCell(draft.freeThreshold)}
-                  subtitle="Applied by the database when the order is registered"
+                  subtitle={t("admin.settings.freeDeliveryAboveSubtitle")}
                   icon={Truck}
                 />
                 <StatCard
-                  title="Standard Delivery"
+                  title={t("admin.settings.standardDelivery")}
                   value={rupeeCell(draft.standardCost)}
-                  subtitle={draft.estimatedDays.trim() || "No transit time set"}
+                  subtitle={draft.estimatedDays.trim() || t("admin.settings.noTransitTimeSet")}
                   icon={CreditCard}
                 />
               </div>
@@ -1301,11 +1320,9 @@ export const SettingsPage: React.FC = () => {
               <div className="bg-navy2/90 border border-gold/20 rounded-lg p-5 shadow-xl flex items-start gap-3">
                 <Info className="w-5 h-5 text-gold shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="min-w-0 space-y-1">
-                  <p className="font-serif text-base font-bold text-ivory leading-tight">Card payments arrive in a later release</p>
+                  <p className="font-serif text-base font-bold text-ivory leading-tight">{t("admin.settings.cardPaymentsLaterRelease")}</p>
                   <p className="text-xs text-muted font-light leading-relaxed">
-                    These four manual methods write the instructions and requirements shoppers see on the payment step. Nothing here
-                    stores gateway credentials, and there is no PayFast, Stripe or card switch to flip — checkout instructions are read
-                    publicly, so keep them free of secrets.
+                    {t("admin.settings.cardPaymentsNote")}
                   </p>
                 </div>
               </div>
@@ -1314,29 +1331,28 @@ export const SettingsPage: React.FC = () => {
               <section aria-labelledby="payment-methods-heading" className="space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
                   <h3 id="payment-methods-heading" className="font-serif text-lg font-bold text-ivory">
-                    Payment Methods & Checkout Instructions
+                    {t("admin.settings.paymentMethodsHeading")}
                   </h3>
                   <button
                     type="button"
                     onClick={restoreAllPaymentDefaults}
                     className="px-3 py-1.5 rounded border border-gold/25 text-[10px] font-mono uppercase tracking-[1.5px] text-gold hover:bg-gold hover:text-navy transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-goldLight shrink-0"
                   >
-                    Restore all defaults
+                    {t("admin.settings.restoreAllDefaults")}
                   </button>
                 </div>
 
                 <p className="text-xs text-muted font-light leading-relaxed">
-                  Stored as JSON in <code className="text-gold">site_settings</code> under{" "}
-                  <code className="text-gold">payment_config</code>. Checkout renders exactly what is saved here; the four supported
-                  method ids are fixed so the storefront keeps recognising them.
+                  {t("admin.settings.storedAsJsonPrefix")} <code className="text-gold">site_settings</code>{" "}
+                  {t("admin.settings.storedAsJsonMiddle")} <code className="text-gold">payment_config</code>. {t("admin.settings.storedAsJsonSuffix")}
                 </p>
 
                 <SaveStatus
                   status={paymentStatus}
                   dirty={paymentDirty}
-                  loadingLabel="Saving payment configuration…"
-                  savedLabel="Checkout payment instructions saved"
-                  retryLabel="Retry save"
+                  loadingLabel={t("admin.settings.savingPaymentConfiguration")}
+                  savedLabel={t("admin.settings.checkoutInstructionsSaved")}
+                  retryLabel={t("admin.settings.retrySave")}
                   onRetry={() => void savePaymentConfig()}
                 />
 
@@ -1356,26 +1372,25 @@ export const SettingsPage: React.FC = () => {
                   ))}
                 </div>
 
-                <ProblemList heading="Checkout payment instructions not saved" problems={paymentProblems} />
+                <ProblemList heading={t("admin.settings.paymentProblemHeading")} problems={paymentProblems} />
 
                 <div className="bg-navy2/90 border border-gold/20 rounded-lg p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <p className="flex items-start gap-2 text-[11px] text-muted font-light leading-relaxed min-w-0">
                     <KeyRound className="w-3.5 h-3.5 text-gold shrink-0 mt-0.5" aria-hidden="true" />
-                    Values are published to the storefront immediately after a successful save. Do not paste API keys, tokens or
-                    passwords into any field on this tab.
+                    {t("admin.settings.publishImmediatelyNote")}
                   </p>
                   <button
                     type="button"
                     onClick={() => void savePaymentConfig()}
                     disabled={paymentStatus.kind === "saving"}
-                    className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center justify-center space-x-1.5 gap-2 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+                    className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center justify-center gap-1.5 gap-2 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   >
                     {paymentStatus.kind === "saving" ? (
                       <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                     ) : (
                       <Save className="w-4 h-4" />
                     )}
-                    <span>Save Payment Configuration</span>
+                    <span>{t("admin.settings.savePaymentConfiguration")}</span>
                   </button>
                 </div>
               </section>
@@ -1385,29 +1400,29 @@ export const SettingsPage: React.FC = () => {
                 <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
                   <Truck className="w-5 h-5 text-gold" aria-hidden="true" />
                   <h3 id="delivery-rules-heading" className="font-serif text-lg font-bold text-ivory">
-                    Delivery Pricing Rules
+                    {t("admin.settings.deliveryPricingRules")}
                   </h3>
                 </div>
 
                 <fieldset className="bg-navy2/90 border border-gold/20 rounded-lg p-5 sm:p-6 space-y-5 shadow-xl">
-                  <legend className="sr-only">Delivery pricing rules applied when an order is placed</legend>
+                  <legend className="sr-only">{t("admin.settings.deliveryRulesSrOnly")}</legend>
 
                   <p className="text-xs text-muted font-light leading-relaxed">
-                    These are the authoritative delivery figures. The database reads the same{" "}
-                    <code className="text-gold">site_settings</code> key (<code className="text-gold">shipping_config</code>) when an
-                    order is registered, so the amount charged on the order is decided there — a cart or checkout total shown in the
-                    browser may differ slightly until the order is registered.
+                    {t("admin.settings.deliveryAuthoritativePrefix")}{" "}
+                    <code className="text-gold">site_settings</code> {t("admin.settings.deliveryAuthoritativeMiddle")}
+                    <code className="text-gold">shipping_config</code>
+                    {t("admin.settings.deliveryAuthoritativeSuffix")}
                   </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <TextField
                       id="delivery-free-threshold"
-                      label="Free delivery above (Rs)"
+                      label={t("admin.settings.freeDeliveryAboveField")}
                       required
                       type="number"
                       mono
                       value={draft.freeThreshold}
-                      hint="Subtotal that unlocks complimentary courier."
+                      hint={t("admin.settings.freeDeliveryAboveHint")}
                       onChange={(value) => {
                         setDraft((prev) => ({ ...prev, freeThreshold: value }));
                         setDeliveryStatus({ kind: "idle" });
@@ -1415,12 +1430,12 @@ export const SettingsPage: React.FC = () => {
                     />
                     <TextField
                       id="delivery-standard-cost"
-                      label="Standard delivery (Rs)"
+                      label={t("admin.settings.standardDeliveryField")}
                       required
                       type="number"
                       mono
                       value={draft.standardCost}
-                      hint="Flat courier charge below the threshold."
+                      hint={t("admin.settings.standardDeliveryHint")}
                       onChange={(value) => {
                         setDraft((prev) => ({ ...prev, standardCost: value }));
                         setDeliveryStatus({ kind: "idle" });
@@ -1428,13 +1443,13 @@ export const SettingsPage: React.FC = () => {
                     />
                     <TextField
                       id="delivery-estimated-days"
-                      label="Estimated delivery time"
+                      label={t("admin.settings.estimatedDeliveryTime")}
                       required
                       maxLength={SHIPPING_DRAFT_LIMIT}
                       value={draft.estimatedDays}
-                      placeholder="2 - 3 Business Days"
-                      hint="Text shown beside the shipping cost."
-                      warning={secretWarning(draft.estimatedDays)}
+                      placeholder={t("admin.settings.estimatedDaysPlaceholder")}
+                      hint={t("admin.settings.estimatedDeliveryHint")}
+                      warning={secretWarning(t, draft.estimatedDays)}
                       onChange={(value) => {
                         setDraft((prev) => ({ ...prev, estimatedDays: value }));
                         setDeliveryStatus({ kind: "idle" });
@@ -1443,19 +1458,19 @@ export const SettingsPage: React.FC = () => {
                   </div>
 
                   <p className="text-[11px] text-muted font-light leading-relaxed">
-                    <span className="text-gold font-semibold uppercase tracking-wider text-[10px]">Preview · </span>
+                    <span className="text-gold font-semibold uppercase tracking-wider text-[10px]">{t("admin.settings.previewLabel")} · </span>
                     {deliveryPreview}
                   </p>
 
-                  <ProblemList heading="Delivery pricing not saved" problems={deliveryProblems} />
+                  <ProblemList heading={t("admin.settings.deliveryProblemHeading")} problems={deliveryProblems} />
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-gold/15 pt-4">
                     <SaveStatus
                       status={deliveryStatus}
                       dirty={deliveryDirty}
-                      loadingLabel="Saving delivery rules…"
-                      savedLabel="Delivery pricing saved"
-                      retryLabel="Retry save"
+                      loadingLabel={t("admin.settings.savingDeliveryRules")}
+                      savedLabel={t("admin.settings.deliveryPricingSavedLabel")}
+                      retryLabel={t("admin.settings.retrySave")}
                       onRetry={() => void saveDeliveryConfig()}
                     />
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1468,20 +1483,20 @@ export const SettingsPage: React.FC = () => {
                         }}
                         className="px-4 py-2 rounded border border-gold/25 text-[10px] font-mono uppercase tracking-[1.5px] text-gold hover:text-ivory hover:border-gold transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                       >
-                        Restore defaults
+                        {t("admin.settings.restoreDefaults")}
                       </button>
                       <button
                         type="button"
                         onClick={() => void saveDeliveryConfig()}
                         disabled={deliveryStatus.kind === "saving"}
-                        className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5 gap-2 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+                        className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider flex items-center gap-1.5 gap-2 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                       >
                         {deliveryStatus.kind === "saving" ? (
                           <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                         ) : (
                           <Save className="w-4 h-4" />
                         )}
-                        <span>Save Delivery Rules</span>
+                        <span>{t("admin.settings.saveDeliveryRules")}</span>
                       </button>
                     </div>
                   </div>

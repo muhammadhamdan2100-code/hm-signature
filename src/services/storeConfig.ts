@@ -9,6 +9,40 @@ export interface PaymentMethodDetail {
   copyValue?: string;
 }
 
+/**
+ * One rail as the payment-method architecture sees it. The state is computed on the server
+ * because it depends on which provider credentials exist in this deployment - the browser can
+ * report what is offered, never what is allowed.
+ */
+export type CheckoutMethodState = "available" | "coming_soon" | "not_configured" | "disabled" | "unavailable";
+
+export interface CheckoutMethod {
+  code: string;
+  provider: string;
+  type: string;
+  name: string;
+  description: string;
+  icon: string;
+  state: CheckoutMethodState;
+  status: string;
+  environment: string;
+  canSubmit: boolean;
+  requiresReference: boolean;
+  requiresProof: boolean;
+}
+
+export async function fetchCheckoutMethods(
+  countryCode: string,
+  currencyCode: string
+): Promise<{ methods: CheckoutMethod[]; degraded: boolean }> {
+  const res = await fetch(
+    `/api/payment-methods?country=${encodeURIComponent(countryCode)}&currency=${encodeURIComponent(currencyCode)}`
+  );
+  if (!res.ok) throw new Error(`payment-methods responded ${res.status}`);
+  const body = (await res.json()) as { methods?: CheckoutMethod[]; degraded?: boolean };
+  return { methods: Array.isArray(body.methods) ? body.methods : [], degraded: Boolean(body.degraded) };
+}
+
 export interface PaymentMethodConfig {
   id: string;
   label: string;

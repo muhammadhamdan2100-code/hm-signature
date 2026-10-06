@@ -1,14 +1,18 @@
 import { motion } from "framer-motion";
 import TexturePanel from "../components/TexturePanel";
 import { articles } from "../components/JournalSection";
+import { useI18n } from "../i18n/I18nProvider";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 
 export default function Journal() {
+  const { t } = useI18n();
+  useSeoMeta("/journal", t("seo.journalTitle"), t("seo.journalDescription"));
   return (
     <div className="pt-24 bg-navy min-h-screen">
       <section className="py-20 border-b border-gold/15">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10 text-center">
-          <div className="eyebrow mb-4">THE HM JOURNAL</div>
-          <h1 className="font-serif text-4xl lg:text-6xl">Stories of Scent & Craft</h1>
+          <div className="eyebrow mb-4">{t("home.journalEyebrow")}</div>
+          <h1 className="font-serif text-4xl lg:text-6xl">{t("journal.title")}</h1>
         </div>
       </section>
 
@@ -21,20 +25,21 @@ export default function Journal() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-80px" }}
               transition={{ duration: 0.7 }}
-              className={`grid md:grid-cols-2 gap-10 items-center ${i % 2 === 1 ? "md:[direction:rtl]" : ""}`}
+              className="grid md:grid-cols-2 gap-10 items-center"
             >
-              <div className={i % 2 === 1 ? "md:[direction:ltr]" : ""}>
+              {/* Alternating columns use order, not `direction`, so RTL mirrors the layout
+                  without ever forcing Arabic or Urdu prose into a left-to-right run. */}
+              <div className={i % 2 === 1 ? "md:order-2" : ""}>
                 <TexturePanel texture={a.texture} className="aspect-[4/3] border border-gold/20" />
               </div>
-              <div className={i % 2 === 1 ? "md:[direction:ltr]" : ""}>
-                <div className="eyebrow mb-4">JOURNAL · 0{i + 1}</div>
-                <h2 className="font-serif text-3xl mb-4">{a.title}</h2>
+              <div className={i % 2 === 1 ? "md:order-1" : ""}>
+                <div className="eyebrow mb-4">{t("journal.issue", { n: i + 1 })}</div>
+                <h2 className="font-serif text-3xl mb-4">{t(a.titleKey)}</h2>
                 <p className="text-muted leading-[1.9] mb-6 max-w-md">
-                  {a.text} A closer look at the craftsmanship, history and sensory detail that goes into
-                  every HM Signature creation — for those who want to understand the story behind the scent.
+                  {t(a.excerptKey)} {t("journal.articleBody")}
                 </p>
                 <p className="text-[11px] font-mono uppercase tracking-[1.5px] text-muted">
-                  Full essays accompany each release.
+                  {t("journal.fullEssays")}
                 </p>
               </div>
             </motion.article>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAdminData, type Order } from "../context/AdminDataContext";
 import { OrderStatusTimeline } from "../components/OrderStatusTimeline";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, usePaymentMethodLabel } from "../components/StatusBadge";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { isSupabaseConfigured, supabase } from "../../lib/supabase";
 import {
@@ -21,8 +21,11 @@ import {
   FileImage,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const OrderDetailPage: React.FC = () => {
+  const { t } = useI18n();
+  const methodLabel = usePaymentMethodLabel();
   const { orders, updateOrderStatus, updateOrderShipping, payments, verifyPayment, rejectPayment, saveAdminNotes } = useAdminData();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -97,12 +100,12 @@ export const OrderDetailPage: React.FC = () => {
   if (!order) {
     return (
       <div className="py-16 text-center space-y-4">
-        <h2 className="text-xl font-serif text-ivory">Order Record Not Found</h2>
+        <h2 className="text-xl font-serif text-ivory">{t("admin.orderDetail.orderRecordNotFound")}</h2>
         <button
           onClick={() => navigate("/admin/orders")}
           className="px-4 py-2 bg-gold text-navy font-semibold rounded text-xs"
         >
-          Back to Orders
+          {t("admin.orderDetail.backToOrders")}
         </button>
       </div>
     );
@@ -147,14 +150,14 @@ export const OrderDetailPage: React.FC = () => {
     <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
       <Breadcrumb
         items={[
-          { label: "Orders", path: "/admin/orders" },
+          { label: t("admin.nav.orders"), path: "/admin/orders" },
           { label: order.orderNumber },
         ]}
       />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => navigate("/admin/orders")}
             className="p-2 rounded text-muted hover:text-gold hover:bg-navy2 transition-colors border border-gold/20"
@@ -162,25 +165,25 @@ export const OrderDetailPage: React.FC = () => {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3">
               <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight">
-                Order {order.orderNumber}
+                {t("admin.orderDetail.orderNumberTitle", { number: order.orderNumber })}
               </h1>
               <StatusBadge status={order.status} />
             </div>
             <p className="text-xs text-muted font-sans font-light mt-0.5">
-              Placed on {order.createdAt} • Payment via {order.paymentMethod}
+              {t("admin.orderDetail.placedOnWithPayment", { date: order.createdAt, method: methodLabel(order.paymentMethod) })}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => window.print()}
-            className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center space-x-1.5"
+            className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center gap-1.5"
           >
             <Printer className="w-4 h-4 text-gold" />
-            <span>Print Invoice</span>
+            <span>{t("admin.orderDetail.printInvoice")}</span>
           </button>
         </div>
       </div>
@@ -198,24 +201,24 @@ export const OrderDetailPage: React.FC = () => {
           {/* Itemized Order Table */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-3">
-              Handcrafted Fragrances Ordered ({order.items.length})
+              {t("admin.orderDetail.handcraftedFragrancesOrdered", { count: order.items.length })}
             </h3>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-sans">
+              <table className="w-full text-start text-xs font-sans">
                 <thead className="bg-navy text-gold uppercase tracking-widest text-[10px] border-b border-gold/15">
                   <tr>
-                    <th className="py-2.5 px-3">Item</th>
-                    <th className="py-2.5 px-3">Price</th>
-                    <th className="py-2.5 px-3 text-center">Qty</th>
-                    <th className="py-2.5 px-3 text-right">Subtotal</th>
+                    <th className="py-2.5 px-3">{t("admin.orderDetail.item")}</th>
+                    <th className="py-2.5 px-3">{t("admin.orderDetail.price")}</th>
+                    <th className="py-2.5 px-3 text-center">{t("admin.orderDetail.qty")}</th>
+                    <th className="py-2.5 px-3 text-end">{t("admin.orderDetail.subtotal")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gold/10 text-ivory">
                   {order.items.map((item) => (
                     <tr key={item.id} className="hover:bg-navy/50 transition-colors">
                       <td className="py-3 px-3">
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded border border-gold/20 bg-navy flex items-center justify-center overflow-hidden shrink-0">
                             <Package className="w-5 h-5 text-gold" />
                           </div>
@@ -235,7 +238,7 @@ export const OrderDetailPage: React.FC = () => {
                       <td className="py-3 px-3 text-center font-mono font-bold text-gold">
                         {item.quantity}
                       </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-ivory">
+                      <td className="py-3 px-3 text-end font-mono font-bold text-ivory">
                         Rs. {(item.price * item.quantity).toLocaleString()}
                       </td>
                     </tr>
@@ -245,28 +248,42 @@ export const OrderDetailPage: React.FC = () => {
             </div>
 
             {/* Financial Totals */}
-            <div className="pt-4 border-t border-gold/15 space-y-2 max-w-xs ml-auto text-xs font-sans">
+            <div className="pt-4 border-t border-gold/15 space-y-2 max-w-xs ms-auto text-xs font-sans">
               <div className="flex justify-between text-muted">
-                <span>Items Subtotal:</span>
+                <span>{t("admin.orderDetail.itemsSubtotal")}</span>
                 <span className="font-mono text-ivory">
                   Rs. {order.subtotal.toLocaleString()}
                 </span>
               </div>
               {order.discount > 0 && (
                 <div className="flex justify-between text-emerald-400">
-                  <span>Voucher Discount:</span>
+                  <span>{t("admin.orderDetail.voucherDiscount")}</span>
                   <span className="font-mono">- Rs. {order.discount.toLocaleString()}</span>
                 </div>
               )}
               <div className="flex justify-between text-muted">
-                <span>Shipping Fee:</span>
+                <span>{t("admin.orderDetail.shippingFee")}</span>
                 <span className="font-mono text-ivory">
-                  {order.shippingFee === 0 ? "Complimentary" : `Rs. ${order.shippingFee}`}
+                  {order.shippingFee === 0 ? t("common.complimentary") : `Rs. ${order.shippingFee}`}
                 </span>
               </div>
+              {Number(order.taxAmount || 0) > 0 && (
+                <div className="flex justify-between text-muted">
+                  <span>{order.taxLabel || t("admin.orderDetail.tax")} ({order.taxRate}%):</span>
+                  <span className="font-mono text-ivory">Rs. {order.taxAmount!.toLocaleString()}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm font-bold text-gold pt-2 border-t border-gold/20">
-                <span>Order Total:</span>
+                <span>{t("admin.orderDetail.orderTotal")}</span>
                 <span className="font-mono">Rs. {order.total.toLocaleString()}</span>
+              </div>
+              {/* Recorded when the order was placed: a later rate or tax change cannot move it. */}
+              <div className="flex justify-between text-[11px] text-muted pt-1">
+                <span>{t("admin.orderDetail.chargedInDestination")}</span>
+                <span className="font-mono text-ivory">
+                  {order.currency || "PKR"}
+                  {order.destinationCountry ? ` · ${order.destinationCountry}` : ""}
+                </span>
               </div>
             </div>
           </div>
@@ -276,17 +293,17 @@ export const OrderDetailPage: React.FC = () => {
             onSubmit={handleSaveShipping}
             className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl"
           >
-            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
               <Truck className="w-4 h-4 text-gold" />
               <h3 className="font-serif text-base font-bold text-ivory">
-                Dispatch Courier & Tracking Info
+                {t("admin.orderDetail.dispatchCourierTrackingInfo")}
               </h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="od-courier" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Courier Carrier
+                  {t("admin.orderDetail.courierCarrier")}
                 </label>
                 <input
                   id="od-courier"
@@ -300,7 +317,7 @@ export const OrderDetailPage: React.FC = () => {
 
               <div>
                 <label htmlFor="od-tracking" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Tracking Number
+                  {t("admin.orderDetail.trackingNumber")}
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -308,23 +325,23 @@ export const OrderDetailPage: React.FC = () => {
                     type="text"
                     value={trackingNumber}
                     onChange={(e) => setTrackingNumber(e.target.value)}
-                    placeholder="Auto or manual"
+                    placeholder={t("admin.orderDetail.autoOrManual")}
                     className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
                   />
                   <button
                     type="button"
                     onClick={handleGenerateTracking}
                     className="px-3 py-2 shrink-0 bg-navy border border-gold/40 hover:border-gold text-gold rounded text-[10px] uppercase font-bold tracking-wider transition-colors"
-                    title="Generate a unique tracking reference"
+                    title={t("admin.orderDetail.generateUniqueTrackingReference")}
                   >
-                    Generate
+                    {t("admin.orderDetail.generate")}
                   </button>
                 </div>
               </div>
 
               <div>
                 <label htmlFor="od-status" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Shipping Status
+                  {t("admin.orderDetail.shippingStatus")}
                 </label>
                 <select
                   id="od-status"
@@ -332,16 +349,16 @@ export const OrderDetailPage: React.FC = () => {
                   onChange={(e) => setShippingStatus(e.target.value as any)}
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
                 >
-                  <option value="Processing">Preparing</option>
-                  <option value="In Transit">In Transit</option>
-                  <option value="Delivered">Delivered</option>
-                  <option value="Returned">Returned</option>
+                  <option value="Processing">{t("status.preparing")}</option>
+                  <option value="In Transit">{t("status.intransit")}</option>
+                  <option value="Delivered">{t("status.delivered")}</option>
+                  <option value="Returned">{t("status.returned")}</option>
                 </select>
               </div>
 
               <div>
                 <label htmlFor="od-eta" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Estimated Delivery
+                  {t("admin.orderDetail.estimatedDelivery")}
                 </label>
                 <input
                   id="od-eta"
@@ -354,7 +371,7 @@ export const OrderDetailPage: React.FC = () => {
 
               <div className="md:col-span-2">
                 <label htmlFor="od-url" className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Tracking URL
+                  {t("admin.orderDetail.trackingUrl")}
                 </label>
                 <input
                   id="od-url"
@@ -365,21 +382,21 @@ export const OrderDetailPage: React.FC = () => {
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
                 />
                 <p className="text-[10px] text-muted font-light mt-1">
-                  Shown to the client on their order and on Track Order.
+                  {t("admin.orderDetail.shownToClientNote")}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center justify-between gap-3 pt-2">
               <p className="text-[10px] text-muted font-light">
-                Every change is written to the shipment record and the order timeline.
+                {t("admin.orderDetail.everyChangeWrittenNote")}
               </p>
               <button
                 type="submit"
-                className="px-4 py-2 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans uppercase tracking-wider flex items-center space-x-1.5 shrink-0"
+                className="px-4 py-2 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans uppercase tracking-wider flex items-center gap-1.5 shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Save Courier Info</span>
+                <span>{t("admin.orderDetail.saveCourierInfo")}</span>
               </button>
             </div>
           </form>
@@ -389,18 +406,18 @@ export const OrderDetailPage: React.FC = () => {
             onSubmit={handleSaveAdminNotes}
             className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-3 shadow-xl"
           >
-            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
               <AlertTriangle className="w-4 h-4 text-gold" />
-              <h3 className="font-serif text-base font-bold text-ivory">Internal Notes</h3>
+              <h3 className="font-serif text-base font-bold text-ivory">{t("admin.orderDetail.internalNotes")}</h3>
             </div>
-            <label htmlFor="od-notes" className="sr-only">Internal notes</label>
+            <label htmlFor="od-notes" className="sr-only">{t("admin.orderDetail.internalNotesLabel")}</label>
             <textarea
               id="od-notes"
               rows={3}
               value={adminNotes}
               onChange={(e) => setAdminNotes(e.target.value)}
               maxLength={2000}
-              placeholder="Visible to staff only. Never shown to the client."
+              placeholder={t("admin.orderDetail.visibleToStaffOnly")}
               className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
             />
             <div className="flex items-center justify-between">
@@ -410,12 +427,12 @@ export const OrderDetailPage: React.FC = () => {
                 disabled={notesBusy}
                 className="px-4 py-2 bg-navy border border-gold/40 hover:bg-gold hover:text-navy text-gold rounded text-xs uppercase font-bold tracking-wider disabled:opacity-50 transition-colors"
               >
-                {notesBusy ? "Saving…" : "Save Note"}
+                {notesBusy ? t("admin.orderDetail.saving") : t("admin.orderDetail.saveNote")}
               </button>
             </div>
             {order.customerNotes && (
               <p className="text-[11px] text-muted font-light border-t border-gold/15 pt-3">
-                <span className="text-gold font-mono text-[10px] uppercase block">Client note</span>
+                <span className="text-gold font-mono text-[10px] uppercase block">{t("admin.orderDetail.clientNote")}</span>
                 {order.customerNotes}
               </p>
             )}
@@ -426,17 +443,17 @@ export const OrderDetailPage: React.FC = () => {
         <div className="space-y-6">
           {/* Customer Profile Card */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-3 shadow-xl">
-            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
               <User className="w-4 h-4 text-gold" />
               <h3 className="font-serif text-base font-bold text-ivory">
-                Client Profile
+                {t("admin.orderDetail.clientProfile")}
               </h3>
             </div>
 
             <div className="space-y-2 text-xs font-sans">
               <div>
                 <span className="text-muted block text-[10px] uppercase tracking-wider">
-                  Client Name
+                  {t("admin.orderDetail.clientName")}
                 </span>
                 <span className="font-serif font-bold text-sm text-ivory">
                   {order.customerName}
@@ -445,14 +462,14 @@ export const OrderDetailPage: React.FC = () => {
 
               <div>
                 <span className="text-muted block text-[10px] uppercase tracking-wider">
-                  Email Address
+                  {t("admin.orderDetail.emailAddress")}
                 </span>
                 <span className="text-gold font-mono">{order.customerEmail}</span>
               </div>
 
               <div>
                 <span className="text-muted block text-[10px] uppercase tracking-wider">
-                  Phone Number
+                  {t("admin.orderDetail.phoneNumber")}
                 </span>
                 <span className="text-ivory font-mono">{order.customerPhone}</span>
               </div>
@@ -461,10 +478,10 @@ export const OrderDetailPage: React.FC = () => {
 
           {/* Shipping Address */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-3 shadow-xl">
-            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
               <MapPin className="w-4 h-4 text-gold" />
               <h3 className="font-serif text-base font-bold text-ivory">
-                Shipping Address
+                {t("admin.orderDetail.shippingAddress")}
               </h3>
             </div>
 
@@ -482,27 +499,27 @@ export const OrderDetailPage: React.FC = () => {
 
           {/* Payment Info & Manual Payment Proof Verification Card */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
-            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
               <CreditCard className="w-4 h-4 text-gold" />
               <h3 className="font-serif text-base font-bold text-ivory">
-                Payment Verification
+                {t("admin.orderDetail.paymentVerification")}
               </h3>
             </div>
 
             <div className="space-y-3 text-xs font-sans">
               <div className="flex justify-between items-center">
-                <span className="text-muted">Payment Method:</span>
-                <span className="text-ivory font-medium font-serif">{order.paymentMethod}</span>
+                <span className="text-muted">{t("admin.orderDetail.paymentMethodLabel")}</span>
+                <span className="text-ivory font-medium font-serif">{methodLabel(order.paymentMethod)}</span>
               </div>
 
               <div className="flex justify-between items-center">
-                <span className="text-muted">Payment Status:</span>
+                <span className="text-muted">{t("admin.orderDetail.paymentStatusLabel")}</span>
                 <StatusBadge status={order.paymentStatus} />
               </div>
 
               <div className="pt-2 border-t border-gold/15">
                 <span className="text-[10px] text-muted uppercase tracking-wider block mb-1">
-                  Transaction / Reference ID
+                  {t("admin.orderDetail.transactionReferenceId")}
                 </span>
                 <span className="font-mono text-xs text-gold bg-navy px-2.5 py-1.5 rounded border border-gold/20 block truncate">
                   {order.paymentReference || "—"}
@@ -512,10 +529,10 @@ export const OrderDetailPage: React.FC = () => {
               {order.paymentProofNote && (
                 <div>
                   <span className="text-[10px] text-muted uppercase tracking-wider block mb-0.5">
-                    Transfer Note
+                    {t("admin.orderDetail.transferNote")}
                   </span>
                   <p className="text-xs text-ivory/80 italic font-light">
-                    "{order.paymentProofNote}"
+"{order.paymentProofNote}"
                   </p>
                 </div>
               )}
@@ -523,9 +540,9 @@ export const OrderDetailPage: React.FC = () => {
               {/* Private Payment Proof Screenshot Rendering */}
               {order.paymentMethod !== "Cash on Delivery" && (
                 <div className="pt-2 border-t border-gold/15 space-y-2">
-                  <span className="text-[10px] text-gold uppercase tracking-wider block font-semibold flex items-center space-x-1">
+                  <span className="text-[10px] text-gold uppercase tracking-wider block font-semibold flex items-center gap-1">
                     <FileImage className="w-3.5 h-3.5" />
-                    <span>Payment Screenshot / Proof</span>
+                    <span>{t("admin.orderDetail.paymentScreenshotProof")}</span>
                   </span>
 
                   {signedProofUrl ? (
@@ -536,30 +553,30 @@ export const OrderDetailPage: React.FC = () => {
                       >
                         <img
                           src={signedProofUrl}
-                          alt="Payment Transfer Proof Screenshot"
+                          alt={t("admin.orderDetail.paymentTransferProofScreenshotAlt")}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                        <div className="absolute inset-0 bg-navy/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1.5 text-gold text-xs font-bold font-mono">
+                        <div className="absolute inset-0 bg-navy/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-gold text-xs font-bold font-mono">
                           <Eye className="w-4 h-4" />
-                          <span>Inspect Screenshot</span>
+                          <span>{t("admin.orderDetail.inspectScreenshot")}</span>
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => setShowScreenshotModal(true)}
-                        className="w-full py-1.5 bg-navy border border-gold/30 hover:border-gold text-gold text-[11px] font-mono rounded flex items-center justify-center space-x-1.5 transition-colors"
+                        className="w-full py-1.5 bg-navy border border-gold/30 hover:border-gold text-gold text-[11px] font-mono rounded flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        <span>View Full Screenshot</span>
+                        <span>{t("admin.orderDetail.viewFullScreenshot")}</span>
                       </button>
                     </div>
                   ) : (
                     <div className="p-3 bg-navy rounded border border-gold/10 text-center">
                       <span className="text-[11px] text-muted italic font-mono block">
                         {order.paymentProofUrl
-                          ? "Loading signed screenshot URL…"
-                          : "No screenshot attached for this transaction."}
+                          ? t("admin.orderDetail.loadingSignedScreenshot")
+                          : t("admin.orderDetail.noScreenshotAttached")}
                       </span>
                     </div>
                   )}
@@ -571,22 +588,22 @@ export const OrderDetailPage: React.FC = () => {
                 (order.paymentStatus === "Pending" ||
                   order.paymentStatus === "Verification Pending" ||
                   order.paymentStatus === ("Pending Verification" as any)) && (
-                  <div className="pt-3 border-t border-gold/20 flex items-center space-x-2">
+                  <div className="pt-3 border-t border-gold/20 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={handleVerify}
-                      className="flex-1 py-2 bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/50 rounded text-xs uppercase font-bold font-mono flex items-center justify-center space-x-1.5 transition-colors"
+                      className="flex-1 py-2 bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/50 rounded text-xs uppercase font-bold font-mono flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <CheckCircle className="w-4 h-4" />
-                      <span>Verify Payment</span>
+                      <span>{t("admin.orderDetail.verifyPayment")}</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleReject}
-                      className="flex-1 py-2 bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/50 rounded text-xs uppercase font-bold font-mono flex items-center justify-center space-x-1.5 transition-colors"
+                      className="flex-1 py-2 bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/50 rounded text-xs uppercase font-bold font-mono flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <XCircle className="w-4 h-4" />
-                      <span>Reject</span>
+                      <span>{t("admin.orderDetail.reject")}</span>
                     </button>
                   </div>
                 )}
@@ -602,10 +619,10 @@ export const OrderDetailPage: React.FC = () => {
             <div className="flex items-center justify-between border-b border-gold/15 pb-3">
               <div>
                 <h3 className="font-serif text-lg font-bold text-ivory">
-                  Payment Transfer Screenshot Proof
+                  {t("admin.orderDetail.paymentTransferScreenshotProof")}
                 </h3>
                 <span className="text-xs font-mono text-gold">
-                  Order #{order.orderNumber} • Reference: {order.paymentReference || "—"}
+                  {t("admin.orderDetail.orderReferenceLine", { number: order.orderNumber, reference: order.paymentReference || "—" })}
                 </span>
               </div>
               <button
@@ -619,7 +636,7 @@ export const OrderDetailPage: React.FC = () => {
             <div className="max-h-[70vh] overflow-auto rounded border border-gold/20 bg-navy flex items-center justify-center p-2">
               <img
                 src={signedProofUrl}
-                alt="Full Payment Screenshot"
+                alt={t("admin.orderDetail.fullPaymentScreenshotAlt")}
                 className="max-w-full max-h-full object-contain rounded"
               />
             </div>
@@ -629,9 +646,9 @@ export const OrderDetailPage: React.FC = () => {
                 href={signedProofUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-mono text-gold hover:underline flex items-center space-x-1"
+                className="text-xs font-mono text-gold hover:underline flex items-center gap-1"
               >
-                <span>Open image in new tab</span>
+                <span>{t("admin.orderDetail.openImageInNewTab")}</span>
               </a>
 
               <button
@@ -639,7 +656,7 @@ export const OrderDetailPage: React.FC = () => {
                 onClick={() => setShowScreenshotModal(false)}
                 className="px-4 py-2 bg-gold text-navy font-bold rounded text-xs uppercase"
               >
-                Close Preview
+                {t("admin.orderDetail.closePreview")}
               </button>
             </div>
           </div>

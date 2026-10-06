@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import type { Product } from "../data/products";
 import { sizeToMl } from "../data/products";
 import ProductCard from "../components/ProductCard";
-import { formatPKR } from "../utils/currency";
+import { useCurrency } from "../context/CurrencyContext";
+import { useI18n } from "../i18n/I18nProvider";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 import { getCatalogProducts } from "../services/catalog";
 
 interface Props {
@@ -18,18 +20,25 @@ interface Props {
 
 type SortKey = "featured" | "newest" | "price-low" | "price-high" | "rating";
 
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "featured", label: "Featured First" },
-  { value: "newest", label: "New Arrivals" },
-  { value: "price-low", label: "Price: Low to High" },
-  { value: "price-high", label: "Price: High to Low" },
-  { value: "rating", label: "Client Rating" },
+const SORT_OPTIONS: { value: SortKey; labelKey: string }[] = [
+  { value: "featured", labelKey: "shop.sortFeatured" },
+  { value: "newest", labelKey: "shop.sortNewest" },
+  { value: "price-low", labelKey: "shop.sortPriceLow" },
+  { value: "price-high", labelKey: "shop.sortPriceHigh" },
+  { value: "rating", labelKey: "shop.sortRating" },
 ];
 
 const GENDERS = ["men", "women", "unisex"] as const;
 
+// Display labels only; the value stays the deep-linked query token.
+const GENDER_LABEL_KEYS: Record<string, string> = {
+  men: "shop.genderMen",
+  women: "shop.genderWomen",
+  unisex: "shop.genderUnisex",
+};
+
 const chipBase =
-  "text-xs px-3 py-2 rounded transition-colors border min-h-[44px] inline-flex items-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold";
+"text-xs px-3 py-2 rounded transition-colors border min-h-[44px] inline-flex items-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold";
 const chipOn = "border-gold bg-gold text-navy font-semibold";
 const chipOff = "border-gold/20 text-muted hover:text-ivory";
 
@@ -78,7 +87,18 @@ function SkeletonCard() {
   );
 }
 
-export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTexture = "texture-navy" }: Props) {
+export default function ShopPage({
+  title, subtitle, eyebrow, baseFilter, heroTexture = "texture-navy" }: Props) {
+  const { t, language } = useI18n();
+  const { format } = useCurrency();
+  const location = useLocation();
+  const shopPath = location.pathname;
+  useSeoMeta(
+    shopPath,
+    title,
+    shopPath === "/collections" ? t("seo.collectionsDescription") : t("seo.shopDescription")
+  );
+
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -117,7 +137,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [language.code]);
 
   const patchParams = (key: string, value: string | null) => {
     const next = new URLSearchParams(searchParams);
@@ -243,16 +263,16 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
   ]);
 
   const chips: { key: string; label: string; remove: () => void }[] = [];
-  if (query) chips.push({ key: "q", label: `Search: “${query}”`, remove: () => patchParams("q", null) });
-  if (gender !== "all") chips.push({ key: "gender", label: gender.toUpperCase(), remove: () => patchParams("gender", null) });
-  if (family !== "all") chips.push({ key: "family", label: `Family: ${family}`, remove: () => patchParams("family", null) });
-  if (size !== "all") chips.push({ key: "size", label: `${size} available`, remove: () => setSize("all") });
-  if (intensity !== "all") chips.push({ key: "intensity", label: `Intensity: ${intensity}`, remove: () => setIntensity("all") });
-  if (occasion !== "all") chips.push({ key: "occasion", label: `Occasion: ${occasion}`, remove: () => setOccasion("all") });
-  if (season !== "all") chips.push({ key: "season", label: `Season: ${season}`, remove: () => setSeason("all") });
-  if (inStockOnly) chips.push({ key: "stock", label: "In stock only", remove: () => setInStockOnly(false) });
+  if (query) chips.push({ key: "q", label: t("shop.chipSearch", { query }), remove: () => patchParams("q", null) });
+  if (gender !== "all") chips.push({ key: "gender", label: t(GENDER_LABEL_KEYS[gender] ?? gender).toUpperCase(), remove: () => patchParams("gender", null) });
+  if (family !== "all") chips.push({ key: "family", label: t("shop.chipFamily", { value: family }), remove: () => patchParams("family", null) });
+  if (size !== "all") chips.push({ key: "size", label: t("shop.chipSize", { value: size }), remove: () => setSize("all") });
+  if (intensity !== "all") chips.push({ key: "intensity", label: t("shop.chipIntensity", { value: intensity }), remove: () => setIntensity("all") });
+  if (occasion !== "all") chips.push({ key: "occasion", label: t("shop.chipOccasion", { value: occasion }), remove: () => setOccasion("all") });
+  if (season !== "all") chips.push({ key: "season", label: t("shop.chipSeason", { value: season }), remove: () => setSeason("all") });
+  if (inStockOnly) chips.push({ key: "stock", label: t("shop.inStockOnly"), remove: () => setInStockOnly(false) });
   if (maxPrice < priceCeiling)
-    chips.push({ key: "price", label: `Under ${formatPKR(maxPrice)}`, remove: () => patchParams("maxPrice", null) });
+    chips.push({ key: "price", label: t("shop.chipUnder", { amount: format(maxPrice) }), remove: () => patchParams("maxPrice", null) });
 
   const catalogueEmpty = !isLoading && catalogProducts.length === 0;
 
@@ -280,29 +300,29 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                 aria-controls="shop-filters"
                 className="btn-gold text-xs flex items-center gap-2 min-h-[44px]"
               >
-                <SlidersHorizontal size={14} aria-hidden="true" /> FILTERS
+                <SlidersHorizontal size={14} aria-hidden="true" /> {t("shop.filters")}
               </button>
               <span className="text-xs text-muted font-mono" role="status" aria-live="polite">
                 {isLoading
-                  ? "LOADING…"
-                  : `${filtered.length} ${filtered.length === 1 ? "FRAGRANCE" : "FRAGRANCES"}`}
+                  ? t("shop.loading")
+                  : `${filtered.length} ${filtered.length === 1 ? t("shop.fragrance") : t("shop.fragrances")}`}
               </span>
             </div>
 
             <div className="flex items-center gap-3 text-xs min-w-0">
               <label htmlFor="shop-sort" className="text-muted tracking-widest hidden sm:inline">
-                SORT BY:
+                {t("shop.sortBy")}
               </label>
               <select
                 id="shop-sort"
-                aria-label="Sort fragrances"
+                aria-label={t("shop.sortAriaLabel")}
                 value={sort}
                 onChange={(e) => patchParams("sort", e.target.value === "featured" ? null : e.target.value)}
                 className="bg-transparent border border-gold/25 text-ivory px-3 py-2 text-xs rounded font-sans min-h-[44px] focus:outline-none focus-visible:ring-1 focus-visible:ring-gold focus-visible:border-gold"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value} className="bg-navy2 text-ivory">
-                    {o.label}
+                    {t(o.labelKey)}
                   </option>
                 ))}
               </select>
@@ -312,12 +332,12 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
           {/* Search */}
           <div className="relative mb-6">
             <label htmlFor="shop-search" className="sr-only">
-              Search fragrances, notes and families
+              {t("shop.searchLabel")}
             </label>
             <Search
               size={14}
               aria-hidden="true"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+              className="absolute start-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
             />
             <input
               id="shop-search"
@@ -327,14 +347,14 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                 setSearchInput(e.target.value);
                 patchParams("q", e.target.value.trim() || null);
               }}
-              placeholder="Search names, notes, families…"
-              className="w-full max-w-md bg-navy2/60 border border-gold/25 rounded text-sm text-ivory placeholder:text-muted/60 pl-9 pr-3 py-2.5 min-h-[44px] focus:outline-none focus-visible:ring-1 focus-visible:ring-gold focus-visible:border-gold"
+              placeholder={t("shop.searchPlaceholder")}
+              className="w-full max-w-md bg-navy2/60 border border-gold/25 rounded text-sm text-ivory placeholder:text-muted/60 ps-9 pe-3 py-2.5 min-h-[44px] focus:outline-none focus-visible:ring-1 focus-visible:ring-gold focus-visible:border-gold"
             />
           </div>
 
           {/* Active filter chips */}
           {chips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mb-6" role="region" aria-label="Active filters">
+            <div className="flex flex-wrap items-center gap-2 mb-6" role="region" aria-label={t("shop.activeFilters")}>
               {chips.map((chip) => (
                 <span
                   key={chip.key}
@@ -343,8 +363,8 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                   {chip.label}
                   <button
                     onClick={chip.remove}
-                    aria-label={`Remove filter: ${chip.label}`}
-                    className="w-[44px] h-[24px] -mr-2 flex items-center justify-center hover:text-ivory transition-colors"
+                    aria-label={t("shop.removeFilter", { label: chip.label })}
+                    className="w-[44px] h-[24px] -me-2 flex items-center justify-center hover:text-ivory transition-colors"
                   >
                     <X size={12} aria-hidden="true" />
                   </button>
@@ -354,7 +374,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                 onClick={clearAll}
                 className="text-[11px] font-mono tracking-widest text-muted hover:text-gold underline underline-offset-4 min-h-[44px] px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               >
-                CLEAR ALL
+                {t("shop.clearAll")}
               </button>
             </div>
           )}
@@ -370,18 +390,18 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                 className="overflow-hidden border border-gold/20 p-6 mb-12 bg-navy2/60 rounded-lg"
               >
                 <div className="flex items-center justify-between mb-6 pb-3 border-b border-gold/15">
-                  <span className="eyebrow">Refine Collection</span>
+                  <span className="eyebrow">{t("shop.refineCollection")}</span>
                   <button
                     onClick={() => setFiltersOpen(false)}
-                    aria-label="Close filters"
-                    className="w-[44px] h-[44px] -mr-3 flex items-center justify-center text-muted hover:text-ivory focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
+                    aria-label={t("shop.closeFilters")}
+                    className="w-[44px] h-[44px] -me-3 flex items-center justify-center text-muted hover:text-ivory focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
                   >
                     <X size={16} aria-hidden="true" />
                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <FilterGroup label="Gender">
+                  <FilterGroup label={t("shop.filterGender")}>
                     {GENDERS.map((g) => (
                       <button
                         key={g}
@@ -389,12 +409,12 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                         aria-pressed={gender === g}
                         className={`${chipBase} ${gender === g ? chipOn : chipOff}`}
                       >
-                        <span className="capitalize">{g}</span>
+                        <span className="capitalize">{t(GENDER_LABEL_KEYS[g] ?? g)}</span>
                       </button>
                     ))}
                   </FilterGroup>
 
-                  <FilterGroup label="Fragrance Family">
+                  <FilterGroup label={t("shop.filterFragranceFamily")}>
                     {families.map((f) => (
                       <button
                         key={f}
@@ -408,7 +428,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                   </FilterGroup>
 
                   {sizes.length > 0 && (
-                    <FilterGroup label="Size Available">
+                    <FilterGroup label={t("shop.filterSizeAvailable")}>
                       {sizes.map((s) => (
                         <button
                           key={s}
@@ -423,7 +443,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                   )}
 
                   {intensities.length > 0 && (
-                    <FilterGroup label="Intensity">
+                    <FilterGroup label={t("shop.filterIntensity")}>
                       {intensities.map((s) => (
                         <button
                           key={s}
@@ -438,7 +458,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                   )}
 
                   {occasions.length > 0 && (
-                    <FilterGroup label="Occasion">
+                    <FilterGroup label={t("shop.filterOccasion")}>
                       {occasions.map((s) => (
                         <button
                           key={s}
@@ -453,7 +473,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                   )}
 
                   {seasons.length > 0 && (
-                    <FilterGroup label="Season">
+                    <FilterGroup label={t("shop.filterSeason")}>
                       {seasons.map((s) => (
                         <button
                           key={s}
@@ -471,9 +491,9 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                   <div>
                     <div className="flex justify-between items-center mb-3 text-xs font-mono">
                       <span className="text-gold uppercase tracking-widest" id="shop-maxprice-label">
-                        Maximum Price
+                        {t("shop.maximumPrice")}
                       </span>
-                      <span className="text-ivory font-bold">{formatPKR(maxPrice)}</span>
+                      <span className="text-ivory font-bold">{format(maxPrice)}</span>
                     </div>
                     <input
                       type="range"
@@ -484,15 +504,15 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                       value={maxPrice}
                       onChange={(e) =>
                         patchParams(
-                          "maxPrice",
+"maxPrice",
                           Number(e.target.value) >= priceCeiling ? null : e.target.value
                         )
                       }
                       className="w-full accent-gold bg-navy border border-gold/20 rounded cursor-pointer h-11"
                     />
                     <div className="flex justify-between text-[10px] text-muted font-mono mt-1">
-                      <span>{formatPKR(priceFloor)}</span>
-                      <span>{formatPKR(priceCeiling)}</span>
+                      <span>{format(priceFloor)}</span>
+                      <span>{format(priceCeiling)}</span>
                     </div>
                   </div>
                   )}
@@ -509,7 +529,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                         onChange={(e) => setInStockOnly(e.target.checked)}
                         className="accent-gold w-4 h-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                       />
-                      In stock only
+                      {t("shop.inStockOnly")}
                     </label>
                   </div>
                 </div>
@@ -519,7 +539,7 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
                     onClick={clearAll}
                     className="text-xs font-mono tracking-widest text-muted hover:text-gold min-h-[44px] px-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   >
-                    CLEAR ALL FILTERS
+                    {t("shop.clearAllFilters")}
                   </button>
                 </div>
               </motion.div>
@@ -535,23 +555,22 @@ export default function ShopPage({ title, subtitle, eyebrow, baseFilter, heroTex
               </div>
             ) : catalogueEmpty ? (
               <div className="text-center py-24 max-w-lg mx-auto">
-                <p className="font-serif text-2xl mb-3">The Atelier is Composing</p>
+                <p className="font-serif text-2xl mb-3">{t("shop.catalogueEmptyTitle")}</p>
                 <p className="text-muted text-sm leading-relaxed mb-6">
-                  Our catalogue is being prepared and no fragrances have been published yet. Please
-                  check back soon.
+                  {t("shop.catalogueEmptyBody")}
                 </p>
                 <Link to="/scent-finder" className="btn-gold text-xs">
-                  FIND YOUR SCENT
+                  {t("home.collectionsEmptyCta")}
                 </Link>
               </div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-24 max-w-lg mx-auto" role="status">
-                <p className="font-serif text-2xl mb-3">No fragrances match these filters</p>
+                <p className="font-serif text-2xl mb-3">{t("shop.emptyTitle")}</p>
                 <p className="text-muted text-sm mb-6">
-                  Try widening your search or removing a filter.
+                  {t("shop.emptyBody")}
                 </p>
                 <button onClick={clearAll} className="btn-gold text-xs">
-                  CLEAR ALL
+                  {t("shop.clearAll")}
                 </button>
               </div>
             ) : (

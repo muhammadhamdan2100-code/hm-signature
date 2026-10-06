@@ -5,8 +5,10 @@ import { StatCard } from "../components/StatCard";
 import { ArrowLeftRight, Banknote, RotateCcw, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatPKR } from "../../utils/currency";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const RefundsPage: React.FC = () => {
+  const { t } = useI18n();
   const { refunds, payments } = useAdminData();
 
   const paymentById = (id: string): PaymentRecord | undefined =>
@@ -20,7 +22,7 @@ export const RefundsPage: React.FC = () => {
 
   const columns: Column<(typeof refunds)[0]>[] = [
     {
-      header: "Order & Date",
+      header: t("admin.refunds.orderDate"),
       accessor: (r) => (
         <div>
           <span className="font-mono font-bold text-gold text-xs block">{r.orderNumber}</span>
@@ -30,14 +32,14 @@ export const RefundsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Client",
+      header: t("admin.refunds.client"),
       accessor: (r) => (
         <span className="font-serif font-bold text-xs text-ivory">{r.customerName}</span>
       ),
       sortable: true,
     },
     {
-      header: "Original Payment",
+      header: t("admin.refunds.originalPayment"),
       accessor: (r) => {
         const p = paymentById(r.paymentId);
         return (
@@ -51,7 +53,7 @@ export const RefundsPage: React.FC = () => {
       },
     },
     {
-      header: "Refund Amount",
+      header: t("admin.refunds.refundAmount"),
       accessor: (r) => (
         <span className="font-mono font-bold text-rose-300 text-xs">
           − {formatPKR(r.amount)}
@@ -61,7 +63,7 @@ export const RefundsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Refund Status",
+      header: t("admin.refunds.refundStatus"),
       accessor: (r) => (
         <span
           className={`text-[9px] font-mono uppercase tracking-wider px-2 py-1 rounded border ${
@@ -78,7 +80,7 @@ export const RefundsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Reference / Reason",
+      header: t("admin.refunds.referenceReason"),
       accessor: (r) => (
         <div>
           <span className="font-mono text-[10px] text-gold/90 block font-semibold">
@@ -91,7 +93,7 @@ export const RefundsPage: React.FC = () => {
       ),
     },
     {
-      header: "Notes",
+      header: t("admin.refunds.notes"),
       accessor: (r) => (
         <span className="text-[10px] text-muted font-light max-w-[200px] truncate block">
           {r.notes || "—"}
@@ -99,16 +101,16 @@ export const RefundsPage: React.FC = () => {
       ),
     },
     {
-      header: "Order",
+      header: t("admin.shared.order"),
       accessor: (r) => (
         <Link
           to={`/admin/orders/${r.orderId}`}
           className="text-[10px] uppercase font-bold text-gold hover:text-goldLight"
         >
-          View →
+          {t("admin.refunds.viewArrow")}
         </Link>
       ),
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
@@ -117,42 +119,42 @@ export const RefundsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            FINANCIAL AUDIT & VERIFICATION
+            {t("admin.refunds.financialAuditVerification")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Refund Ledger
+            {t("admin.refunds.refundLedger")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manual refund records for COD, JazzCash, Raast and Bank Transfer settlements.
+            {t("admin.refunds.manualRefundRecordsNote")}
           </p>
         </div>
         <Link
           to="/admin/payments"
-          className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center space-x-1.5 shrink-0"
+          className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center gap-1.5 shrink-0"
         >
           <ArrowLeftRight className="w-4 h-4 text-gold" />
-          <span>Back to Payments</span>
+          <span>{t("admin.refunds.backToPayments")}</span>
         </Link>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
-          title="Total Refunded"
+          title={t("admin.refunds.totalRefunded")}
           value={formatPKR(totalRefunded)}
-          subtitle="Processed refunds"
+          subtitle={t("admin.refunds.processedRefunds")}
           icon={Wallet}
           accent={true}
         />
         <StatCard
-          title="Pending Refunds"
+          title={t("admin.refunds.pendingRefunds")}
           value={pendingRefunds}
-          subtitle="Awaiting bank settlement"
+          subtitle={t("admin.refunds.awaitingBankSettlement")}
           icon={Banknote}
         />
         <StatCard
-          title="Refund Records"
+          title={t("admin.refunds.refundRecords")}
           value={refunds.length}
-          subtitle="All refund entries"
+          subtitle={t("admin.refunds.allRefundEntries")}
           icon={RotateCcw}
         />
       </div>
@@ -160,13 +162,13 @@ export const RefundsPage: React.FC = () => {
       {refunds.length === 0 ? (
         <div className="bg-navy2/90 border border-gold/20 rounded-lg p-10 text-center">
           <RotateCcw className="w-8 h-8 text-gold/40 mx-auto mb-3" />
-          <p className="text-sm font-serif text-ivory">No refunds recorded yet</p>
+          <p className="text-sm font-serif text-ivory">{t("admin.refunds.noRefundsRecordedYet")}</p>
           <p className="text-xs text-muted mt-1">
-            Refunds issued from the Payments page will appear here with full audit detail.
+            {t("admin.refunds.refundsAppearHereNote")}
           </p>
         </div>
       ) : (
-        <DataTable columns={columns} data={refunds} keyExtractor={(r) => r.id} searchPlaceholder="Search refunds by order, client or reference…" />
+        <DataTable columns={columns} data={refunds} keyExtractor={(r) => r.id} searchPlaceholder={t("admin.refunds.searchRefundsByOrderClient")} />
       )}
     </div>
   );

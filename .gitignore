@@ -6,3 +6,6 @@ dist
 supabase/.temp/
 *.local
 scripts/seed-test-accounts.sql
+
+# Local scratch for i18n agents and browser QA (contains throwaway QA credentials)
+tmp-i18n/

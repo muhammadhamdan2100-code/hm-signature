@@ -4,34 +4,46 @@ import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Clock, MessageCircle } from "lucide-react";
 import { sendContactEnquiry } from "../services/emailService";
 import { useAuth } from "../context/AuthContext";
+import { useI18n } from "../i18n/I18nProvider";
 
 const WHATSAPP_NUMBER = "923218602034";
 const ATELIER_EMAIL = "xeltriotechnologies@gmail.com";
 const MAPS_QUERY = encodeURIComponent("Rahim Yar Khan, Pakistan");
 
-const info = [
+// Addresses, phone numbers and emails stay exactly as they are on screen.
+type ContactInfo = {
+  icon: typeof MapPin;
+  labelKey: string;
+  /** Literal contact detail, never translated. */
+  text?: string;
+  /** Key for contact copy that is worth localising, such as the opening hours. */
+  textKey?: string;
+  href: string | null;
+};
+
+const info: ContactInfo[] = [
   {
     icon: MapPin,
-    label: "BOUTIQUE",
+    labelKey: "contact.labelBoutique",
     text: "Rahim Yar Khan, Pakistan",
     href: `https://www.google.com/maps/search/?api=1&query=${MAPS_QUERY}`,
   },
   {
     icon: Phone,
-    label: "PHONE",
+    labelKey: "contact.labelPhone",
     text: "+92 321 8602034",
     href: `tel:+${WHATSAPP_NUMBER}`,
   },
   {
     icon: Mail,
-    label: "EMAIL",
+    labelKey: "contact.labelEmail",
     text: ATELIER_EMAIL,
     href: `mailto:${ATELIER_EMAIL}`,
   },
   {
     icon: Clock,
-    label: "HOURS",
-    text: "Mon – Sat, 11:00 AM – 8:00 PM",
+    labelKey: "contact.labelHours",
+    textKey: "contact.hoursValue",
     href: null,
   },
 ];
@@ -40,6 +52,7 @@ export default function Contact() {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const { user } = useAuth();
+  const { t } = useI18n();
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -68,10 +81,10 @@ export default function Contact() {
     <div className="pt-24 bg-navy min-h-screen">
       <section className="py-20 border-b border-gold/15 text-center">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
-          <div className="eyebrow mb-4">GET IN TOUCH</div>
-          <h1 className="font-serif text-4xl lg:text-6xl mb-4">Contact Us</h1>
+          <div className="eyebrow mb-4">{t("contact.eyebrow")}</div>
+          <h1 className="font-serif text-4xl lg:text-6xl mb-4">{t("contact.title")}</h1>
           <p className="text-muted max-w-lg mx-auto leading-relaxed">
-            Questions about a fragrance, an order, or a private consultation — our team is here to help.
+            {t("contact.intro")}
           </p>
         </div>
       </section>
@@ -79,39 +92,37 @@ export default function Contact() {
       <section className="py-20">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10 grid lg:grid-cols-[1fr_420px] gap-16">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7 }}>
-            <h2 className="font-serif text-2xl mb-8">Send a Message</h2>
+            <h2 className="font-serif text-2xl mb-8">{t("contact.formTitle")}</h2>
 
             {status === "sent" ? (
               <div className="border border-gold/25 p-10 text-center">
-                <p className="text-goldLight font-serif text-xl mb-3">Message sent</p>
-                <p className="text-muted">Your enquiry has reached our inbox. We reply during working hours, Monday to Saturday.</p>
+                <p className="text-goldLight font-serif text-xl mb-3">{t("contact.sentTitle")}</p>
+                <p className="text-muted">{t("contact.sentBody")}</p>
               </div>
             ) : status === "failed" ? (
               <div className="border border-gold/25 p-10 text-center">
-                <p className="text-goldLight font-serif text-xl mb-3">Not sent</p>
+                <p className="text-goldLight font-serif text-xl mb-3">{t("contact.failedTitle")}</p>
                 <p className="text-muted mb-6">
-                  Your message was not sent. This form forwards through the atelier inbox and needs you to be signed in,
-                  and it stays unavailable while this deployment has no email service configured. Open WhatsApp to reach
-                  us, or sign in and try again.
+                  {t("contact.failedBody")}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-8">
                   <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-gold-fill">
-                    OPEN WHATSAPP →
+                    {t("contact.openWhatsappCta")}
                   </a>
                   <button onClick={() => setStatus("idle")} className="link-underline">
-                    Edit the message
+                    {t("contact.editMessage")}
                   </button>
                 </div>
               </div>
             ) : (
               <form onSubmit={submitMessage} className="space-y-6">
                 <div className="grid sm:grid-cols-2 gap-6">
-                  <Field label="Full Name" value={form.name} onChange={(v) => update("name", v)} required />
-                  <Field label="Email Address" type="email" value={form.email} onChange={(v) => update("email", v)} required />
+                  <Field label={t("auth.fullNameLabel")} value={form.name} onChange={(v) => update("name", v)} required />
+                  <Field label={t("auth.emailLabel")} type="email" value={form.email} onChange={(v) => update("email", v)} required />
                 </div>
-                <Field label="Subject" value={form.subject} onChange={(v) => update("subject", v)} required />
+                <Field label={t("contact.fieldSubject")} value={form.subject} onChange={(v) => update("subject", v)} required />
                 <label className="block">
-                  <span className="text-[11px] tracking-widest text-muted mb-2 block">MESSAGE</span>
+                  <span className="text-[11px] tracking-widest text-muted mb-2 block">{t("contact.fieldMessage")}</span>
                   <textarea
                     required
                     rows={6}
@@ -122,15 +133,15 @@ export default function Contact() {
                 </label>
                 {!user && (
                   <p className="text-[11px] text-muted leading-relaxed">
-                    Signing in lets this form reach the atelier inbox.{" "}
+                    {t("contact.signInHelpPrefix")}{" "}
                     <Link to="/login" className="text-goldLight underline underline-offset-4">
-                      Sign in
+                      {t("contact.signInLink")}
                     </Link>{" "}
-                    — or use WhatsApp and the details above, which work without an account.
+                    {t("contact.signInHelpSuffix")}
                   </p>
                 )}
                 <button type="submit" className="btn-gold-fill" disabled={status === "sending"}>
-                  {status === "sending" ? "SENDING…" : "SEND MESSAGE →"}
+                  {status === "sending" ? t("contact.sending") : t("contact.submit")}
                 </button>
               </form>
             )}
@@ -146,7 +157,7 @@ export default function Contact() {
             {info.map((i) =>
               i.href ? (
                 <a
-                  key={i.label}
+                  key={i.labelKey}
                   href={i.href}
                   target={i.href.startsWith("http") ? "_blank" : undefined}
                   rel={i.href.startsWith("http") ? "noopener noreferrer" : undefined}
@@ -154,16 +165,16 @@ export default function Contact() {
                 >
                   <i.icon size={20} className="text-gold shrink-0 mt-1" strokeWidth={1.3} />
                   <div>
-                    <div className="text-[11px] tracking-[1.5px] text-goldLight mb-1">{i.label}</div>
-                    <div className="text-sm text-muted leading-relaxed">{i.text}</div>
+                    <div className="text-[11px] tracking-[1.5px] text-goldLight mb-1">{t(i.labelKey)}</div>
+                    <div className="text-sm text-muted leading-relaxed">{i.textKey ? t(i.textKey) : i.text}</div>
                   </div>
                 </a>
               ) : (
-                <div key={i.label} className="border border-gold/20 p-6 flex gap-4">
+                <div key={i.labelKey} className="border border-gold/20 p-6 flex gap-4">
                   <i.icon size={20} className="text-gold shrink-0 mt-1" strokeWidth={1.3} />
                   <div>
-                    <div className="text-[11px] tracking-[1.5px] text-goldLight mb-1">{i.label}</div>
-                    <div className="text-sm text-muted leading-relaxed">{i.text}</div>
+                    <div className="text-[11px] tracking-[1.5px] text-goldLight mb-1">{t(i.labelKey)}</div>
+                    <div className="text-sm text-muted leading-relaxed">{i.textKey ? t(i.textKey) : i.text}</div>
                   </div>
                 </div>
               )
@@ -178,7 +189,7 @@ export default function Contact() {
               <MessageCircle size={20} className="text-gold shrink-0 mt-1" strokeWidth={1.3} />
               <div>
                 <div className="text-[11px] tracking-[1.5px] text-goldLight mb-1">WHATSAPP</div>
-                <div className="text-sm text-muted leading-relaxed">Chat with us instantly — +92 321 8602034</div>
+                <div className="text-sm text-muted leading-relaxed">{t("contact.whatsappBody")}</div>
               </div>
             </a>
 
@@ -194,9 +205,9 @@ export default function Contact() {
               />
               <div className="relative text-center">
                 <MapPin size={28} className="text-gold mx-auto mb-3" strokeWidth={1} />
-                <p className="text-xs text-muted tracking-wide">Rahim Yar Khan, Pakistan</p>
+                <p className="text-xs text-muted tracking-wide">{t("contact.boutiqueCity")}</p>
                 <p className="text-[10px] text-goldLight tracking-widest mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  OPEN IN GOOGLE MAPS →
+                  {t("contact.mapsCta")}
                 </p>
               </div>
             </a>

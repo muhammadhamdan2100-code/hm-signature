@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, type ReactNode } from "react";
 import { X, AlertTriangle } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface ModalProps {
   isOpen: boolean;
@@ -11,12 +12,12 @@ interface ModalProps {
 }
 
 const FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
+"a[href]",
+"button:not([disabled])",
+"input:not([disabled])",
+"select:not([disabled])",
+"textarea:not([disabled])",
+"[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
 export const Modal: React.FC<ModalProps> = ({
@@ -27,6 +28,7 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = "lg",
 }) => {
+  const { t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -101,8 +103,8 @@ export const Modal: React.FC<ModalProps> = ({
     md: "max-w-md",
     lg: "max-w-lg",
     xl: "max-w-xl",
-    "2xl": "max-w-2xl",
-    "4xl": "max-w-4xl",
+"2xl": "max-w-2xl",
+"4xl": "max-w-4xl",
   }[maxWidth];
 
   return (
@@ -126,7 +128,7 @@ export const Modal: React.FC<ModalProps> = ({
           aria-labelledby={titleId}
           aria-describedby={subtitle ? subtitleId : undefined}
           tabIndex={-1}
-          className={`w-full ${maxWidthClass} transform overflow-hidden rounded-lg bg-navy2/95 backdrop-blur-xl border border-gold/30 text-left align-middle shadow-2xl transition-all my-8 focus:outline-none`}
+          className={`w-full ${maxWidthClass} transform overflow-hidden rounded-lg bg-navy2/95 backdrop-blur-xl border border-gold/30 text-start align-middle shadow-2xl transition-all my-8 focus:outline-none`}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-gold/20 px-6 py-4 bg-navy/40">
@@ -146,7 +148,7 @@ export const Modal: React.FC<ModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              aria-label={`Close ${title}`}
+              aria-label={t("admin.modal.close", { title })}
               className="text-muted hover:text-gold transition-colors p-1 rounded-md hover:bg-navy/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
             >
               <X className="w-5 h-5" />
@@ -180,15 +182,19 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   title,
   message,
-  confirmText = "Confirm",
-  cancelText = "Cancel",
+  confirmText,
+  cancelText,
   isDanger = false,
 }) => {
+  const { t } = useI18n();
+  const confirmLabel = confirmText ?? t("admin.modal.confirm");
+  const cancelLabel = cancelText ?? t("admin.modal.cancel");
+
   if (!isOpen) return null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} maxWidth="sm">
-      <div className="flex items-start space-x-3 py-2">
+      <div className="flex items-start gap-3 py-2">
         <div
           className={`p-2 rounded-full shrink-0 ${
             isDanger ? "bg-rose-950/60 text-rose-400" : "bg-gold/10 text-gold"
@@ -201,13 +207,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         </p>
       </div>
 
-      <div className="mt-6 flex items-center justify-end space-x-3 pt-3 border-t border-gold/10">
+      <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-gold/10">
         <button
           type="button"
           onClick={onClose}
           className="px-4 py-2 rounded text-xs font-sans tracking-wider uppercase text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
         >
-          {cancelText}
+          {cancelLabel}
         </button>
         <button
           type="button"
@@ -221,7 +227,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               : "bg-gold hover:bg-goldLight text-navy font-semibold"
           }`}
         >
-          {confirmText}
+          {confirmLabel}
         </button>
       </div>
     </Modal>

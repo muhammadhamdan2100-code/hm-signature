@@ -1,11 +1,13 @@
 import ShopPage from "../components/ShopPage";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function Women() {
+  const { t } = useI18n();
   return (
     <ShopPage
-      eyebrow="FOR HER"
-      title="Women's Collection"
-      subtitle="Florals, amber and warmth — fragrances that linger in memory."
+      eyebrow={t("shop.forHer")}
+      title={t("shop.womenTitle")}
+      subtitle={t("shop.womenSubtitle")}
       baseFilter={(p) => p.gender === "women" || p.gender === "unisex"}
       heroTexture="texture-marble-champagne"
     />

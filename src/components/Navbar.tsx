@@ -5,18 +5,20 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { useAuth } from "../context/AuthContext";
+import { useI18n } from "../i18n/I18nProvider";
+import InternationalControls from "./InternationalControls";
 
 const navLinks = [
-  { label: "Collections", to: "/collections" },
-  { label: "Men", to: "/men" },
-  { label: "Women", to: "/women" },
-  { label: "Bestsellers", to: "/bestsellers" },
-  { label: "Scent Finder", to: "/scent-finder" },
-  { label: "Contact", to: "/contact" },
-  { label: "About Us", to: "/?section=about", secondary: true },
-  { label: "Journal", to: "/journal", secondary: true },
-  { label: "Parent Company", to: "/parent-company", secondary: true },
-];
+  { key: "nav.collections", to: "/collections" },
+  { key: "nav.men", to: "/men" },
+  { key: "nav.women", to: "/women" },
+  { key: "nav.bestsellers", to: "/bestsellers" },
+  { key: "nav.scentFinder", to: "/scent-finder" },
+  { key: "nav.contact", to: "/contact" },
+  { key: "nav.aboutUs", to: "/?section=about", secondary: true },
+  { key: "nav.journal", to: "/journal", secondary: true },
+  { key: "nav.parentCompany", to: "/parent-company", secondary: true },
+] as const;
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -28,6 +30,7 @@ export default function Navbar() {
   const { itemCount, openCart } = useCart();
   const { wishlist } = useWishlist();
   const { user, isAdmin, logout } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -84,13 +87,13 @@ export default function Navbar() {
     navigate("/");
   };
 
-  const firstName = user?.fullName ? user.fullName.split(" ")[0] : "Account";
+  const firstName = user?.fullName ? user.fullName.split(" ")[0] : t("nav.account");
 
   return (
     <>
       <nav
-        aria-label="Main"
-        className={`fixed top-0 left-0 right-0 z-40 border-b transition-all duration-300 ${
+        aria-label={t("nav.main")}
+        className={`fixed top-0 start-0 end-0 z-40 border-b transition-all duration-300 ${
           scrolled
             ? "bg-navy/90 backdrop-blur-md py-3 border-gold/30"
             : "bg-navy py-5 border-gold/20"
@@ -104,33 +107,36 @@ export default function Navbar() {
           <div className="hidden lg:flex items-center gap-5 xl:gap-6 2xl:gap-8">
             {navLinks.map((l) => (
               <Link
-                key={l.label}
+                key={l.key}
                 to={l.to}
                 className={`relative text-[11px] tracking-[2px] uppercase group py-1${
                   (l as any).secondary ? " hidden xl:inline-block" : ""
                 }`}
               >
-                {l.label}
-                <span className="absolute left-0 -bottom-0.5 h-px w-0 bg-gold transition-all duration-300 group-hover:w-full" />
+                {t(l.key)}
+                <span className="absolute start-0 rtl:end-0 rtl:left-auto -bottom-0.5 h-px w-0 bg-gold transition-all duration-300 group-hover:w-full" />
               </Link>
             ))}
           </div>
 
           <div className="flex items-center gap-3 lg:gap-4 xl:gap-5">
-            <button aria-label="Search" aria-expanded={searchOpen} aria-controls="navbar-search" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={() => setSearchOpen((s) => !s)}>
+            <div className="hidden lg:block">
+              <InternationalControls />
+            </div>
+            <button aria-label={t("nav.search")} aria-expanded={searchOpen} aria-controls="navbar-search" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={() => setSearchOpen((s) => !s)}>
               <Search size={18} strokeWidth={1.3} />
             </button>
-            <Link to="/wishlist" aria-label="Wishlist" className="hidden sm:inline-flex items-center justify-center relative min-h-11 min-w-11 hover:text-goldLight transition-colors">
+            <Link to="/wishlist" aria-label={t("nav.wishlist")} className="hidden sm:inline-flex items-center justify-center relative min-h-11 min-w-11 hover:text-goldLight transition-colors">
               <Heart size={18} strokeWidth={1.3} />
               {wishlist.length > 0 && (
-                <span className="absolute -top-2 -right-2 bg-gold text-navy text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-medium">
+                <span className="absolute -top-2 -end-2 rtl:-start-2 rtl:-right-auto bg-gold text-navy text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-medium">
                   {wishlist.length}
                 </span>
               )}
             </Link>
             <Link
               to="/parent-company"
-              aria-label="Parent Company"
+              aria-label={t("nav.parentCompany")}
               title="Xeltrio Technologies — Parent Company"
               className="hidden sm:block xl:hidden hover:text-goldLight transition-colors"
             >
@@ -140,16 +146,16 @@ export default function Navbar() {
             {/* Unified User / Account Icon Dropdown */}
             <div className="relative hidden sm:block" ref={dropdownRef}>
               <button
-                aria-label="Account"
+                aria-label={t("nav.account")}
                 aria-haspopup="true"
                 aria-expanded={userDropdownOpen}
                 onClick={handleUserClick}
-                className="hover:text-goldLight transition-colors flex items-center justify-center space-x-1 min-h-11 px-1"
-                title={user ? `Logged in as ${user.fullName}` : "Account Sign In"}
+                className="hover:text-goldLight transition-colors flex items-center gap-1 min-h-11 px-1"
+                title={user ? t("nav.loggedInAs", { name: user.fullName }) : t("nav.accountSignIn")}
               >
                 <User size={18} strokeWidth={1.3} className={user ? "text-gold" : ""} />
                 {user && (
-                  <span className="text-[11px] font-sans font-medium text-gold ml-1 max-w-[80px] truncate">
+                  <span className="text-[11px] font-sans font-medium text-gold ms-1 max-w-[80px] truncate">
                     {firstName}
                   </span>
                 )}
@@ -162,7 +168,7 @@ export default function Navbar() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 8, scale: 0.96 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 mt-2 w-56 bg-navy2 border border-gold/30 rounded-lg shadow-2xl py-2 z-50 overflow-hidden"
+                    className="absolute end-0 rtl:start-0 rtl:right-auto mt-2 w-56 bg-navy2 border border-gold/30 rounded-lg shadow-2xl py-2 z-50 overflow-hidden"
                   >
                     {/* Header info */}
                     <div className="px-4 py-2.5 border-b border-gold/15 bg-navy/60">
@@ -181,38 +187,38 @@ export default function Navbar() {
                           <Link
                             to="/admin"
                             onClick={() => setUserDropdownOpen(false)}
-                            className="w-full text-left px-4 py-2 text-xs font-sans text-gold hover:text-ivory hover:bg-gold/10 transition-colors flex items-center space-x-2"
+                            className="w-full text-start px-4 py-2 text-xs font-sans text-gold hover:text-ivory hover:bg-gold/10 transition-colors flex items-center gap-2"
                           >
                             <LayoutDashboard size={14} className="text-gold" />
-                            <span>Boutique Dashboard</span>
+                            <span>{t("nav.boutiqueDashboard")}</span>
                           </Link>
 
                           <Link
                             to="/account"
                             onClick={() => setUserDropdownOpen(false)}
-                            className="w-full text-left px-4 py-2 text-xs font-sans text-ivory hover:text-gold hover:bg-gold/10 transition-colors flex items-center space-x-2"
+                            className="w-full text-start px-4 py-2 text-xs font-sans text-ivory hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2"
                           >
                             <UserCheck size={14} className="text-muted" />
-                            <span>My Profile</span>
+                            <span>{t("nav.myProfile")}</span>
                           </Link>
                         </>
                       ) : (
                         <Link
                           to="/account"
                           onClick={() => setUserDropdownOpen(false)}
-                          className="w-full text-left px-4 py-2 text-xs font-sans text-ivory hover:text-gold hover:bg-gold/10 transition-colors flex items-center space-x-2"
+                          className="w-full text-start px-4 py-2 text-xs font-sans text-ivory hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2"
                         >
                           <UserCheck size={14} className="text-gold" />
-                          <span>My Account</span>
+                          <span>{t("nav.myAccount")}</span>
                         </Link>
                       )}
 
                       <button
                         onClick={handleSignOut}
-                        className="w-full text-left px-4 py-2 text-xs font-sans text-rose-300 hover:text-rose-100 hover:bg-rose-950/30 transition-colors flex items-center space-x-2 border-t border-gold/10 mt-1 pt-2"
+                        className="w-full text-start px-4 py-2 text-xs font-sans text-rose-300 hover:text-rose-100 hover:bg-rose-950/30 transition-colors flex items-center gap-2 border-t border-gold/10 mt-1 pt-2"
                       >
                         <LogOut size={14} />
-                        <span>Sign out</span>
+                        <span>{t("nav.signOut")}</span>
                       </button>
                     </div>
                   </motion.div>
@@ -220,15 +226,15 @@ export default function Navbar() {
               </AnimatePresence>
             </div>
 
-            <button aria-label="Bag" className="relative inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={openCart}>
+            <button aria-label={t("nav.bag")} className="relative inline-flex items-center justify-center min-h-11 min-w-11 hover:text-goldLight transition-colors" onClick={openCart}>
               <ShoppingBag size={18} strokeWidth={1.3} />
               {itemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-gold text-navy text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-medium">
+                <span className="absolute -top-2 -end-2 rtl:-start-2 rtl:-right-auto bg-gold text-navy text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-medium">
                   {itemCount}
                 </span>
               )}
             </button>
-            <button className="lg:hidden inline-flex items-center justify-center min-h-11 min-w-11" aria-label="Menu" aria-haspopup="dialog" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+            <button className="lg:hidden inline-flex items-center justify-center min-h-11 min-w-11" aria-label={t("nav.menu")} aria-haspopup="dialog" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
               <Menu size={22} strokeWidth={1.3} />
             </button>
           </div>
@@ -246,14 +252,14 @@ export default function Navbar() {
             >
               <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-4">
                 <label htmlFor="navbar-search-input" className="sr-only">
-                  Search fragrances
+                  {t("nav.searchFragrances")}
                 </label>
                 <input
                   id="navbar-search-input"
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="SEARCH FRAGRANCES…"
+                  placeholder={t("nav.searchPlaceholder")}
                   className="w-full bg-transparent border-b border-gold/30 py-2 text-sm tracking-widest placeholder:text-muted focus:outline-none focus:border-gold"
                 />
               </div>
@@ -270,28 +276,30 @@ export default function Navbar() {
             exit={{ opacity: 0 }}
             role="dialog"
             aria-modal="true"
-            aria-label="Main menu"
+            aria-label={t("nav.menu")}
             className="fixed inset-0 z-50 bg-navy flex flex-col"
           >
             <div className="flex justify-between items-center px-6 py-6 border-b border-gold/20">
               <img src="/logo.png" alt="HM Signature" className="h-9" />
               <button
                 onClick={() => setMenuOpen(false)}
-                aria-label="Close menu"
+                aria-label={t("nav.closeMenu")}
                 autoFocus
                 className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-navy2 transition-colors"
               >
                 <X size={24} />
               </button>
             </div>
-            <div className="flex-1 flex flex-col items-center justify-center gap-8">
+            <div className="flex-1 flex flex-col items-center justify-center gap-8 overflow-y-auto py-8">
               {navLinks.map((l, i) => (
-                <motion.div key={l.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 * i }}>
+                <motion.div key={l.key} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 * i }}>
                   <Link to={l.to} onClick={() => setMenuOpen(false)} className="font-serif text-3xl tracking-wide">
-                    {l.label}
+                    {t(l.key)}
                   </Link>
                 </motion.div>
               ))}
+
+              <InternationalControls variant="stacked" />
 
               <div className="pt-4 flex flex-col items-center gap-4">
                 {user ? (
@@ -300,19 +308,19 @@ export default function Navbar() {
                       <Link
                         to="/admin"
                         onClick={() => setMenuOpen(false)}
-                        className="text-gold font-sans text-sm tracking-widest uppercase flex items-center space-x-2"
+                        className="text-gold font-sans text-sm tracking-widest uppercase flex items-center gap-2"
                       >
                         <LayoutDashboard size={16} />
-                        <span>Boutique Dashboard</span>
+                        <span>{t("nav.boutiqueDashboard")}</span>
                       </Link>
                     )}
                     <Link
                       to="/account"
                       onClick={() => setMenuOpen(false)}
-                      className="text-ivory font-sans text-sm tracking-widest uppercase flex items-center space-x-2"
+                      className="text-ivory font-sans text-sm tracking-widest uppercase flex items-center gap-2"
                     >
                       <User size={16} />
-                      <span>My Account ({firstName})</span>
+                      <span>{t("nav.myAccount")} ({firstName})</span>
                     </Link>
                     <button
                       onClick={() => {
@@ -321,17 +329,17 @@ export default function Navbar() {
                       }}
                       className="text-rose-300 font-sans text-sm tracking-widest uppercase"
                     >
-                      Sign Out
+                      {t("nav.signOut")}
                     </button>
                   </>
                 ) : (
                   <Link
                     to="/login"
                     onClick={() => setMenuOpen(false)}
-                    className="text-gold font-sans text-sm tracking-widest uppercase flex items-center space-x-2 border border-gold/40 px-6 py-2 rounded"
+                    className="text-gold font-sans text-sm tracking-widest uppercase flex items-center gap-2 border border-gold/40 px-6 py-2 rounded"
                   >
                     <User size={16} />
-                    <span>Sign In</span>
+                    <span>{t("nav.signIn")}</span>
                   </Link>
                 )}
               </div>

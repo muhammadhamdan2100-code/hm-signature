@@ -1,46 +1,36 @@
 import LegalPage from "../components/LegalPage";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function TermsConditions() {
+  const { t } = useI18n();
   return (
     <LegalPage
-      title="Terms & Conditions"
-      updated="September 2026"
+      title={t("footer.terms")}
+      updated={t("legal.updatedDate")}
       sections={[
         {
-          title: "Acceptance of Terms",
-          body: [
-            "By accessing or using the HM Signature website, you agree to be bound by these Terms & Conditions. If you do not agree, please do not use this site.",
-          ],
+          title: t("legal.termsAcceptanceTitle"),
+          body: [t("legal.termsAcceptanceBody1")],
         },
         {
-          title: "Orders & Pricing",
-          body: [
-            "All prices are listed in Pakistani Rupees (Rs) and are subject to change without prior notice. We reserve the right to refuse or cancel any order at our discretion, including in cases of suspected fraud or pricing errors.",
-          ],
+          title: t("legal.termsOrdersTitle"),
+          body: [t("legal.termsOrdersBody1")],
         },
         {
-          title: "Product Information",
-          body: [
-            "We make every effort to display our fragrances accurately, including notes, concentration, and packaging. Minor variations in batch or bottle design may occur and do not affect the fragrance quality.",
-          ],
+          title: t("legal.termsProductTitle"),
+          body: [t("legal.termsProductBody1")],
         },
         {
-          title: "Intellectual Property",
-          body: [
-            "All content on this site — including the HM Signature name, logo, product photography, and written copy — is the property of HM Signature and may not be reproduced without permission.",
-          ],
+          title: t("legal.termsIpTitle"),
+          body: [t("legal.termsIpBody1")],
         },
         {
-          title: "Limitation of Liability",
-          body: [
-            "HM Signature is not liable for any indirect or consequential damages arising from the use of our products or website, to the fullest extent permitted by law.",
-          ],
+          title: t("legal.termsLiabilityTitle"),
+          body: [t("legal.termsLiabilityBody1")],
         },
         {
-          title: "Governing Law",
-          body: [
-            "These terms are governed by the laws of Pakistan, and any disputes shall be subject to the exclusive jurisdiction of the courts of Karachi.",
-          ],
+          title: t("legal.termsLawTitle"),
+          body: [t("legal.termsLawBody1")],
         },
       ]}
     />

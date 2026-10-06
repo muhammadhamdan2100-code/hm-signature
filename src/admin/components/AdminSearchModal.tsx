@@ -3,6 +3,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import { Search, Package, ShoppingBag, Users, Tag, ChevronRight, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { formatPKR } from "../../utils/currency";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface AdminSearchModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useI18n();
   const { products, orders, customers, coupons } = useAdminData();
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
@@ -56,21 +58,22 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
       />
 
       <div className="flex min-h-full items-start justify-center p-4 pt-16 text-center">
-        <div className="w-full max-w-2xl transform overflow-hidden rounded-lg bg-navy2 border border-gold/30 text-left shadow-2xl transition-all">
+        <div className="w-full max-w-2xl transform overflow-hidden rounded-lg bg-navy2 border border-gold/30 text-start shadow-2xl transition-all">
           {/* Search Header */}
           <div className="relative border-b border-gold/20 p-4 bg-navy">
-            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gold" />
+            <Search className="w-5 h-5 absolute start-4 top-1/2 -translate-y-1/2 text-gold" />
             <input
               type="text"
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products, SKUs, orders, customers, coupons…"
-              className="w-full bg-transparent pl-10 pr-10 text-sm font-sans text-ivory placeholder-muted focus:outline-none"
+              placeholder={t("admin.adminSearchModal.searchProductsSkusOrdersCustomers")}
+              className="w-full bg-transparent ps-10 pe-10 text-sm font-sans text-ivory placeholder-muted focus:outline-none"
             />
             <button
               onClick={onClose}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-gold"
+              aria-label={t("admin.searchModal.close")}
+              className="absolute end-4 top-1/2 -translate-y-1/2 text-muted hover:text-gold"
             >
               <X className="w-5 h-5" />
             </button>
@@ -80,16 +83,16 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
           <div className="max-h-96 overflow-y-auto p-4 space-y-4 text-xs font-sans">
             {!q ? (
               <div className="py-8 text-center text-muted font-light">
-                Type a product name, order # (e.g., HMS-8921), customer email, or coupon code to quick-navigate.
+                {t("admin.searchModal.quickNavigateHint")}
               </div>
             ) : (
               <>
                 {/* Products */}
                 {matchingProducts.length > 0 && (
                   <div>
-                    <div className="flex items-center space-x-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
+                    <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
                       <Package className="w-3.5 h-3.5" />
-                      <span>Products ({matchingProducts.length})</span>
+                      <span>{t("admin.nav.products")} ({matchingProducts.length})</span>
                     </div>
                     <div className="space-y-1">
                       {matchingProducts.map((p) => (
@@ -98,15 +101,15 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                           onClick={() => handleNavigate(`/admin/products/${p.id}`)}
                           className="flex items-center justify-between p-2.5 rounded bg-navy/50 hover:bg-navy border border-gold/10 hover:border-gold/30 cursor-pointer transition-colors"
                         >
-                          <div className="flex items-center space-x-3">
+                          <div className="flex items-center gap-3">
                             <span className="font-semibold text-ivory">{p.name}</span>
                             <span className="text-[10px] font-mono text-gold bg-navy border border-gold/20 px-1.5 py-0.5 rounded">
                               {p.sku}
                             </span>
                           </div>
-                          <div className="flex items-center space-x-2 text-muted">
+                          <div className="flex items-center gap-2 text-muted">
                             <span>{formatPKR(p.price)}</span>
-                            <ChevronRight className="w-4 h-4 text-gold" />
+                            <ChevronRight className="w-4 h-4 text-gold rtl:rotate-180" />
                           </div>
                         </div>
                       ))}
@@ -117,9 +120,9 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                 {/* Orders */}
                 {matchingOrders.length > 0 && (
                   <div>
-                    <div className="flex items-center space-x-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
+                    <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
                       <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>Orders ({matchingOrders.length})</span>
+                      <span>{t("admin.nav.orders")} ({matchingOrders.length})</span>
                     </div>
                     <div className="space-y-1">
                       {matchingOrders.map((o) => (
@@ -130,11 +133,11 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                         >
                           <div>
                             <span className="font-semibold text-gold font-mono">{o.orderNumber}</span>
-                            <span className="text-muted ml-2">— {o.customerName}</span>
+                            <span className="text-muted ms-2">— {o.customerName}</span>
                           </div>
-                          <div className="flex items-center space-x-2 text-muted">
+                          <div className="flex items-center gap-2 text-muted">
                             <span>{formatPKR(o.total)}</span>
-                            <ChevronRight className="w-4 h-4 text-gold" />
+                            <ChevronRight className="w-4 h-4 text-gold rtl:rotate-180" />
                           </div>
                         </div>
                       ))}
@@ -145,9 +148,9 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                 {/* Customers */}
                 {matchingCustomers.length > 0 && (
                   <div>
-                    <div className="flex items-center space-x-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
+                    <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
                       <Users className="w-3.5 h-3.5" />
-                      <span>Customers ({matchingCustomers.length})</span>
+                      <span>{t("admin.nav.customers")} ({matchingCustomers.length})</span>
                     </div>
                     <div className="space-y-1">
                       {matchingCustomers.map((c) => (
@@ -158,9 +161,9 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                         >
                           <div>
                             <span className="font-semibold text-ivory">{c.name}</span>
-                            <span className="text-muted text-[11px] ml-2">({c.email})</span>
+                            <span className="text-muted text-[11px] ms-2">({c.email})</span>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-gold" />
+                          <ChevronRight className="w-4 h-4 text-gold rtl:rotate-180" />
                         </div>
                       ))}
                     </div>
@@ -170,9 +173,9 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                 {/* Coupons */}
                 {matchingCoupons.length > 0 && (
                   <div>
-                    <div className="flex items-center space-x-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
+                    <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-gold mb-2">
                       <Tag className="w-3.5 h-3.5" />
-                      <span>Coupons ({matchingCoupons.length})</span>
+                      <span>{t("admin.nav.coupons")} ({matchingCoupons.length})</span>
                     </div>
                     <div className="space-y-1">
                       {matchingCoupons.map((cp) => (
@@ -182,7 +185,7 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                           className="flex items-center justify-between p-2.5 rounded bg-navy/50 hover:bg-navy border border-gold/10 hover:border-gold/30 cursor-pointer transition-colors"
                         >
                           <span className="font-mono text-gold font-bold">{cp.code}</span>
-                          <ChevronRight className="w-4 h-4 text-gold" />
+                          <ChevronRight className="w-4 h-4 text-gold rtl:rotate-180" />
                         </div>
                       ))}
                     </div>
@@ -194,7 +197,7 @@ export const AdminSearchModal: React.FC<AdminSearchModalProps> = ({
                   matchingCustomers.length === 0 &&
                   matchingCoupons.length === 0 && (
                     <div className="py-8 text-center text-muted font-light">
-                      No matching records found for "{query}".
+                      {t("admin.searchModal.noMatchingRecords", { query })}
                     </div>
                   )}
               </>

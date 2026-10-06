@@ -51,6 +51,16 @@ export interface Product {
   active?: boolean;
   seoTitle?: string;
   seoDescription?: string;
+  // Phase 8 (8.9, 8.10). All optional and read straight from the products table: a fragrance the
+  // house has not marked up simply has none of these, and nothing here fills the gap.
+  isLimitedEdition?: boolean;
+  editionTotal?: number;
+  editionNumber?: string;
+  editionReleasedOn?: string;
+  editionEndsOn?: string;
+  preOrderEnabled?: boolean;
+  preOrderReleaseOn?: string;
+  preOrderMaxQuantity?: number;
   texture: string; // primary card texture class
   variants?: ProductVariant[];
 }

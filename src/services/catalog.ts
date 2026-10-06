@@ -1,5 +1,12 @@
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import {
+  SOURCE_LANGUAGE_CODE,
+  applyBundle,
+  bundleFor,
+  getActiveContentLanguage,
+  readTranslationMap,
+} from "./localizedContent";
+import {
   products as staticProducts,
   getProductBySlug as getStaticProductBySlug,
   type Product,
@@ -153,6 +160,14 @@ export function mapDBProductToUI(
     seasons: Array.isArray(dbProduct.seasons) ? dbProduct.seasons : [],
     intensity: dbProduct.intensity || undefined,
     scentProfile: dbProduct.scent_profile || undefined,
+    isLimitedEdition: dbProduct.is_limited_edition === true,
+    editionTotal: Number.isFinite(Number(dbProduct.edition_total)) ? Number(dbProduct.edition_total) : undefined,
+    editionNumber: dbProduct.edition_number || undefined,
+    editionReleasedOn: dbProduct.edition_released_on || undefined,
+    editionEndsOn: dbProduct.edition_ends_on || undefined,
+    preOrderEnabled: dbProduct.pre_order_enabled === true,
+    preOrderReleaseOn: dbProduct.pre_order_release_on || undefined,
+    preOrderMaxQuantity: Number.isFinite(Number(dbProduct.pre_order_max_quantity)) ? Number(dbProduct.pre_order_max_quantity) : undefined,
     topNotes,
     heartNotes,
     baseNotes,
@@ -187,7 +202,7 @@ let reviewStatsCache: {
   at: number;
   value: Promise<Map<string, { rating: number; count: number }>>;
 } | null = null;
-let catalogCache: { at: number; value: Promise<Product[]> } | null = null;
+let catalogCache: { at: number; lang: string; value: Promise<Product[]> } | null = null;
 
 async function loadApprovedReviewStats(): Promise<Map<string, { rating: number; count: number }>> {
   const map = new Map<string, { rating: number; count: number }>();
@@ -226,9 +241,22 @@ function fetchApprovedReviewStats() {
  */
 export function getCatalogProducts(): Promise<Product[]> {
   const now = Date.now();
-  if (catalogCache && now - catalogCache.at < CATALOG_CACHE_MS) return catalogCache.value;
+  if (catalogCache && catalogCache.lang === getActiveContentLanguage() && now - catalogCache.at < CATALOG_CACHE_MS) return catalogCache.value;
   const value = loadCatalogProducts();
-  catalogCache = { at: now, value };
+  const language = getActiveContentLanguage();
+  catalogCache = { at: now, lang: language, value };
+  value
+    .then((products) => {
+      // For a translated language, a result whose names are all still the English source means
+      // the bundle read failed — cache that and the shopper stays English for the whole TTL.
+      if (language === "en" || products.length === 0) return;
+      Promise.resolve(readTranslationMap(language)).then((map) => {
+        if (map.size === 0 && catalogCache?.lang === language) catalogCache = null;
+      });
+    })
+    .catch(() => {
+      /* handled by the rejection below */
+    });
   value.catch(() => {
     if (catalogCache?.value === value) catalogCache = null;
   });
@@ -264,20 +292,95 @@ async function loadCatalogProducts(): Promise<Product[]> {
 
     const reviewStats = await fetchApprovedReviewStats();
 
-    return dbProducts.map((p) =>
-      mapDBProductToUI(
-        p,
-        p.product_variants,
-        p.product_images,
-        p.product_fragrance_notes,
-        p.categories?.name,
-        reviewStats.get(p.id)
-      )
+    return localizeCatalog(
+      dbProducts.map((p) =>
+        mapDBProductToUI(
+          p,
+          p.product_variants,
+          p.product_images,
+          p.product_fragrance_notes,
+          p.categories?.name,
+          reviewStats.get(p.id)
+        )
+      ),
+      dbProducts
     );
   } catch (err) {
     console.error("Catalog fetch error, relying on static catalog:", err);
     return staticProducts;
   }
+}
+
+/**
+ * Category and collection names are merchandising copy, so they follow the shopper's
+ * language the same way product copy does — matched by the row's own id.
+ */
+async function localizeRows<T extends { id: string }>(rows: T[], kind: "category" | "collection"): Promise<T[]> {
+  if (getActiveContentLanguage() === SOURCE_LANGUAGE_CODE) return rows;
+  const map = await readTranslationMap();
+  if (map.size === 0) return rows;
+  return rows.map((row) =>
+    applyBundle(row, bundleFor(map, kind, row.id), { name: "name", description: "description" })
+  );
+}
+
+/**
+ * Swaps the marketing copy of already-built catalogue rows for the shopper's language.
+ *
+ * Only text is touched. Prices, SKUs, stock, variant ids, images and review counts come
+ * straight through, so a translation cannot move a number an order depends on. English is
+ * the source language and returns the rows untouched; a missing bundle, a missing field or
+ * an empty string all fall back to the original English text rather than blanking it.
+ */
+async function localizeCatalog(products: Product[], rows: any[]): Promise<Product[]> {
+  if (getActiveContentLanguage() === SOURCE_LANGUAGE_CODE) return products;
+  const map = await readTranslationMap();
+  if (map.size === 0) return products;
+
+  const noteNames = new Map<string, string>();
+  for (const row of rows) {
+    for (const link of row.product_fragrance_notes ?? []) {
+      const note = link?.fragrance_notes;
+      const translated = note?.id ? bundleFor(map, "fragrance_note", note.id).name : undefined;
+      if (note?.name && translated) noteNames.set(note.name, translated);
+    }
+  }
+  const notes = (values: string[] | undefined) =>
+    (values ?? []).map((value) => noteNames.get(value) ?? value);
+
+  return products.map((product) => {
+    const source = rows.find((row) => row.id === product.id);
+    const bundle = bundleFor(map, "product", product.id);
+    const categoryBundle = source?.categories?.id ? bundleFor(map, "category", source.categories.id) : {};
+    const collectionBundle = source?.collections?.id ? bundleFor(map, "collection", source.collections.id) : {};
+    const localized = applyBundle(product, bundle, {
+      name: "name",
+      description: "description",
+      fullDescription: "description",
+      shortDescription: "shortDescription",
+      scentProfile: "scentProfile",
+      fragranceFamily: "fragranceFamily",
+      seoTitle: "seoTitle",
+      seoDescription: "seoDescription",
+    });
+    // Structured data has to describe the page the crawler would see. When a language
+    // bundle translated the visible copy but carries no SEO fields of its own, the
+    // localized text is used for them too, so an Arabic page cannot advertise an
+    // English description to Google.
+    const seoTitle = bundle.seoTitle || bundle.name || localized.seoTitle;
+    const seoDescription =
+      bundle.seoDescription || bundle.description || bundle.shortDescription || localized.seoDescription;
+    return {
+      ...localized,
+      seoTitle,
+      seoDescription,
+      category: categoryBundle.name || localized.category,
+      collection: collectionBundle.name || (localized as any).collection,
+      topNotes: notes(localized.topNotes),
+      heartNotes: notes(localized.heartNotes),
+      baseNotes: notes(localized.baseNotes),
+    };
+  });
 }
 
 /**
@@ -314,14 +417,19 @@ export async function getCatalogProductBySlug(
 
     const stats = await fetchApprovedReviewStats();
 
-    return mapDBProductToUI(
-      p,
-      p.product_variants,
-      p.product_images,
-      p.product_fragrance_notes,
-      p.categories?.name,
-      stats.get(p.id)
-    );
+    return localizeCatalog(
+      [
+        mapDBProductToUI(
+          p,
+          p.product_variants,
+          p.product_images,
+          p.product_fragrance_notes,
+          p.categories?.name,
+          stats.get(p.id)
+        ),
+      ],
+      [p]
+    ).then((rows) => rows[0]);
   } catch (err) {
     console.error(`Error fetching product '${slug}':`, err);
     return getStaticProductBySlug(slug) || null;
@@ -428,14 +536,17 @@ export async function getCatalogCategories(): Promise<CatalogCategory[]> {
       return fallbackCategories;
     }
 
-    return data.map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      description: c.description,
-      imageUrl: c.image_url,
-      active: c.active,
-    }));
+    return localizeRows(
+      data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        description: c.description,
+        imageUrl: c.image_url,
+        active: c.active,
+      })),
+      "category"
+    );
   } catch (e) {
     return fallbackCategories;
   }
@@ -466,15 +577,18 @@ export async function getCatalogCollections(): Promise<CatalogCollection[]> {
       return fallbackCollections;
     }
 
-    return data.map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      description: c.description,
-      bannerUrl: c.banner_url,
-      featured: c.featured,
-      active: c.active,
-    }));
+    return localizeRows(
+      data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        description: c.description,
+        bannerUrl: c.banner_url,
+        featured: c.featured,
+        active: c.active,
+      })),
+      "collection"
+    );
   } catch (e) {
     return fallbackCollections;
   }

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useI18n } from "../i18n/I18nProvider";
 
 function SocialIcon({ path }: { path: string }) {
   return (
@@ -9,6 +10,8 @@ function SocialIcon({ path }: { path: string }) {
 }
 
 export default function Footer() {
+  const { t } = useI18n();
+
   return (
     <footer
       className="pt-20 pb-8 border-t border-gold/25"
@@ -19,40 +22,44 @@ export default function Footer() {
           <div className="col-span-2 lg:col-span-1">
             <img src="/logo.png" alt="HM Signature" className="h-12 mb-4" />
             <p className="text-muted text-sm leading-relaxed max-w-[220px]">
-              Extrait de parfum blends, shipped across Pakistan.
+              {t("footer.tagline")}
             </p>
           </div>
           <div>
-            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">SHOP</h4>
+            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">{t("footer.shop")}</h4>
             <div className="flex flex-col gap-3 text-sm text-muted">
-              <Link to="/collections" className="hover:text-ivory transition-colors">Collections</Link>
-              <Link to="/bestsellers" className="hover:text-ivory transition-colors">Best Sellers</Link>
-              <Link to="/collections" className="hover:text-ivory transition-colors">New Arrivals</Link>
-              <Link to="/collections" className="hover:text-ivory transition-colors">Gift Sets</Link>
+              <Link to="/collections" className="hover:text-ivory transition-colors">{t("footer.collections")}</Link>
+              <Link to="/bestsellers" className="hover:text-ivory transition-colors">{t("footer.bestSellers")}</Link>
+              <Link to="/collections" className="hover:text-ivory transition-colors">{t("footer.newArrivals")}</Link>
+              <Link to="/collections" className="hover:text-ivory transition-colors">{t("footer.giftSets")}</Link>
             </div>
           </div>
           <div>
-            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">DISCOVER</h4>
+            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">{t("footer.discovery")}</h4>
             <div className="flex flex-col gap-3 text-sm text-muted">
-              <Link to="/scent-finder" className="hover:text-ivory transition-colors">Scent Finder</Link>
-              <Link to="/?section=about" className="hover:text-ivory transition-colors">Our Story</Link>
-              <Link to="/journal" className="hover:text-ivory transition-colors">Journal</Link>
-              <Link to="/parent-company" className="hover:text-ivory transition-colors">Parent Company</Link>
-              <Link to="/ingredients" className="hover:text-ivory transition-colors">Ingredients</Link>
+              <Link to="/scent-finder" className="hover:text-ivory transition-colors">{t("footer.scentFinder")}</Link>
+              <Link to="/discover" className="hover:text-ivory transition-colors">{t("footer.discovery")}</Link>
+              <Link to="/gift-finder" className="hover:text-ivory transition-colors">{t("footer.giftFinder")}</Link>
+              <Link to="/gift-cards" className="hover:text-ivory transition-colors">{t("footer.giftCards")}</Link>
+              <Link to="/?section=about" className="hover:text-ivory transition-colors">{t("footer.ourStory")}</Link>
+              <Link to="/journal" className="hover:text-ivory transition-colors">{t("footer.journal")}</Link>
+              <Link to="/boutiques" className="hover:text-ivory transition-colors">{t("footer.boutiques")}</Link>
+              <Link to="/parent-company" className="hover:text-ivory transition-colors">{t("footer.parentCompany")}</Link>
+              <Link to="/ingredients" className="hover:text-ivory transition-colors">{t("footer.ingredients")}</Link>
             </div>
           </div>
           <div>
-            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">CUSTOMER CARE</h4>
+            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">{t("footer.customerCare")}</h4>
             <div className="flex flex-col gap-3 text-sm text-muted">
-              <Link to="/contact" className="hover:text-ivory transition-colors">Contact</Link>
-              <Link to="/faq" className="hover:text-ivory transition-colors">FAQ</Link>
-              <Link to="/shipping-delivery" className="hover:text-ivory transition-colors">Shipping &amp; Delivery</Link>
-              <Link to="/returns-exchanges" className="hover:text-ivory transition-colors">Returns &amp; Exchanges</Link>
-              <Link to="/track-order" className="hover:text-ivory transition-colors">Track Order</Link>
+              <Link to="/contact" className="hover:text-ivory transition-colors">{t("footer.contact")}</Link>
+              <Link to="/faq" className="hover:text-ivory transition-colors">{t("footer.faq")}</Link>
+              <Link to="/shipping-delivery" className="hover:text-ivory transition-colors">{t("footer.shippingDelivery")}</Link>
+              <Link to="/returns-exchanges" className="hover:text-ivory transition-colors">{t("footer.returnsExchanges")}</Link>
+              <Link to="/track-order" className="hover:text-ivory transition-colors">{t("footer.trackOrder")}</Link>
             </div>
           </div>
           <div>
-            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">FOLLOW US</h4>
+            <h4 className="text-goldLight text-xs tracking-[1.5px] mb-5">{t("footer.followUs")}</h4>
             <div className="flex gap-4 text-muted">
               <SocialIcon path="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm5-1.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z" />
               <SocialIcon path="M15 4h-2a4 4 0 0 0-4 4v2H7v3h2v7h3v-7h2.5l.5-3H12V8a1 1 0 0 1 1-1h2z" />
@@ -63,23 +70,23 @@ export default function Footer() {
         </div>
 
         <div className="mt-16 pt-6 border-t border-gold/15 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-muted">
-          <span>© 2026 HM Signature. All Rights Reserved.</span>
+          <span>{t("footer.rights", { year: 2026 })}</span>
           <Link
             to="/parent-company"
             className="flex items-center gap-2 shrink-0 whitespace-nowrap hover:opacity-80 transition-opacity"
-            title="Part of Xeltrio Technologies"
+            title={t("footer.partOf", { brand: "Xeltrio Technologies" })}
           >
-            <span className="text-muted">A brand by</span>
+            <span className="text-muted">{t("footer.aBrandBy")}</span>
             <img
               src="/xeltrio-logo.png"
               alt="Xeltrio Technologies"
               style={{ height: "18px", width: "auto" }}
             />
           </Link>
-          <div className="flex gap-6">
-            <Link to="/privacy-policy" className="hover:text-ivory transition-colors">Privacy Policy</Link>
-            <Link to="/terms-conditions" className="hover:text-ivory transition-colors">Terms &amp; Conditions</Link>
-            <Link to="/refund-policy" className="hover:text-ivory transition-colors">Refund Policy</Link>
+          <div className="flex flex-wrap justify-center sm:justify-end gap-x-6 gap-y-2 min-w-0">
+            <Link to="/privacy-policy" className="hover:text-ivory transition-colors">{t("footer.privacyPolicy")}</Link>
+            <Link to="/terms-conditions" className="hover:text-ivory transition-colors">{t("footer.terms")}</Link>
+            <Link to="/refund-policy" className="hover:text-ivory transition-colors">{t("footer.refundPolicy")}</Link>
           </div>
         </div>
       </div>

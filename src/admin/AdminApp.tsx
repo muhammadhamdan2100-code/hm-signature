@@ -26,8 +26,21 @@ const AbandonedCartsPage = lazy(() => import("./pages/AbandonedCartsPage").then(
 const AutomationsPage = lazy(() => import("./pages/AutomationsPage").then((m) => ({ default: m.AutomationsPage })));
 const StaffPage = lazy(() => import("./pages/StaffPage").then((m) => ({ default: m.StaffPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const InternationalPage = lazy(() => import("./pages/InternationalPage").then((m) => ({ default: m.InternationalPage })));
+const LocalizationPage = lazy(() => import("./pages/LocalizationPage").then((m) => ({ default: m.LocalizationPage })));
+const PaymentMethodsPage = lazy(() => import("./pages/PaymentMethodsPage").then((m) => ({ default: m.PaymentMethodsPage })));
+const BoutiquesPage = lazy(() => import("./pages/BoutiquesPage").then((m) => ({ default: m.BoutiquesPage })));
+const BrandExperiencePage = lazy(() => import("./pages/BrandExperiencePage").then((m) => ({ default: m.BrandExperiencePage })));
+const DiscoveryTagsPage = lazy(() => import("./pages/DiscoveryTagsPage").then((m) => ({ default: m.DiscoveryTagsPage })));
+const RewardsAdminPage = lazy(() => import("./pages/RewardsAdminPage").then((m) => ({ default: m.RewardsAdminPage })));
+const GiftCardsAdminPage = lazy(() => import("./pages/GiftCardsAdminPage").then((m) => ({ default: m.GiftCardsAdminPage })));
+const PreOrdersPage = lazy(() => import("./pages/PreOrdersPage").then((m) => ({ default: m.PreOrdersPage })));
+const WaitlistsPage = lazy(() => import("./pages/WaitlistsPage").then((m) => ({ default: m.WaitlistsPage })));
 const SeoPage = lazy(() => import("./pages/SeoPage").then((m) => ({ default: m.SeoPage })));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
+const IntelligencePage = lazy(() => import("./pages/IntelligencePage").then((m) => ({ default: m.IntelligencePage })));
+const ForecastingPage = lazy(() => import("./pages/ForecastingPage").then((m) => ({ default: m.ForecastingPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 
 function WorkspaceFallback() {
   return (
@@ -62,6 +75,7 @@ export default function AdminApp() {
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="payments/refunds" element={<RefundsPage />} />
           <Route path="payments/reconciliation" element={<ReconciliationPage />} />
+          <Route path="payments/methods" element={<PaymentMethodsPage />} />
           <Route path="homepage" element={<HomepageCmsPage />} />
           <Route path="marketing" element={<MarketingPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
@@ -69,8 +83,24 @@ export default function AdminApp() {
           <Route path="automations" element={<AutomationsPage />} />
           <Route path="staff" element={<StaffPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="international" element={<InternationalPage />} />
+          <Route path="localization" element={<LocalizationPage />} />
+          <Route path="boutiques" element={<BoutiquesPage />} />
+          <Route path="brand" element={<BrandExperiencePage />} />
+          <Route path="discovery" element={<DiscoveryTagsPage />} />
+          <Route path="rewards" element={<RewardsAdminPage />} />
+          <Route path="gift-cards" element={<GiftCardsAdminPage />} />
+          <Route path="preorders" element={<PreOrdersPage />} />
+          <Route path="waitlists" element={<WaitlistsPage />} />
           <Route path="seo" element={<SeoPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
+          {/* Phase 9. The three report windows share ReportsPage; each address is
+              gated by its own permission so a role lands only in what it may read. */}
+          <Route path="intelligence" element={<IntelligencePage />} />
+          <Route path="forecasting" element={<ForecastingPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="reports/operations" element={<ReportsPage initialSection="payments" />} />
+          <Route path="reports/product-performance" element={<ReportsPage initialSection="products" />} />
           <Route path="*" element={<Navigate to="dashboard" replace />} />
         </Route>
       </Routes>

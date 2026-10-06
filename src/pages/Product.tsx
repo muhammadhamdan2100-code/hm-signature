@@ -10,6 +10,7 @@ import {
 } from "../data/products";
 import { getCatalogProductBySlug, getCatalogProducts, getProductReviews, submitProductReview } from "../services/catalog";
 import { useSeoMeta } from "../hooks/useSeoMeta";
+import { useI18n } from "../i18n/I18nProvider";
 import { useRecentlyViewed } from "../hooks/useRecentlyViewed";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
@@ -18,13 +19,20 @@ import TexturePanel from "../components/TexturePanel";
 import Bottle from "../components/Bottle";
 import Pedestal from "../components/Pedestal";
 import ProductVisual from "../components/ProductVisual";
-import { formatPKR } from "../utils/currency";
+import { useCurrency } from "../context/CurrencyContext";
+import StructuredData from "../components/StructuredData";
+import { breadcrumbData, productData } from "../lib/seo";
 import { effectiveVariantPrice } from "../data/products";
 import ProductCard from "../components/ProductCard";
+import RecommendationRail from "../components/RecommendationRail";
+import LuxuryProductActions from "../components/LuxuryProductActions";
+import { recordProductView } from "../services/recommendations";
+import { captureProductView } from "../services/analyticsCapture";
 
 const tabs = ["DESCRIPTION", "INGREDIENTS", "HOW TO WEAR", "SHIPPING & RETURNS", "REVIEWS"] as const;
 
 export default function ProductPage() {
+  const { t, language } = useI18n();
   const { slug } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState<Product | null>(() => getStaticProductBySlug(slug || "") || null);
@@ -32,6 +40,7 @@ export default function ProductPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const { addToCart, freeShippingThreshold } = useCart();
+  const { format, country } = useCurrency();
   const { toggleWishlist, isWishlisted } = useWishlist();
   const { recentIds, pushRecent } = useRecentlyViewed();
   const [activeImage, setActiveImage] = useState(0);
@@ -63,14 +72,25 @@ export default function ProductPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [language.code]);
 
   const isUuidId = !!product && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id);
+
+  // The destination rule carries the window; store-wide settings are the fallback.
+  const deliveryEstimate =
+    country && country.enabled && country.deliveryDaysMin && country.deliveryDaysMax
+      ? t("shipping.daysRange", { from: country.deliveryDaysMin, to: country.deliveryDaysMax })
+      : estimatedDays;
 
   useSeoMeta(
     `/product/${slug}`,
     product ? `${product.name} — HM Signature` : "HM Signature",
-    product?.description
+    product?.description,
+    {
+      type: "product",
+      image: product?.photos?.[0],
+      canonical: `/product/${slug}`,
+    }
   );
 
   useEffect(() => {
@@ -98,6 +118,12 @@ export default function ProductPage() {
             setProduct(foundProduct);
             // LIFO, deduped, capped at 8 — handled inside the hook.
             pushRecent(foundProduct.id);
+            // 8.1 — the same view, kept server-side for the signed-in customer only, so the
+            // rails can be built from a real history rather than one browser.
+            void recordProductView(foundProduct.id);
+            // 9.4 — the same view for the funnel, recorded for guests too and with no
+            // identity attached unless the shopper is signed in.
+            captureProductView(foundProduct.id);
           } else {
             setProduct(null);
           }
@@ -114,7 +140,9 @@ export default function ProductPage() {
     return () => {
       mounted = false;
     };
-  }, [slug]);
+    // The catalogue is re-read on language change: the translated name/description come from
+    // the database, so a switched language has to refetch rather than reuse cached rows.
+  }, [slug, language.code]);
 
   const availableVariants = product?.variants && product.variants.length > 0
     ? product.variants.filter((v) => v.active !== false)
@@ -137,39 +165,6 @@ export default function ProductPage() {
   const lowStockThreshold = selectedVariant?.lowStockThreshold;
   const isLowStock = currentStock > 0 && lowStockThreshold != null && currentStock <= lowStockThreshold;
 
-  // "Similar fragrances" ranked only by real catalogue attributes:
-  // shared family (3), same gender (2), same category (1), +1 per shared note.
-  const similar = useMemo(() => {
-    if (!product) return [] as Product[];
-    const notesOf = (p: Product) =>
-      new Set(
-        [...p.topNotes, ...p.heartNotes, ...p.baseNotes]
-          .map((n) => n.trim().toLowerCase())
-          .filter(Boolean)
-      );
-    const selfNotes = notesOf(product);
-    const selfFamily = product.fragranceFamily || product.category;
-    return allProducts
-      .filter((p) => p.id !== product.id)
-      .map((p) => {
-        const otherNotes = notesOf(p);
-        let sharedNotes = 0;
-        selfNotes.forEach((n) => {
-          if (otherNotes.has(n)) sharedNotes += 1;
-        });
-        const score =
-          ((p.fragranceFamily || p.category) === selfFamily ? 3 : 0) +
-          (p.gender === product.gender ? 2 : 0) +
-          (p.category === product.category ? 1 : 0) +
-          sharedNotes;
-        return { p, score };
-      })
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score || b.p.rating - a.p.rating)
-      .slice(0, 3)
-      .map((x) => x.p);
-  }, [allProducts, product]);
-
   const recentProducts = useMemo(() => {
     if (!product) return [] as Product[];
     return recentIds
@@ -179,16 +174,16 @@ export default function ProductPage() {
   }, [recentIds, allProducts, product]);
 
   const declaredNoteTiers = [
-    { label: "TOP NOTES", notes: product?.topNotes ?? [] },
-    { label: "HEART NOTES", notes: product?.heartNotes ?? [] },
-    { label: "BASE NOTES", notes: product?.baseNotes ?? [] },
+    { label: t("product.topNotes"), notes: product?.topNotes ?? [] },
+    { label: t("product.heartNotes"), notes: product?.heartNotes ?? [] },
+    { label: t("product.baseNotes"), notes: product?.baseNotes ?? [] },
   ].filter((t) => t.notes.length > 0);
 
   if (isLoading && !product) {
     return (
       <div className="pt-40 pb-32 flex flex-col items-center justify-center min-h-[50vh] bg-navy">
         <div className="w-10 h-10 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-xs font-mono uppercase tracking-[2px] text-gold">Loading Atelier Creation…</p>
+        <p className="text-xs font-mono uppercase tracking-[2px] text-gold">{t("product.loadingAtelierCreation")}</p>
       </div>
     );
   }
@@ -196,9 +191,9 @@ export default function ProductPage() {
   if (!product) {
     return (
       <div className="pt-40 pb-32 text-center bg-navy min-h-[60vh] flex flex-col items-center justify-center">
-        <p className="text-muted mb-6 font-serif text-lg">Fragrance not found.</p>
+        <p className="text-muted mb-6 font-serif text-lg">{t("product.fragranceNotFound")}</p>
         <button onClick={() => navigate("/collections")} className="btn-gold text-xs">
-          BACK TO COLLECTIONS
+          {t("product.backToCollections")}
         </button>
       </div>
     );
@@ -206,11 +201,29 @@ export default function ProductPage() {
 
   const wishlisted = isWishlisted(product.id);
 
+  // The tab identifiers stay in English — they are what the panel conditions compare
+  // against — only the rendered label follows the shopper's language.
+  const tabLabel: Record<(typeof tabs)[number], string> = {
+    DESCRIPTION: t("product.tabDescription"),
+    INGREDIENTS: t("product.tabIngredients"),
+"HOW TO WEAR": t("product.tabHowToWear"),
+"SHIPPING & RETURNS": t("product.tabShippingReturns"),
+    REVIEWS: t("product.tabReviews"),
+  };
+
   return (
     <div className="pt-24 bg-navy">
+      <StructuredData data={productData(product)} />
+      <StructuredData
+        data={breadcrumbData([
+          { name: t("common.home"), path: "/" },
+          { name: t("nav.collections"), path: "/collections" },
+          { name: product.name, path: `/product/${product.slug}` },
+        ])}
+      />
       <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-14">
         <div className="text-xs text-muted mb-10 tracking-wide">
-          <Link to="/" className="hover:text-gold">Home</Link> / <Link to="/collections" className="hover:text-gold">Collections</Link> / <span className="text-ivory">{product.name}</span>
+          <Link to="/" className="hover:text-gold">{t("common.home")}</Link> / <Link to="/collections" className="hover:text-gold">{t("nav.collections")}</Link> / <span className="text-ivory">{product.name}</span>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-14">
@@ -228,12 +241,12 @@ export default function ProductPage() {
                 </TexturePanel>
               )}
             </motion.div>
-            <div className="flex gap-3 mt-4 overflow-x-auto scrollbar-none" role="group" aria-label="Product image thumbnails">
+            <div className="flex gap-3 mt-4 overflow-x-auto scrollbar-none" role="group" aria-label={t("product.imageThumbnails")}>
               {(product.photos || product.images).map((_, i) => (
                 <button
                   key={i}
                   onClick={() => setActiveImage(i)}
-                  aria-label={`View image ${i + 1} of ${(product.photos || product.images).length}`}
+                  aria-label={t("product.viewImageOf", { index: i + 1, total: (product.photos || product.images).length })}
                   aria-pressed={activeImage === i}
                   className={`w-20 h-20 shrink-0 border min-h-[44px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
                     activeImage === i ? "border-gold" : "border-gold/20"
@@ -264,22 +277,22 @@ export default function ProductPage() {
                     ))}
                   </div>
                   <span className="text-xs text-muted">
-                    {product.rating.toFixed(1)} ({product.reviewCount} {product.reviewCount === 1 ? "review" : "reviews"})
+                    {product.rating.toFixed(1)} ({product.reviewCount} {product.reviewCount === 1 ? t("product.reviewWord") : t("product.reviewsWord")})
                   </span>
                 </>
               ) : (
-                <span className="text-xs text-muted italic">Not yet rated by clients</span>
+                <span className="text-xs text-muted italic">{t("product.notYetRated")}</span>
               )}
             </div>
             <div className="text-3xl text-goldLight font-serif mb-6">
-              {currentPrice > 0 ? formatPKR(currentPrice) : "Price on request"}
+              {currentPrice > 0 ? format(currentPrice) : t("product.priceOnRequest")}
             </div>
             <p className="text-muted leading-[1.9] mb-8 max-w-md">{product.description}</p>
 
             {/* Bottle Size Selector with per-size availability */}
             <div className="mb-8 space-y-3 font-sans">
               <div className="flex items-center justify-between text-xs tracking-widest text-muted uppercase">
-                <span id="size-selector-label">SELECT BOTTLE SIZE:</span>
+                <span id="size-selector-label">{t("product.selectBottleSize")}</span>
                 <span className="text-gold font-bold font-mono text-sm">{selectedSize}</span>
               </div>
               <div role="group" aria-labelledby="size-selector-label" className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -288,14 +301,14 @@ export default function ProductPage() {
                   const isOutOfStock = v.stock <= 0;
                   const isLow =
                     !isOutOfStock && v.lowStockThreshold != null && v.stock <= v.lowStockThreshold;
-                  const availability = isOutOfStock ? "Sold out" : isLow ? `${v.stock} left` : "In stock";
+                  const availability = isOutOfStock ? t("product.soldOutWord") : isLow ? t("product.nLeft", { count: v.stock }) : t("common.inStock");
                   return (
                     <button
                       key={v.size}
                       type="button"
                       disabled={isOutOfStock}
                       aria-pressed={isSelected}
-                      aria-label={`${v.size}, ${v.price > 0 ? formatPKR(effectiveVariantPrice(v)) : "price on request"}, ${availability}`}
+                      aria-label={`${v.size}, ${v.price > 0 ? format(effectiveVariantPrice(v)) : t("product.priceOnRequestLower")}, ${availability}`}
                       onClick={() => setSelectedSize(v.size)}
                       className={`min-h-[44px] py-3 px-2 rounded-lg border text-center transition-all flex flex-col items-center justify-center space-y-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
                         isSelected
@@ -306,7 +319,7 @@ export default function ProductPage() {
                       }`}
                     >
                       <span className="text-xs font-mono font-bold tracking-wider">{v.size}</span>
-                      <span className="text-[10px] font-mono text-goldLight">{formatPKR(effectiveVariantPrice(v))}</span>
+                      <span className="text-[10px] font-mono text-goldLight">{format(effectiveVariantPrice(v))}</span>
                       <span
                         className={`text-[9px] font-mono tracking-wide ${
                           isOutOfStock ? "text-rose-400/70" : isLow ? "text-gold" : "text-emerald-400/80"
@@ -324,46 +337,46 @@ export default function ProductPage() {
             <div className="grid grid-cols-2 gap-4 mb-8 text-sm border-t border-gold/10 pt-6">
               {(product.fragranceFamily || product.category) && (
                 <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-1">FRAGRANCE FAMILY</div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.fragranceFamilyLabel")}</div>
                   <div>{product.fragranceFamily || product.category}</div>
                 </div>
               )}
               {product.intensity && (
                 <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-1">INTENSITY</div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.intensityLabel")}</div>
                   <div>{product.intensity}</div>
                 </div>
               )}
               {(product.occasions?.length ?? 0) > 0 && (
                 <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-1">OCCASION</div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.occasionLabel")}</div>
                   <div>{product.occasions!.join(" · ")}</div>
                 </div>
               )}
               {(product.seasons?.length ?? 0) > 0 && (
                 <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-1">SEASON</div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.seasonLabel")}</div>
                   <div>{product.seasons!.join(" · ")}</div>
                 </div>
               )}
               {product.concentration && (
                 <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-1">CONCENTRATION</div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.concentrationLabel")}</div>
                   <div>{product.concentration}</div>
                 </div>
               )}
               {product.scentProfile && (
                 <div>
-                  <div className="text-[11px] text-muted tracking-widest mb-1">SCENT PROFILE</div>
+                  <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.scentProfileLabel")}</div>
                   <div>{product.scentProfile}</div>
                 </div>
               )}
               <div>
-                <div className="text-[11px] text-muted tracking-widest mb-1">SELECTED SIZE</div>
+                <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.selectedSizeLabel")}</div>
                 <div className="text-gold font-bold font-mono">{selectedSize}</div>
               </div>
               <div>
-                <div className="text-[11px] text-muted tracking-widest mb-1">AVAILABILITY</div>
+                <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.availabilityLabel")}</div>
                 <div
                   role="status"
                   className={`font-medium ${
@@ -371,24 +384,24 @@ export default function ProductPage() {
                   }`}
                 >
                   {currentStock <= 0
-                    ? "OUT OF STOCK"
+                    ? t("product.availabilityOutOfStock")
                     : isLowStock
-                    ? `ONLY ${currentStock} LEFT`
-                    : `IN STOCK (${currentStock} available)`}
+                    ? t("product.availabilityOnlyLeft", { count: currentStock })
+                    : t("product.availabilityInStockCount", { count: currentStock })}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-muted tracking-widest mb-1">GENDER</div>
+                <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.genderLabel")}</div>
                 <div className="capitalize">{product.gender}</div>
               </div>
             </div>
 
             <div className="flex items-center gap-4 mb-6">
-              <div className="flex items-center border border-gold/30 rounded" role="group" aria-label="Quantity">
+              <div className="flex items-center border border-gold/30 rounded" role="group" aria-label={t("common.quantity")}>
                 <button
                   className="w-11 h-11 flex items-center justify-center hover:text-gold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  aria-label="Decrease quantity"
+                  aria-label={t("product.decreaseQuantity")}
                   disabled={qty <= 1}
                 >
                   <Minus size={14} />
@@ -397,7 +410,7 @@ export default function ProductPage() {
                 <button
                   className="w-11 h-11 flex items-center justify-center hover:text-gold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                   onClick={() => setQty((q) => q + 1)}
-                  aria-label="Increase quantity"
+                  aria-label={t("product.increaseQuantity")}
                 >
                   <Plus size={14} />
                 </button>
@@ -405,7 +418,7 @@ export default function ProductPage() {
               <button
                 onClick={() => toggleWishlist(product.id)}
                 aria-pressed={wishlisted}
-                aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                aria-label={wishlisted ? t("product.removeFromWishlistShort") : t("product.addToWishlistShort")}
                 className="w-12 h-12 border border-gold/30 flex items-center justify-center hover:border-gold shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               >
                 <Heart size={16} fill={wishlisted ? "#C8A96B" : "none"} color={wishlisted ? "#C8A96B" : "#F6F1E7"} />
@@ -416,9 +429,9 @@ export default function ProductPage() {
               <button
                 onClick={() => addToCart(product, selectedSize, qty, currentPrice, selectedVariant?.sku)}
                 disabled={currentStock <= 0}
-                className="flex-1 btn-gold-fill text-center disabled:opacity-40"
+                className="flex-1 min-w-0 btn-gold-fill text-center disabled:opacity-40"
               >
-                ADD TO BAG ({selectedSize})
+                {t("product.addToBagSize", { size: selectedSize })}
               </button>
               <button
                 disabled={currentStock <= 0}
@@ -426,24 +439,32 @@ export default function ProductPage() {
                   addToCart(product, selectedSize, qty, currentPrice, selectedVariant?.sku);
                   navigate("/checkout");
                 }}
-                className="flex-1 btn-gold text-center disabled:opacity-40"
+                className="flex-1 min-w-0 btn-gold text-center disabled:opacity-40"
               >
-                BUY NOW
+                {t("product.buyNow")}
               </button>
             </div>
 
+            {/* Phase 8 (8.9, 8.10, 8.11): edition, pre-order and waitlist, each shown only when the
+                database says that fragrance is one of them. */}
+            <LuxuryProductActions
+              product={product}
+              variantId={selectedVariant?.id || null}
+              sizeLabel={selectedSize}
+              totalStock={availableVariants.reduce((sum, variant) => sum + (variant.stock || 0), 0)}
+            />
+
             <div className="flex items-center gap-3 text-xs text-muted border-t border-gold/15 pt-6">
               <Truck size={16} className="text-gold" aria-hidden="true" />
-              Free shipping on orders over {formatPKR(freeShippingThreshold)} · Ships in {estimatedDays.toLowerCase()}
+              {t("product.freeShippingShipsIn", { amount: format(freeShippingThreshold), estimate: deliveryEstimate.toLowerCase() })}
             </div>
 
             {/* Fragrance pyramid — only tiers the catalogue actually declares */}
             <div className="mt-10 border-t border-gold/15 pt-8">
-              <h3 className="text-xs tracking-[2px] text-goldLight mb-6">FRAGRANCE PYRAMID</h3>
+              <h3 className="text-xs tracking-[2px] text-goldLight mb-6">{t("product.fragrancePyramid")}</h3>
               {declaredNoteTiers.length === 0 ? (
                 <p className="text-sm text-muted italic">
-                  The full note pyramid for this fragrance hasn't been listed yet. Once our perfumers
-                  publish it, it will appear here.
+                  {t("product.pyramidEmpty")}
                 </p>
               ) : (
                 <div
@@ -466,18 +487,18 @@ export default function ProductPage() {
 
         {/* Tabs */}
         <div className="mt-20 border-t border-gold/15 pt-10">
-          <div className="flex flex-wrap gap-2 sm:gap-6 mb-8 border-b border-gold/15 pb-4" role="tablist" aria-label="Fragrance details">
-            {tabs.map((t) => (
+          <div className="flex flex-wrap gap-2 sm:gap-6 mb-8 border-b border-gold/15 pb-4" role="tablist" aria-label={t("product.fragranceDetailsTabs")}>
+            {tabs.map((tabId) => (
               <button
-                key={t}
+                key={tabId}
                 role="tab"
-                aria-selected={tab === t}
-                onClick={() => setTab(t)}
+                aria-selected={tab === tabId}
+                onClick={() => setTab(tabId)}
                 className={`text-xs tracking-[1.5px] px-2 sm:px-0 py-2 min-h-[44px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
-                  tab === t ? "text-gold border-b border-gold" : "text-muted hover:text-ivory"
+                  tab === tabId ? "text-gold border-b border-gold" : "text-muted hover:text-ivory"
                 }`}
               >
-                {t}
+                {tabLabel[tabId]}
               </button>
             ))}
           </div>
@@ -488,27 +509,26 @@ export default function ProductPage() {
                 <p>{product.ingredients}</p>
               ) : (
                 <p className="italic">
-                  The full ingredient declaration for this fragrance is being prepared by the atelier.
+                  {t("product.ingredientsEmpty")}
                 </p>
               ))}
             {tab === "HOW TO WEAR" && (
               <p>
-                Apply to pulse points — wrists, neck and behind the ears — after showering, when skin is
-                warm. {product.name} is an extrait de parfum, so it is highly concentrated: start with 2–3
-                sprays and add only if you want more presence.
+                {t("product.howToWearBody", { name: product.name })}
               </p>
             )}
             {tab === "SHIPPING & RETURNS" && (
               <p>
-                Free standard shipping on all orders over {formatPKR(freeShippingThreshold)}. Orders typically ship
-                within {estimatedDays.toLowerCase()}. Unopened items may be returned within 30 days of delivery for a
-                full refund.
+                {t("product.shippingReturnsBody", {
+                  amount: format(freeShippingThreshold),
+                  estimate: deliveryEstimate.toLowerCase(),
+                })}
               </p>
             )}
             {tab === "REVIEWS" && (
               <div className="space-y-6">
                 {dbReviews.length === 0 && product.reviews.length === 0 && (
-                  <p className="text-xs text-muted italic">No reviews yet. Be the first to share your impression.</p>
+                  <p className="text-xs text-muted italic">{t("product.noReviewsYet")}</p>
                 )}
                 {dbReviews.map((r, i) => (
                   <div key={`db-${i}`} className="border-b border-gold/10 pb-5">
@@ -519,7 +539,7 @@ export default function ProductPage() {
                     </div>
                     <p className="text-ivory/90 mb-2">&ldquo;{r.text}&rdquo;</p>
                     <div className="text-xs">
-                      {r.name} {r.verified && <span className="text-goldLight">· Verified Purchase</span>}
+                      {r.name} {r.verified && <span className="text-goldLight">{t("product.verifiedPurchase")}</span>}
                     </div>
                   </div>
                 ))}
@@ -532,7 +552,7 @@ export default function ProductPage() {
                     </div>
                     <p className="text-ivory/90 mb-2">&ldquo;{r.text}&rdquo;</p>
                     <div className="text-xs">
-                      {r.name} {r.verified && <span className="text-goldLight">· Verified Purchase</span>}
+                      {r.name} {r.verified && <span className="text-goldLight">{t("product.verifiedPurchase")}</span>}
                     </div>
                   </div>
                 ))}
@@ -543,7 +563,7 @@ export default function ProductPage() {
                     onSubmit={async (e) => {
                       e.preventDefault();
                       if (!product || reviewComment.trim().length < 5) {
-                        setReviewMessage({ ok: false, text: "Please write a few words about the fragrance." });
+                        setReviewMessage({ ok: false, text: t("validation.reviewCommentRequired") });
                         return;
                       }
                       setReviewBusy(true);
@@ -558,20 +578,20 @@ export default function ProductPage() {
                       if (res.success) {
                         setReviewTitle("");
                         setReviewComment("");
-                        setReviewMessage({ ok: true, text: "Thank you — your review is awaiting approval." });
+                        setReviewMessage({ ok: true, text: t("product.reviewAwaitingApproval") });
                       } else {
-                        setReviewMessage({ ok: false, text: res.error || "Could not submit your review." });
+                        setReviewMessage({ ok: false, text: res.error || t("product.reviewSubmitFailed") });
                       }
                     }}
                   >
-                    <h4 className="text-xs tracking-[2px] text-goldLight">WRITE A REVIEW</h4>
+                    <h4 className="text-xs tracking-[2px] text-goldLight">{t("product.writeAReview")}</h4>
                     <div className="flex gap-1">
                       {Array.from({ length: 5 }).map((_, s) => (
                         <button
                           key={s}
                           type="button"
                           onClick={() => setReviewRating(s + 1)}
-                          aria-label={`Rate ${s + 1} stars`}
+                          aria-label={t("product.rateStars", { count: s + 1 })}
                         >
                           <Star size={16} fill={s < reviewRating ? "#E0C27A" : "none"} color="#E0C27A" />
                         </button>
@@ -581,13 +601,13 @@ export default function ProductPage() {
                       type="text"
                       value={reviewTitle}
                       onChange={(e) => setReviewTitle(e.target.value)}
-                      placeholder="Title (optional)"
+                      placeholder={t("product.reviewTitlePlaceholder")}
                       className="w-full bg-transparent border border-gold/25 rounded-sm px-3 py-2 text-sm text-ivory placeholder:text-muted/60 focus:outline-none focus:border-gold"
                     />
                     <textarea
                       value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
-                      placeholder="Share your impression of this fragrance…"
+                      placeholder={t("product.reviewCommentPlaceholder")}
                       rows={3}
                       className="w-full bg-transparent border border-gold/25 rounded-sm px-3 py-2 text-sm text-ivory placeholder:text-muted/60 focus:outline-none focus:border-gold"
                     />
@@ -601,7 +621,7 @@ export default function ProductPage() {
                       disabled={reviewBusy}
                       className="btn-gold text-xs px-6 py-2 disabled:opacity-40"
                     >
-                      {reviewBusy ? "SUBMITTING…" : "SUBMIT REVIEW"}
+                      {reviewBusy ? t("product.submittingReview") : t("product.submitReview")}
                     </button>
                   </form>
                 )}
@@ -610,41 +630,25 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* Similar fragrances — ranked by shared family, notes and gender */}
-        {similar.length > 0 && (
-          <div className="mt-24">
-            <h3 className="font-serif text-3xl mb-10">Similar Fragrances</h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {similar.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* 8.2 — ranked by the database from this fragrance's declared attributes plus the
+            signed-in shopper's real history; falls back to the house selection rather than
+            disappearing when nothing shares a family, note or category. */}
+        <RecommendationRail kind="you_may_also_like" productId={product.id} recentIds={recentIds} limit={3} showReasons />
+
+        {/* Only appears once two fragrances have genuinely been bought together. */}
+        <RecommendationRail kind="frequently_paired" productId={product.id} limit={3} />
 
         {/* Recently viewed — LIFO from localStorage, excluding this fragrance */}
         {recentProducts.length > 0 && (
           <div className="mt-24">
             <div className="flex items-center justify-between mb-10">
-              <h3 className="font-serif text-3xl">Recently Viewed</h3>
+              <h3 className="font-serif text-3xl">{t("product.recentlyViewed")}</h3>
               <Link to="/collections" className="link-underline whitespace-nowrap">
-                ALL FRAGRANCES →
+                {t("product.allFragrances")}
               </Link>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
               {recentProducts.slice(0, 3).map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* When nothing shares a family, note or gender, offer a breadth pick */}
-        {similar.length === 0 && recentProducts.length === 0 && allProducts.length > 1 && (
-          <div className="mt-24">
-            <h3 className="font-serif text-3xl mb-10">You May Also Love</h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {allProducts.filter((p) => p.id !== product.id).slice(0, 3).map((p) => (
                 <ProductCard key={p.id} product={p} />
               ))}
             </div>

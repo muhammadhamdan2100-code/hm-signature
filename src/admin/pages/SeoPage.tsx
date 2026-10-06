@@ -4,8 +4,10 @@ import { DataTable, type Column } from "../components/DataTable";
 import { GoogleSeoPreview } from "../components/GoogleSeoPreview";
 import { Modal } from "../components/Modal";
 import { Edit } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const SeoPage: React.FC = () => {
+  const { t } = useI18n();
   const { seoEntries, updateSeoEntry } = useAdminData();
 
   const [editingEntry, setEditingEntry] = useState<SeoEntry | null>(null);
@@ -36,7 +38,7 @@ export const SeoPage: React.FC = () => {
 
   const columns: Column<SeoEntry>[] = [
     {
-      header: "Page Target",
+      header: t("admin.seo.pageTarget"),
       accessor: (s) => (
         <div>
           <h4 className="font-serif font-bold text-sm text-ivory">{s.page}</h4>
@@ -46,7 +48,7 @@ export const SeoPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Google Meta Title",
+      header: t("admin.seo.googleMetaTitle"),
       accessor: (s) => (
         <span className="text-xs font-sans text-ivory line-clamp-1 max-w-xs">
           {s.metaTitle}
@@ -54,7 +56,7 @@ export const SeoPage: React.FC = () => {
       ),
     },
     {
-      header: "Meta Description",
+      header: t("admin.seo.metaDescription"),
       accessor: (s) => (
         <p className="text-xs text-muted font-light line-clamp-1 max-w-md">
           {s.metaDescription}
@@ -62,7 +64,7 @@ export const SeoPage: React.FC = () => {
       ),
     },
     {
-      header: "Canonical URL",
+      header: t("admin.seo.canonicalUrl"),
       accessor: (s) => (
         <span className="text-[11px] font-mono text-emerald-400 truncate max-w-[150px] block">
           {s.canonicalUrl}
@@ -70,19 +72,19 @@ export const SeoPage: React.FC = () => {
       ),
     },
     {
-      header: "Action",
+      header: t("admin.seo.action"),
       accessor: (s) => (
         <div className="flex items-center justify-end">
           <button
             onClick={() => handleOpenEdit(s)}
-            className="px-3 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center space-x-1"
+            className="px-3 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center gap-1"
           >
             <Edit className="w-3.5 h-3.5" />
-            <span>Manage SEO</span>
+            <span>{t("admin.seo.manageSeo")}</span>
           </button>
         </div>
       ),
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
@@ -92,13 +94,13 @@ export const SeoPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            SEARCH ENGINE OPTIMIZATION & OPEN GRAPH
+            {t("admin.seo.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            SEO Indexing & Metadata Control
+            {t("admin.seo.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manage page titles, meta descriptions, canonical links, and social card preview tags across all website routes.
+            {t("admin.seo.introBody")}
           </p>
         </div>
       </div>
@@ -108,22 +110,22 @@ export const SeoPage: React.FC = () => {
         columns={columns}
         data={seoEntries}
         keyExtractor={(s) => s.id}
-        searchPlaceholder="Search page name, meta title..."
-        emptyMessage="No SEO records"
+        searchPlaceholder={t("admin.seo.searchPageNameMetaTitle")}
+        emptyMessage={t("admin.seo.noSeoRecords")}
       />
 
       {/* Edit SEO Modal */}
       <Modal
         isOpen={editingEntry !== null}
         onClose={() => setEditingEntry(null)}
-        title={`Edit SEO Metadata — ${editingEntry?.page || ""}`}
+        title={t("admin.seo.editSeoMetadataNamed", { name: editingEntry?.page || "" })}
         maxWidth="xl"
       >
         {editingEntry && (
           <form onSubmit={handleSave} className="space-y-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Google Search Title Tag *
+                {t("admin.seo.googleSearchTitleTagRequired")}
               </label>
               <input
                 type="text"
@@ -136,7 +138,7 @@ export const SeoPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Google Meta Description *
+                {t("admin.seo.googleMetaDescriptionRequired")}
               </label>
               <textarea
                 rows={3}
@@ -150,7 +152,7 @@ export const SeoPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Canonical Link URL
+                  {t("admin.seo.canonicalLinkUrl")}
                 </label>
                 <input
                   type="text"
@@ -162,7 +164,7 @@ export const SeoPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Social Open Graph Image URL
+                  {t("admin.seo.socialOpenGraphImageUrl")}
                 </label>
                 <input
                   type="text"
@@ -182,19 +184,19 @@ export const SeoPage: React.FC = () => {
               />
             </div>
 
-            <div className="pt-4 flex justify-end space-x-3 border-t border-gold/15">
+            <div className="pt-4 flex justify-end gap-3 border-t border-gold/15">
               <button
                 type="button"
                 onClick={() => setEditingEntry(null)}
                 className="px-4 py-2 rounded text-xs font-sans text-muted hover:text-ivory border border-gold/20"
               >
-                Cancel
+                {t("admin.modal.cancel")}
               </button>
               <button
                 type="submit"
                 className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider"
               >
-                Save SEO Metadata
+                {t("admin.seo.saveSeoMetadata")}
               </button>
             </div>
           </form>

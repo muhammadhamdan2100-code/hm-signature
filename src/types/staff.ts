@@ -115,11 +115,32 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Record<string, boolean>> = {
     "customers.view": true,
     "payments.view": true,
     "payments.manage": true,
+    // Payment-method and boutique configuration changes what customers are offered, so it is
+    // reserved for the Super Admin and guarded again inside the database functions.
+    "payments.configure": true,
+    "boutiques.manage": true,
+    // Phase 8 brand experience. These decide what a shopper is recommended, whether a collection is
+    // open to them, and how stored value moves — so none of them is handed to another role.
+    "personalization.manage": true,
+    "giftCards.manage": true,
+    "loyalty.manage": true,
+    "vip.manage": true,
+    "preorders.view": true,
+    "preorders.manage": true,
+    "waitlists.view": true,
+    "waitlists.manage": true,
+    "discovery.manage": true,
     "marketing.manage": true,
     "content.manage": true,
     "reviews.manage": true,
     "staff.manage": true,
     "reports.view": true,
+    // Phase 9 splits the reporting window three ways. Which one a role may open is
+    // decided here for the navigation and again inside the database, so a direct
+    // REST call cannot read a report the admin panel would not show.
+    "reports.business": true,
+    "reports.operational": true,
+    "reports.content": true,
     "settings.manage": true,
   },
   Manager: {
@@ -137,6 +158,17 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Record<string, boolean>> = {
     "orders.payment_status": true,
     "customers.view": true,
     "reports.view": true,
+    // Phase 9 splits the reporting window three ways. A Manager runs the business,
+    // so they hold all of it; the two narrower roles get only their own.
+    "reports.business": true,
+    "reports.operational": true,
+    "reports.content": true,
+    // Pre-orders and waitlists are order operations, so the roles that work orders may work them.
+    // Nothing here gives Manager stored value, loyalty rules or what customers are recommended.
+    "preorders.view": true,
+    "preorders.manage": true,
+    "waitlists.view": true,
+    "waitlists.manage": true,
   },
   "Order Manager": {
     "dashboard.orders": true,
@@ -145,6 +177,13 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Record<string, boolean>> = {
     "orders.tracking": true,
     "orders.status": true,
     "orders.payment_status": true,
+    // The operational window only: order and payment activity, never the customer
+    // or margin figures that sit in the business reports.
+    "reports.operational": true,
+    "preorders.view": true,
+    "preorders.manage": true,
+    "waitlists.view": true,
+    "waitlists.manage": true,
   },
   "Content Manager": {
     "dashboard.content": true,
@@ -154,6 +193,12 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Record<string, boolean>> = {
     "collections.manage": true,
     "content.manage": true,
     "reviews.manage": true,
+    // Product and content performance, without customer identity: the report
+    // behind this code returns line volumes with the buyer columns nulled.
+    "reports.content": true,
+    // Tagging a fragrance with its own declared character is content work, and the database guard
+    // for it is the same manage_products permission this role already holds.
+    "discovery.manage": true,
   },
 };
 
@@ -174,11 +219,31 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   "/admin/payments": "payments.view",
   "/admin/payments/refunds": "payments.manage",
   "/admin/payments/reconciliation": "payments.view",
+  // A Manager may see and run payments; only the Super Admin may change which rails exist.
+  "/admin/payments/methods": "payments.configure",
+  "/admin/boutiques": "boutiques.manage",
+  // Phase 8. Brand experience and stored value stay with the Super Admin; the operational lists go
+  // to the roles that already work orders, and fragrance character tagging to the content role.
+  "/admin/brand": "personalization.manage",
+  "/admin/discovery": "discovery.manage",
+  "/admin/rewards": "loyalty.manage",
+  "/admin/gift-cards": "giftCards.manage",
+  "/admin/preorders": "preorders.view",
+  "/admin/waitlists": "waitlists.view",
   "/admin/abandoned-carts": "orders.view",
   "/admin/automations": "settings.manage",
+  "/admin/international": "settings.manage",
+  "/admin/localization": "content.manage",
   "/admin/staff": "staff.manage",
   "/admin/seo": "content.manage",
   "/admin/analytics": "reports.view",
+  // Phase 9. The longest prefix wins, so an Order Manager reaches their window
+  // through the operations path and never through the business one.
+  "/admin/intelligence": "reports.business",
+  "/admin/forecasting": "reports.business",
+  "/admin/reports": "reports.business",
+  "/admin/reports/operations": "reports.operational",
+  "/admin/reports/product-performance": "reports.content",
   "/admin/settings": "settings.manage",
 };
 

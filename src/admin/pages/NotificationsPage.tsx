@@ -9,8 +9,10 @@ import {
 } from "../../services/adminContent";
 import { fetchServiceCapabilities } from "../../services/emailService";
 import { Bell, Mail, Edit, CheckCircle, AlertCircle, Sparkles, Send, RefreshCw } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const NotificationsPage: React.FC = () => {
+  const { t } = useI18n();
   const { notifications, emailTemplates, updateEmailTemplate, markNotificationRead } =
     useAdminData();
 
@@ -40,12 +42,16 @@ export const NotificationsPage: React.FC = () => {
     setQueueNote("");
     const result = await runEmailWorkerNow();
     if (!result) {
-      setQueueNote("Email delivery is not configured on this deployment, so nothing was sent.");
+      setQueueNote(t("admin.notifications.emailNotConfiguredNote"));
     } else {
       // A browser session can only claim rows addressed to the signed-in account;
       // staff copies and scheduled reminders stay queued for the server worker.
       setQueueNote(
-        `Sent ${result.sent}, failed ${result.failed}, skipped ${result.skipped} — from this account's own queued messages. Staff copies wait for the scheduler.`
+        t("admin.notifications.drainResultNote", {
+          sent: result.sent,
+          failed: result.failed,
+          skipped: result.skipped,
+        })
       );
     }
     await loadQueue();
@@ -57,11 +63,11 @@ export const NotificationsPage: React.FC = () => {
   const [body, setBody] = useState("");
   const [active, setActive] = useState(true);
 
-  const handleOpenEdit = (t: EmailTemplate) => {
-    setEditingTemplate(t);
-    setSubject(t.subject);
-    setBody(t.body);
-    setActive(t.active);
+  const handleOpenEdit = (template: EmailTemplate) => {
+    setEditingTemplate(template);
+    setSubject(template.subject);
+    setBody(template.body);
+    setActive(template.active);
   };
 
   const handleSaveTemplate = (e: React.FormEvent) => {
@@ -77,23 +83,23 @@ export const NotificationsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            SYSTEM NOTIFICATIONS & MESSAGE DRAFTS
+            {t("admin.notifications.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Notifications & Message Drafts
+            {t("admin.notifications.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manage system activity logs and message drafts. Customer email is not sent from these.
+            {t("admin.notifications.introBody")}
           </p>
         </div>
       </div>
 
       {/* System Notifications Log */}
       <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
-        <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+        <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
           <Bell className="w-4 h-4 text-gold" />
           <h3 className="font-serif text-base font-bold text-ivory">
-            Telemetry & Order System Activity Log
+            {t("admin.notifications.activityLogHeading")}
           </h3>
         </div>
 
@@ -102,7 +108,7 @@ export const NotificationsPage: React.FC = () => {
             <div
               key={n.id}
               onClick={() => markNotificationRead(n.id)}
-              className={`p-4 rounded border transition-colors cursor-pointer flex items-start space-x-3 ${
+              className={`p-4 rounded border transition-colors cursor-pointer flex items-start gap-3 ${
                 !n.read
                   ? "bg-navy2 border-gold/40 text-ivory"
                   : "bg-navy/50 border-gold/10 text-muted"
@@ -128,36 +134,36 @@ export const NotificationsPage: React.FC = () => {
       {/* Transactional message queue */}
       <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gold/15 pb-3">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <Send className="w-4 h-4 text-gold" />
             <h3 className="font-serif text-base font-bold text-ivory">
-              Outbound Message Queue
+              {t("admin.notifications.outboundMessageQueue")}
             </h3>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={loadQueue}
-              className="px-3 py-1.5 rounded text-xs font-sans text-muted hover:text-gold border border-gold/20 hover:border-gold/40 flex items-center space-x-1.5"
+              className="px-3 py-1.5 rounded text-xs font-sans text-muted hover:text-gold border border-gold/20 hover:border-gold/40 flex items-center gap-1.5"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh</span>
+              <span>{t("admin.notifications.refresh")}</span>
             </button>
             <button
               onClick={handleDrain}
               disabled={queueBusy || emailReady === false}
               className="px-3 py-1.5 rounded text-xs font-sans bg-gold hover:bg-goldLight text-navy font-bold uppercase tracking-wider disabled:opacity-40"
             >
-              {queueBusy ? "SENDING…" : "Send queued now"}
+              {queueBusy ? t("admin.notifications.sending") : t("admin.notifications.sendQueuedNow")}
             </button>
           </div>
         </div>
 
         <p className="text-[11px] text-muted font-sans leading-relaxed">
           {emailReady === null
-            ? "Checking whether this deployment can deliver email…"
+            ? t("admin.notifications.checkingEmailCapability")
             : emailReady
-              ? "Order, payment and refund events are queued by the database and delivered by the server worker. A browser session can only claim messages addressed to its own account; staff copies and time-based reminders wait for the scheduler."
-              : "No email service is configured for this deployment, so queued messages stay recorded and nothing is sent. Delivery claims are never simulated."}
+              ? t("admin.notifications.emailReadyNote")
+              : t("admin.notifications.emailUnavailableNote")}
         </p>
 
         {queueCounts.length > 0 && (
@@ -181,29 +187,28 @@ export const NotificationsPage: React.FC = () => {
 
         {queue.length === 0 ? (
           <p className="text-xs text-muted font-sans py-3">
-            Nothing is queued. Messages appear here as soon as an order, payment or
-            refund event is recorded.
+            {t("admin.notifications.nothingQueued")}
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs font-sans">
               <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-muted border-b border-gold/15">
-                  <th className="py-2 pr-3 font-mono">Event</th>
-                  <th className="py-2 pr-3 font-mono">Order</th>
-                  <th className="py-2 pr-3 font-mono">To</th>
-                  <th className="py-2 pr-3 font-mono">Status</th>
-                  <th className="py-2 pr-3 font-mono">Tries</th>
-                  <th className="py-2 font-mono">Recorded</th>
+                <tr className="text-start text-[10px] uppercase tracking-wider text-muted border-b border-gold/15">
+                  <th className="py-2 pe-3 font-mono">{t("admin.notifications.event")}</th>
+                  <th className="py-2 pe-3 font-mono">{t("admin.shared.order")}</th>
+                  <th className="py-2 pe-3 font-mono">{t("admin.notifications.to")}</th>
+                  <th className="py-2 pe-3 font-mono">{t("admin.shared.status")}</th>
+                  <th className="py-2 pe-3 font-mono">{t("admin.notifications.tries")}</th>
+                  <th className="py-2 font-mono">{t("admin.notifications.recorded")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gold/10">
                 {queue.map((row) => (
                   <tr key={row.id}>
-                    <td className="py-2 pr-3 text-ivory font-mono">{row.template}</td>
-                    <td className="py-2 pr-3 text-muted font-mono">{row.orderRef || "—"}</td>
-                    <td className="py-2 pr-3 text-muted">{row.recipientKind}</td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2 pe-3 text-ivory font-mono">{row.template}</td>
+                    <td className="py-2 pe-3 text-muted font-mono">{row.orderRef || "—"}</td>
+                    <td className="py-2 pe-3 text-muted">{row.recipientKind}</td>
+                    <td className="py-2 pe-3">
                       <span
                         className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border ${
                           row.status === "sent"
@@ -223,7 +228,7 @@ export const NotificationsPage: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-muted font-mono">{row.attempts}</td>
+                    <td className="py-2 pe-3 text-muted font-mono">{row.attempts}</td>
                     <td className="py-2 text-muted font-mono">{row.sentAt || row.createdAt}</td>
                   </tr>
                 ))}
@@ -235,47 +240,47 @@ export const NotificationsPage: React.FC = () => {
 
       {/* Email Templates Manager */}
       <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
-        <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+        <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
           <Mail className="w-4 h-4 text-gold" />
           <h3 className="font-serif text-base font-bold text-ivory">
-            Message Drafts — Stored For Reference
+            {t("admin.notifications.messageDraftsHeading")}
           </h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {emailTemplates.map((t) => (
+          {emailTemplates.map((template) => (
             <div
-              key={t.id}
+              key={template.id}
               className="p-4 rounded bg-navy border border-gold/20 flex flex-col justify-between space-y-3"
             >
               <div className="space-y-2 font-sans">
                 <div className="flex items-center justify-between">
                   <span className="font-serif font-bold text-sm text-ivory">
-                    {t.type}
+                    {template.type}
                   </span>
                   <span
                     className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
-                      t.active
+                      template.active
                         ? "bg-emerald-950/40 text-emerald-300 border-emerald-500/30"
                         : "bg-navy text-muted border-gold/20"
                     }`}
                   >
-                    {t.active ? "Active Template" : "Disabled"}
+                    {template.active ? t("admin.notifications.activeTemplate") : t("common.disabled")}
                   </span>
                 </div>
-                <p className="text-xs text-gold font-mono truncate">{t.subject}</p>
+                <p className="text-xs text-gold font-mono truncate">{template.subject}</p>
                 <p className="text-[11px] text-muted line-clamp-3 leading-relaxed whitespace-pre-line font-light">
-                  {t.body}
+                  {template.body}
                 </p>
               </div>
 
               <div className="pt-2 border-t border-gold/15 flex justify-end">
                 <button
-                  onClick={() => handleOpenEdit(t)}
-                  className="px-3 py-1.5 rounded text-xs font-sans text-muted hover:text-gold border border-gold/20 hover:border-gold/40 flex items-center space-x-1"
+                  onClick={() => handleOpenEdit(template)}
+                  className="px-3 py-1.5 rounded text-xs font-sans text-muted hover:text-gold border border-gold/20 hover:border-gold/40 flex items-center gap-1"
                 >
                   <Edit className="w-3.5 h-3.5" />
-                  <span>Edit Template</span>
+                  <span>{t("admin.notifications.editTemplate")}</span>
                 </button>
               </div>
             </div>
@@ -287,14 +292,14 @@ export const NotificationsPage: React.FC = () => {
       <Modal
         isOpen={editingTemplate !== null}
         onClose={() => setEditingTemplate(null)}
-        title={`Edit Template — ${editingTemplate?.type || ""}`}
+        title={t("admin.notifications.editTemplateNamed", { name: editingTemplate?.type || "" })}
         maxWidth="xl"
       >
         {editingTemplate && (
           <form onSubmit={handleSaveTemplate} className="space-y-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Email Subject Line *
+                {t("admin.notifications.emailSubjectLineRequired")}
               </label>
               <input
                 type="text"
@@ -307,7 +312,7 @@ export const NotificationsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Email Body Content (Supports tags: {"{{customer_name}}"},{" "}
+                {t("admin.notifications.emailBodyContent")} {t("admin.notifications.supportsTags")} {"{{customer_name}}"},{" "}
                 {"{{order_number}}"}, {"{{order_total}}"}, {"{{courier}}"},{" "}
                 {"{{tracking_number}}"})
               </label>
@@ -320,29 +325,29 @@ export const NotificationsPage: React.FC = () => {
               />
             </div>
 
-            <label className="flex items-center space-x-3 cursor-pointer py-1">
+            <label className="flex items-center gap-3 cursor-pointer py-1">
               <input
                 type="checkbox"
                 checked={active}
                 onChange={(e) => setActive(e.target.checked)}
                 className="rounded border-gold/30 bg-navy text-gold focus:ring-0"
               />
-              <span className="text-xs text-ivory">Active Notification Template</span>
+              <span className="text-xs text-ivory">{t("admin.notifications.activeNotificationTemplate")}</span>
             </label>
 
-            <div className="pt-4 flex justify-end space-x-3 border-t border-gold/15">
+            <div className="pt-4 flex justify-end gap-3 border-t border-gold/15">
               <button
                 type="button"
                 onClick={() => setEditingTemplate(null)}
                 className="px-4 py-2 rounded text-xs font-sans text-muted hover:text-ivory border border-gold/20"
               >
-                Cancel
+                {t("admin.modal.cancel")}
               </button>
               <button
                 type="submit"
                 className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider"
               >
-                Save Template
+                {t("admin.notifications.saveTemplate")}
               </button>
             </div>
           </form>

@@ -1,14 +1,16 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function BrandStory() {
+  const { t } = useI18n();
   return (
     <section id="about" className="bg-navy py-28 lg:py-36 relative overflow-hidden">
       <div
         className="absolute inset-0 opacity-60"
         style={{
           background:
-            "radial-gradient(circle at 15% 30%, rgba(16,40,61,0.7), transparent 55%), radial-gradient(circle at 85% 70%, rgba(200,169,107,0.06), transparent 50%)",
+"radial-gradient(circle at 15% 30%, rgba(16,40,61,0.7), transparent 55%), radial-gradient(circle at 85% 70%, rgba(200,169,107,0.06), transparent 50%)",
         }}
       />
       <div className="max-w-[1400px] mx-auto px-6 lg:px-10 relative grid lg:grid-cols-2 gap-14 lg:gap-20 items-center">
@@ -19,22 +21,20 @@ export default function BrandStory() {
           transition={{ duration: 0.8 }}
           className="order-2 lg:order-1"
         >
-          <div className="eyebrow mb-4">OUR HERITAGE</div>
+          <div className="eyebrow mb-4">{t("home.brandStoryEyebrow")}</div>
           <h2 className="font-serif text-4xl lg:text-5xl leading-[1.1] mb-6">
-            The Art of
+            {t("home.brandStoryTitleLine1")}
             <br />
-            Fine Fragrances
+            {t("home.brandStoryTitleLine2")}
           </h2>
           <p className="text-muted leading-[1.9] max-w-md mb-4">
-            At HM Signature, fragrance is more than a scent — it is an expression of elegance,
-            personality and individuality.
+            {t("home.brandStoryBody1")}
           </p>
           <p className="text-muted leading-[1.9] max-w-md mb-9">
-            Each fragrance is carefully crafted using premium ingredients and refined
-            craftsmanship, blended by experts who treat every bottle as a work of art.
+            {t("home.brandStoryBody2")}
           </p>
           <Link to="/journal" className="btn-gold">
-            DISCOVER OUR STORY →
+            {t("home.brandStoryCta")}
           </Link>
         </motion.div>
 

@@ -20,9 +20,16 @@ import {
   Bell,
   ShoppingCart,
   ShieldCheck,
+  SlidersHorizontal,
+  Store,
   Settings,
   Search,
   BarChart3,
+  BrainCircuit,
+  LineChart,
+  FileBarChart,
+  FileClock,
+  FileSpreadsheet,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -31,7 +38,14 @@ import {
   ArrowLeftRight,
   Zap,
   LogOut,
+  Languages,
+  BookOpen,
+  Coins,
+  Gift,
+  CalendarClock,
+  Bookmark,
 } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface AdminSidebarProps {
   collapsed: boolean;
@@ -41,9 +55,10 @@ interface AdminSidebarProps {
 }
 
 export interface NavGroup {
-  groupName: string;
+  /** Translation key for the group heading; the stored text lives in the dictionaries. */
+  groupNameKey: string;
   items: {
-    label: string;
+    labelKey: string;
     path: string;
     icon: React.ElementType;
   }[];
@@ -51,53 +66,70 @@ export interface NavGroup {
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    groupName: "Overview",
-    items: [{ label: "Dashboard", path: "/admin/dashboard", icon: LayoutDashboard }],
+    groupNameKey: "admin.navGroup.overview",
+    items: [{ labelKey: "admin.nav.dashboard", path: "/admin/dashboard", icon: LayoutDashboard }],
   },
   {
-    groupName: "Commerce",
+    groupNameKey: "admin.navGroup.commerce",
     items: [
-      { label: "Orders", path: "/admin/orders", icon: ShoppingBag },
-      { label: "Products", path: "/admin/products", icon: Package },
-      { label: "Categories", path: "/admin/categories", icon: Layers },
-      { label: "Collections", path: "/admin/collections", icon: Sparkles },
-      { label: "Inventory", path: "/admin/inventory", icon: Boxes },
-      { label: "Coupons", path: "/admin/coupons", icon: Tag },
-      { label: "Shipping", path: "/admin/shipping", icon: Truck },
+      { labelKey: "admin.nav.orders", path: "/admin/orders", icon: ShoppingBag },
+      { labelKey: "admin.nav.products", path: "/admin/products", icon: Package },
+      { labelKey: "admin.nav.categories", path: "/admin/categories", icon: Layers },
+      { labelKey: "admin.nav.collections", path: "/admin/collections", icon: Sparkles },
+      { labelKey: "admin.nav.inventory", path: "/admin/inventory", icon: Boxes },
+      { labelKey: "admin.nav.coupons", path: "/admin/coupons", icon: Tag },
+      { labelKey: "admin.nav.shipping", path: "/admin/shipping", icon: Truck },
     ],
   },
   {
-    groupName: "Customers",
+    groupNameKey: "admin.navGroup.customers",
     items: [
-      { label: "Customers", path: "/admin/customers", icon: Users },
-      { label: "Reviews", path: "/admin/reviews", icon: Star },
+      { labelKey: "admin.nav.customers", path: "/admin/customers", icon: Users },
+      { labelKey: "admin.nav.reviews", path: "/admin/reviews", icon: Star },
+      { labelKey: "admin.nav.rewards", path: "/admin/rewards", icon: Coins },
+      { labelKey: "admin.nav.giftCards", path: "/admin/gift-cards", icon: Gift },
     ],
   },
   {
-    groupName: "Content",
+    groupNameKey: "admin.navGroup.content",
     items: [
-      { label: "Homepage CMS", path: "/admin/homepage", icon: Globe },
-      { label: "Marketing", path: "/admin/marketing", icon: Megaphone },
-      { label: "Notifications", path: "/admin/notifications", icon: Bell },
-      { label: "Automations", path: "/admin/automations", icon: Zap },
+      { labelKey: "admin.nav.homepageCms", path: "/admin/homepage", icon: Globe },
+      { labelKey: "admin.nav.brandExperience", path: "/admin/brand", icon: Sparkles },
+      { labelKey: "admin.nav.discoveryTags", path: "/admin/discovery", icon: Tag },
+      { labelKey: "admin.nav.marketing", path: "/admin/marketing", icon: Megaphone },
+      { labelKey: "admin.nav.notifications", path: "/admin/notifications", icon: Bell },
+      { labelKey: "admin.nav.automations", path: "/admin/automations", icon: Zap },
     ],
   },
   {
-    groupName: "Operations",
+    groupNameKey: "admin.navGroup.operations",
     items: [
-      { label: "Payments", path: "/admin/payments", icon: CreditCard },
-      { label: "Refunds", path: "/admin/payments/refunds", icon: ArrowLeftRight },
-      { label: "Reconciliation", path: "/admin/payments/reconciliation", icon: Scale },
-      { label: "Abandoned Carts", path: "/admin/abandoned-carts", icon: ShoppingCart },
+      { labelKey: "admin.nav.payments", path: "/admin/payments", icon: CreditCard },
+      { labelKey: "admin.nav.refunds", path: "/admin/payments/refunds", icon: ArrowLeftRight },
+      { labelKey: "admin.nav.reconciliation", path: "/admin/payments/reconciliation", icon: Scale },
+      { labelKey: "admin.nav.paymentMethods", path: "/admin/payments/methods", icon: SlidersHorizontal },
+      { labelKey: "admin.nav.abandonedCarts", path: "/admin/abandoned-carts", icon: ShoppingCart },
+      { labelKey: "admin.nav.preorders", path: "/admin/preorders", icon: CalendarClock },
+      { labelKey: "admin.nav.waitlists", path: "/admin/waitlists", icon: Bookmark },
     ],
   },
   {
-    groupName: "Management",
+    groupNameKey: "admin.navGroup.management",
     items: [
-      { label: "Staff & Roles", path: "/admin/staff", icon: ShieldCheck },
-      { label: "SEO Management", path: "/admin/seo", icon: Search },
-      { label: "Analytics", path: "/admin/analytics", icon: BarChart3 },
-      { label: "Store Settings", path: "/admin/settings", icon: Settings },
+      { labelKey: "admin.nav.staffAndRoles", path: "/admin/staff", icon: ShieldCheck },
+      { labelKey: "admin.nav.seoManagement", path: "/admin/seo", icon: Search },
+      { labelKey: "admin.nav.international", path: "/admin/international", icon: Languages },
+      { labelKey: "admin.nav.localization", path: "/admin/localization", icon: BookOpen },
+      { labelKey: "admin.nav.boutiques", path: "/admin/boutiques", icon: Store },
+      { labelKey: "admin.nav.analytics", path: "/admin/analytics", icon: BarChart3 },
+      // Phase 9. Three windows, because a Manager, an Order Manager and a Content
+      // Manager are shown different things from the same order table.
+      { labelKey: "admin.nav.intelligence", path: "/admin/intelligence", icon: BrainCircuit },
+      { labelKey: "admin.nav.forecasting", path: "/admin/forecasting", icon: LineChart },
+      { labelKey: "admin.nav.reports", path: "/admin/reports", icon: FileBarChart },
+      { labelKey: "admin.nav.operationalReports", path: "/admin/reports/operations", icon: FileClock },
+      { labelKey: "admin.nav.contentReports", path: "/admin/reports/product-performance", icon: FileSpreadsheet },
+      { labelKey: "admin.nav.storeSettings", path: "/admin/settings", icon: Settings },
     ],
   },
 ];
@@ -124,6 +156,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   mobileOpen,
   onCloseMobile,
 }) => {
+  const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useAdminData();
@@ -133,7 +166,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   const handleLogout = async () => {
     if (mobileOpen) onCloseMobile();
     await logout();
-    showToast("info", "Signed out of admin session.");
+    showToast("info", t("admin.adminSidebar.signedOutOfAdminSession"));
     navigate("/admin/login", { replace: true });
   };
 
@@ -153,13 +186,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   const activePath = resolveActivePath(location.pathname, visiblePaths);
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-navy2/95 backdrop-blur-md text-ivory border-r border-gold/20 select-none">
+    <div className="flex flex-col h-full bg-navy2/95 backdrop-blur-md text-ivory border-e border-gold/20 select-none">
       {/* Pinned Top Brand Header */}
       <div className="flex items-center justify-between px-4 h-16 shrink-0 bg-navy/60 border-b border-gold/20">
         <NavLink
           to="/admin/dashboard"
-          className="flex items-center space-x-3 overflow-hidden"
-          title="HM Signature Luxury Fragrance"
+          className="flex items-center gap-3 overflow-hidden"
+          title={t("admin.adminSidebar.brandTooltip")}
         >
           <div className="w-9 h-9 rounded border border-gold/30 bg-navy flex items-center justify-center p-1 shrink-0">
             <img src="/logo.png" alt="HM Signature" className="w-full h-full object-contain" />
@@ -170,7 +203,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 HM SIGNATURE
               </span>
               <span className="text-[9px] font-mono tracking-[1.5px] text-gold uppercase opacity-90 truncate">
-                LUXURY FRAGRANCE
+                {t("admin.adminSidebar.luxuryFragrance")}
               </span>
             </div>
           )}
@@ -180,19 +213,19 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
         <button
           onClick={onToggleCollapse}
           className="hidden lg:flex p-1.5 rounded text-muted hover:text-gold hover:bg-navy transition-colors border border-gold/10"
-          title={collapsed ? "Expand sidebar (260px)" : "Collapse sidebar (72px)"}
+          title={collapsed ? t("admin.sidebar.expandSidebar") : t("admin.sidebar.collapseSidebar")}
         >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          {collapsed ? <ChevronRight className="w-4 h-4 rtl:rotate-180" /> : <ChevronLeft className="w-4 h-4 rtl:rotate-180" />}
         </button>
       </div>
 
       {/* Scrolling Middle Navigation Group List (Role-Aware) */}
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-5 custom-dark-scrollbar">
         {filteredNavGroups.map((group) => (
-          <div key={group.groupName} className="space-y-1">
+          <div key={group.groupNameKey} className="space-y-1">
             {!collapsed && (
               <span className="px-3 text-[9px] font-mono uppercase tracking-[3px] text-gold/70 block font-semibold mb-1">
-                {group.groupName}
+                {t(group.groupNameKey)}
               </span>
             )}
             {group.items.map((item) => {
@@ -205,15 +238,15 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                   to={item.path}
                   onClick={() => onCloseMobile()}
                   aria-current={isActive ? "page" : undefined}
-                  className={`flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-sans transition-all duration-200 group relative ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-sans transition-all duration-200 group relative ${
                     isActive
                       ? "bg-navy text-gold font-semibold border border-gold/30 shadow-md"
                       : "text-muted hover:text-ivory hover:bg-navy/50"
                   }`}
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? t(item.labelKey) : undefined}
                 >
                   <Icon className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
+                  {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
                 </NavLink>
               );
             })}
@@ -227,20 +260,20 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           href="/"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-sans text-gold hover:text-goldLight hover:bg-navy transition-colors border border-gold/20"
-          title="View Live Boutique Storefront"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-sans text-gold hover:text-goldLight hover:bg-navy transition-colors border border-gold/20"
+          title={t("admin.adminSidebar.viewLiveBoutiqueStorefront")}
         >
           <ExternalLink className="w-4 h-4 shrink-0" />
-          {!collapsed && <span className="font-semibold uppercase text-[10px] tracking-wider truncate">Live Storefront</span>}
+          {!collapsed && <span className="font-semibold uppercase text-[10px] tracking-wider truncate">{t("admin.adminSidebar.liveStorefront")}</span>}
         </a>
 
         <button
           onClick={handleLogout}
-          className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-sans text-rose-300 hover:text-rose-100 hover:bg-rose-950/40 transition-colors border border-rose-500/20"
-          title="Sign out of Admin Console"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-sans text-rose-300 hover:text-rose-100 hover:bg-rose-950/40 transition-colors border border-rose-500/20"
+          title={t("admin.adminSidebar.signOutOfAdminConsole")}
         >
           <LogOut className="w-4 h-4 shrink-0 text-rose-400" />
-          {!collapsed && <span className="font-semibold uppercase text-[10px] tracking-wider truncate">Logout</span>}
+          {!collapsed && <span className="font-semibold uppercase text-[10px] tracking-wider truncate">{t("admin.adminSidebar.logout")}</span>}
         </button>
       </div>
     </div>
@@ -250,7 +283,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     <>
       {/* Desktop Fixed Sidebar (lg: breakpoint >= 1024px) */}
       <aside
-        className={`hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-30 transition-all duration-300 ${
+        className={`hidden lg:flex flex-col fixed start-0 top-0 bottom-0 z-30 transition-all duration-300 ${
           collapsed ? "w-[72px]" : "w-[260px]"
         }`}
       >

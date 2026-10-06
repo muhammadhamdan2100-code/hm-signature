@@ -1,11 +1,13 @@
 import ShopPage from "../components/ShopPage";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function Collections() {
+  const { t } = useI18n();
   return (
     <ShopPage
-      eyebrow="OUR COLLECTIONS"
-      title="Scented Stories"
-      subtitle="Discover fragrances crafted to express different personalities, moods and moments."
+      eyebrow={t("home.collectionsEyebrow")}
+      title={t("home.collectionsTitle")}
+      subtitle={t("home.collectionsBody")}
       baseFilter={() => true}
       heroTexture="texture-marble-champagne"
     />

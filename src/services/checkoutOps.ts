@@ -15,6 +15,8 @@ export interface PlaceOrderInput {
   paymentMethod: string;
   couponCode?: string | null;
   items: PlaceOrderItem[];
+  countryCode?: string | null;
+  currency?: string;
 }
 
 export interface PlaceOrderResult {
@@ -24,7 +26,12 @@ export interface PlaceOrderResult {
   subtotal?: number;
   discount?: number;
   shipping?: number;
+  tax?: number;
   total?: number;
+  currency?: string;
+  currencyRateToBase?: number;
+  totalInCurrency?: number;
+  destinationCountry?: string;
   error?: string;
 }
 
@@ -44,6 +51,8 @@ export async function placeOrderRpc(input: PlaceOrderInput): Promise<PlaceOrderR
     p_payment_method: input.paymentMethod,
     p_coupon_code: input.couponCode?.trim() ? input.couponCode.trim().toUpperCase() : null,
     p_items: input.items,
+    p_country_code: input.countryCode?.trim() ? input.countryCode.trim().toUpperCase() : null,
+    p_currency: input.currency ?? "PKR",
   };
 
   let data: any = null;
@@ -69,7 +78,14 @@ export async function placeOrderRpc(input: PlaceOrderInput): Promise<PlaceOrderR
     subtotal: Number(data.subtotal ?? 0),
     discount: Number(data.discount ?? 0),
     shipping: Number(data.shipping ?? 0),
+    tax: Number(data.tax ?? 0),
     total: Number(data.total ?? 0),
+    currency: String(data.currency ?? "PKR"),
+    currencyRateToBase: Number(data.currency_rate_to_base ?? 1),
+    totalInCurrency: data.total_in_currency === null || data.total_in_currency === undefined
+      ? undefined
+      : Number(data.total_in_currency),
+    destinationCountry: data.destination_country ? String(data.destination_country) : undefined,
   };
 }
 

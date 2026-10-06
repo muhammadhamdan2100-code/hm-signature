@@ -258,3 +258,107 @@ See `docs/monitoring-and-backups.md`.
 8. Confirm the cron job Vercel registered for `/api/automation-worker` (§7) and decide
    the cadence for your plan. Leave every workflow disabled until the owner enables one
    deliberately from **Admin → Automations**.
+
+---
+
+## 10. Phase 7 — international commerce configuration
+
+Everything below is configuration, not code. Nothing in this section is a live external
+integration: no exchange-rate provider, no international payment gateway and no carrier API
+is connected, and the interface says so where the shopper can see it.
+
+**Canonical origin — required before launch**
+
+`VITE_SITE_URL` (see `.env.example`) is the origin the browser advertises in `canonical`,
+`og:url`, `twitter:image` and the per-language `hreflang` alternates. Set it to the production
+domain. If it is empty the code falls back to `window.location.origin`, which means a preview
+deployment would canonicalise itself.
+
+`/robots.txt` and `/sitemap.xml` are served by `api/robots.js` and `api/sitemap.js` through the
+two rewrites added at the top of `vercel.json` (they must stay ahead of the single-page fallback;
+`tests/deploy-config.test.ts` asserts that order). Any non-production Vercel host is answered with
+`Disallow: /` so staging is never indexed twice. The product list in the sitemap is read from the
+live catalogue through the same public policies a visitor uses.
+
+**Currencies — Admin → International**
+
+The `currencies` table holds the six offered codes with `rate_source = 'manual'`. Those rates are
+the atelier's own figures and are labelled as such in the header selector and at checkout. To take
+them live later, either keep editing them here or connect a provider that writes
+`rate_to_base` / `rate_updated_at` and sets `rate_source = 'provider'`; no storefront code changes
+are needed because every price flows through `src/lib/money.ts`.
+
+Base currency stays PKR. An order stores `currency`, `currency_rate_to_base` and
+`total_in_currency` as a snapshot: changing a rate afterwards cannot alter a past order, and the
+display currency is never what the order is settled in.
+
+**Countries — Admin → International**
+
+Only Pakistan is enabled, with the rule the store already used (fee 250, complimentary from 10 000,
+2–3 business days). The other eleven destinations are seeded closed with no fee, so they show as
+"delivery unavailable" rather than being priced from invented numbers.
+
+Opening a country means setting its shipping fee and currency — the database refuses to enable one
+without both. Delivery window, free threshold, method, notes, restrictions and a tax rate are
+per-country configuration. Tax is disabled everywhere; the rate a country is given is business
+configuration, is applied to goods plus shipping, and is never presented as tax-law advice.
+
+**Payments**
+
+Existing Pakistani methods (Cash on Delivery, JazzCash, Raast, direct bank transfer) are unchanged
+and remain the only selectable ones. "International payment methods coming soon" is informational:
+nothing there is selectable and no fake success or failure flow exists. For a destination whose
+currency is not PKR the checkout deliberately offers no method and points to the concierge, because
+cash on delivery and local wallet transfers cannot settle an order abroad.
+
+**Languages**
+
+`languages` carries six enabled rows: en (default), ar and ur (right-to-left), fr, es and de
+(left-to-right). Selecting Arabic or Urdu sets `dir="rtl"` on the document, which is what moves
+forms, flow and browser widgets — not a CSS reversal. A further language needs a dictionary file
+in `src/i18n/dictionaries/` as well as a `languages` row, the `BUILT_IN_LANGUAGES` entry, the
+sitemap language list and the SEO language list; `tests/i18n-dictionaries.test.ts` fails if a
+language is offered without a dictionary or if any language drops a key, and
+`tests/international-seo.test.ts` fails if those lists drift apart.
+
+---
+
+## 11. Multilingual content (Phase 7 continued)
+
+**Interface strings** live in `src/i18n/dictionaries/{en,ar,fr,es,ur,de}.ts`. English is the
+source: every other file must carry the identical leaf-key set, which
+`tests/i18n-dictionaries.test.ts` enforces along with placeholder parity, so a key cannot be
+added in English alone. A missing string falls back to English and then to a readable
+humanized label — the raw key is never rendered, asserted in `tests/localization.test.ts`.
+The humanized label is a safety net, not a translation: a parity failure is a build failure.
+
+**Direction** comes from the `languages` table: Arabic and Urdu are `rtl`; English, French,
+Spanish and German are `ltr`. The provider sets `<html lang>` and `<html dir>`, and layout uses
+logical Tailwind utilities (`ms-*`, `me-*`, `start-*`, `end-*`, `text-start`/`text-end`, `gap-*`)
+rather than mirrored CSS.
+
+**Customer content** — product, category, collection, homepage-section and fragrance-note
+wording — is stored per language in `content_translations`, keyed to the existing rows. Nothing
+is duplicated: prices, SKUs, stock and order history are never part of a translation, and the
+services in `src/services/localizedContent.ts` only replace named text fields. Resolution order
+is active language → English source row → whatever the row already held; an empty translation
+can never blank a product name. A dropped bundle read is retried once and is deliberately *not*
+cached, so one failed request cannot pin a shopper to English for the rest of the session.
+Structured data follows the same localized text, so a page that reads Arabic to a customer does
+not describe itself to Google in English.
+
+**Who may change it:** `save_content_translation` / `delete_content_translation` require
+`manage_cms` or `manage_settings` and are not executable by `anon`; the tables have no write
+policies at all, so a browser cannot bypass the functions. In the dashboard the editor is
+**Admin → Localization** (`content.manage`), and the country/currency/language configuration is
+**Admin → International** (`settings.manage`). Primary Super Admin protection is untouched by
+either screen.
+
+**Adding another language** needs four coordinated steps, and the order matters: create the
+dictionary file and bring it to full key parity first; then register it in
+`BUILT_IN_LANGUAGES` + `dictionaries` (`src/i18n/index.ts`); then add its `languages` row with
+direction and locale; then translate the catalog content into `content_translations`. The SEO
+list in `src/lib/seo.ts` is the single source for hreflang, `og:locale:alternate` and the
+sitemap, so registering there is enough — do not add per-file language arrays again. The parity
+tests fail until all of it agrees, which is deliberate: a selectable language with an incomplete
+dictionary is exactly the failure this prevents.

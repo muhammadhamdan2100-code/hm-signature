@@ -7,8 +7,10 @@ import { AdminTopbar } from "./AdminTopbar";
 import { AdminSearchModal } from "./AdminSearchModal";
 import { ToastContainer } from "./Toast";
 import { ShieldAlert, ArrowRight } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const AdminLayout: React.FC = () => {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -59,27 +61,33 @@ export const AdminLayout: React.FC = () => {
         : "/admin/dashboard";
 
     return (
-      <div className="min-h-screen bg-navy text-ivory flex items-center justify-center p-6 text-center font-sans select-none">
+      <div
+        data-access-denied=""
+        className="min-h-screen bg-navy text-ivory flex items-center justify-center p-6 text-center font-sans select-none"
+      >
         <div className="max-w-md w-full bg-navy2/90 border border-gold/30 p-8 rounded-xl space-y-5 shadow-2xl backdrop-blur-md">
           <div className="w-16 h-16 rounded-full bg-rose-950/60 border border-rose-500/40 text-rose-400 mx-auto flex items-center justify-center shadow-lg">
             <ShieldAlert className="w-8 h-8" />
           </div>
           <div className="space-y-1">
             <span className="text-[10px] font-mono tracking-[3px] text-gold uppercase block font-semibold">
-              HM SIGNATURE SECURITY
+              {t("admin.adminLayout.securityEyebrow")}
             </span>
-            <h2 className="font-serif text-2xl font-bold text-ivory">Access Restricted</h2>
+            <h2 className="font-serif text-2xl font-bold text-ivory">{t("admin.adminLayout.accessRestricted")}</h2>
           </div>
           <p className="text-xs text-muted leading-relaxed font-light">
-            Your assigned staff role (<span className="text-gold font-semibold font-mono">{currentStaff.role}</span>) does not have authorization to view or manage the section at <span className="font-mono text-ivory">{location.pathname}</span>.
+            {t("admin.adminLayout.roleDeniedPrefix")}
+            <span className="text-gold font-semibold font-mono">{currentStaff.role}</span>
+            {t("admin.adminLayout.roleDeniedSuffix")}
+            <span className="font-mono text-ivory">{location.pathname}</span>.
           </p>
           <div className="pt-2">
             <button
               onClick={() => navigate(fallbackRoute, { replace: true })}
-              className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow-lg flex items-center justify-center space-x-2 mx-auto"
+              className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold text-xs uppercase tracking-wider rounded transition-colors shadow-lg flex items-center justify-center gap-2 mx-auto"
             >
-              <span>Return to Permitted Workspace</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>{t("admin.adminLayout.returnToPermittedWorkspace")}</span>
+              <ArrowRight className="w-4 h-4 rtl:rotate-180" />
             </button>
           </div>
         </div>
@@ -90,7 +98,7 @@ export const AdminLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-navy text-ivory font-sans relative">
       <a href="#main-content" className="skip-link">
-        Skip to content
+        {t("admin.adminLayout.skipToContent")}
       </a>
 
       {/* Toast System Container */}
@@ -107,8 +115,8 @@ export const AdminLayout: React.FC = () => {
       {/* Main Workspace Area */}
       <div
         className={`min-h-screen flex flex-col min-w-0 transition-all duration-300 ${
-          collapsed ? "lg:ml-[72px]" : "lg:ml-[260px]"
-        } ml-0`}
+          collapsed ? "lg:ms-[72px]" : "lg:ms-[260px]"
+        } ms-0`}
       >
         {/* Sticky Topbar */}
         <AdminTopbar

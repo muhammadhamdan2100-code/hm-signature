@@ -9,9 +9,12 @@ import JournalSection from "../components/JournalSection";
 import Reviews from "../components/Reviews";
 import Newsletter from "../components/Newsletter";
 import ProductCard from "../components/ProductCard";
+import RecommendationRail from "../components/RecommendationRail";
+import { useRecentlyViewed } from "../hooks/useRecentlyViewed";
 import { type Product } from "../data/products";
 import { getCatalogProducts } from "../services/catalog";
 import { useAdminData } from "../admin/context/AdminDataContext";
+import { useI18n } from "../i18n/I18nProvider";
 import { Link as RouterLink } from "react-router-dom";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 
@@ -22,7 +25,9 @@ export default function Home() {
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [searchParams] = useSearchParams();
   const { homepageConfig } = useAdminData();
-  useSeoMeta("/", "HM Signature — Haute Parfumerie", "Luxury extrait de parfum crafted in small batches.");
+  const { recentIds } = useRecentlyViewed();
+  const { t, language } = useI18n();
+  useSeoMeta("/", t("seo.homeTitle"), t("seo.homeDescription"));
   const announcement = homepageConfig.announcementBar;
 
   useEffect(() => {
@@ -40,7 +45,7 @@ export default function Home() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [language.code]);
 
   useEffect(() => {
     const section = searchParams.get("section");
@@ -59,14 +64,14 @@ export default function Home() {
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-16">
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7 }}>
-              <div className="eyebrow mb-4">OUR COLLECTIONS</div>
-              <h2 className="font-serif text-4xl lg:text-5xl">Scented Stories</h2>
+              <div className="eyebrow mb-4">{t("home.collectionsEyebrow")}</div>
+              <h2 className="font-serif text-4xl lg:text-5xl">{t("home.collectionsTitle")}</h2>
               <p className="text-muted mt-4 max-w-md leading-relaxed">
-                Discover fragrances crafted to express different personalities, moods and moments.
+                {t("home.collectionsBody")}
               </p>
             </motion.div>
             <Link to="/collections" className="link-underline whitespace-nowrap">
-              VIEW ALL COLLECTIONS →
+              {t("home.viewAllCollections")}
             </Link>
           </div>
 
@@ -78,13 +83,12 @@ export default function Home() {
             </div>
           ) : featuredList.length === 0 ? (
             <div className="border border-gold/20 bg-navy2/40 p-10 text-center max-w-xl mx-auto">
-              <p className="font-serif text-2xl mb-3">A new collection is being composed</p>
+              <p className="font-serif text-2xl mb-3">{t("home.collectionsEmptyTitle")}</p>
               <p className="text-muted text-sm leading-relaxed mb-6">
-                Our published fragrances will appear here. In the meantime, our Scent Finder can
-                still guide you to the family that suits you.
+                {t("home.collectionsEmptyBody")}
               </p>
               <Link to="/scent-finder" className="btn-gold text-xs">
-                FIND YOUR SCENT
+                {t("home.collectionsEmptyCta")}
               </Link>
             </div>
           ) : (
@@ -96,6 +100,11 @@ export default function Home() {
           )}
         </div>
       </section>
+    ),
+    // 8.1 — one ranked row, driven by whatever the database can prove about this shopper. With no
+    // signals it becomes the house selection; the block never leaves a gap in the page.
+    recommended: (
+      <RecommendationRail kind="recommended_for_you" recentIds={recentIds} limit={4} showReasons />
     ),
     values: <ValuesSection />,
     story: <BrandStory />,

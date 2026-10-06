@@ -21,6 +21,7 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
+import { useI18n } from "../../i18n/I18nProvider";
 
 // "Verification Pending" is a real status written by submit_payment_proof once a
 // customer attaches evidence, so it needs the same staff actions as "Pending".
@@ -28,6 +29,7 @@ const AWAITING_STAFF_STATUSES: PaymentStatus[] = ["Pending", "Verification Pendi
 const isAwaitingStaffAction = (status: PaymentStatus) => AWAITING_STAFF_STATUSES.includes(status);
 
 export const PaymentsPage: React.FC = () => {
+  const { t } = useI18n();
   const { payments, refunds, verifyPayment, rejectPayment, markCodCollected, createRefund } = useAdminData();
   const navigate = useNavigate();
 
@@ -65,11 +67,11 @@ export const PaymentsPage: React.FC = () => {
     e.preventDefault();
     if (!refundTarget) return;
     if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
-      setRefundError("Refund amount must be greater than zero.");
+      setRefundError(t("admin.payments.refundAmountAboveZero"));
       return;
     }
     if (refundAmount > remainingRefundable(refundTarget)) {
-      setRefundError(`Refund exceeds remaining refundable amount (Rs. ${remainingRefundable(refundTarget).toLocaleString()}).`);
+      setRefundError(t("admin.payments.refundExceedsRemaining", { amount: remainingRefundable(refundTarget).toLocaleString() }));
       return;
     }
     setRefundBusy(true);
@@ -85,7 +87,7 @@ export const PaymentsPage: React.FC = () => {
     });
     setRefundBusy(false);
     if (!res.success) {
-      setRefundError(res.error || "Refund could not be recorded.");
+      setRefundError(res.error || t("admin.adminDataContext.refundCouldNotBeRecorded"));
       return;
     }
     setRefundTarget(null);
@@ -134,7 +136,7 @@ export const PaymentsPage: React.FC = () => {
 
   const columns: Column<(typeof payments)[0]>[] = [
     {
-      header: "Order & Date",
+      header: t("admin.payments.orderAndDate"),
       accessor: (p) => (
         <div>
           <span className="font-mono font-bold text-gold text-xs block">{p.orderNumber}</span>
@@ -144,7 +146,7 @@ export const PaymentsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Client",
+      header: t("admin.refunds.client"),
       accessor: (p) => (
         <div>
           <span className="font-serif font-bold text-xs text-ivory block">{p.customerName}</span>
@@ -154,7 +156,7 @@ export const PaymentsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Amount",
+      header: t("admin.payments.amount"),
       accessor: (p) => (
         <span className="font-mono font-bold text-gold text-xs">
           Rs. {p.amount.toLocaleString()}
@@ -163,16 +165,16 @@ export const PaymentsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Payment Method",
+      header: t("admin.payments.paymentMethodColumn"),
       accessor: (p) => (
-        <div className="flex items-center space-x-1.5">
+        <div className="flex items-center gap-1.5">
           {getMethodIcon(p.method)}
           <span className="text-xs text-ivory font-medium">{p.method}</span>
         </div>
       ),
     },
     {
-      header: "Reference / Note",
+      header: t("admin.payments.referenceNote"),
       accessor: (p) => (
         <div>
           <span className="font-mono text-[10px] text-gold/90 block font-semibold">
@@ -187,12 +189,12 @@ export const PaymentsPage: React.FC = () => {
       ),
     },
     {
-      header: "Status",
+      header: t("admin.shared.status"),
       accessor: (p) => <StatusBadge status={p.status} />,
       sortable: true,
     },
     {
-      header: "Refunds",
+      header: t("admin.payments.refunds"),
       accessor: (p) => {
         const done = refunds.filter((r) => r.paymentId === p.id);
         if (done.length === 0) return <span className="text-[10px] text-muted font-mono">—</span>;
@@ -204,22 +206,26 @@ export const PaymentsPage: React.FC = () => {
               Rs. {total.toLocaleString()} / {p.amount.toLocaleString()}
             </span>
             <span className={`text-[9px] font-mono uppercase tracking-wider ${pendingOnly ? "text-amber-300" : "text-rose-300"}`}>
-              {pendingOnly ? "Refund Pending" : total >= p.amount ? "Fully Refunded" : "Partial Refund"}
+              {pendingOnly
+                ? t("admin.payments.refundPending")
+                : total >= p.amount
+                  ? t("admin.payments.fullyRefunded")
+                  : t("admin.payments.partialRefund")}
             </span>
           </div>
         );
       },
     },
     {
-      header: "Actions",
+      header: t("admin.products.actions"),
       accessor: (p) => (
-        <div className="flex items-center space-x-2 justify-end">
+        <div className="flex items-center gap-2 justify-end">
           {isAwaitingStaffAction(p.status) && p.method === "Cash on Delivery" && (
             <button
               onClick={() => markCodCollected(p.id)}
               className="px-2 py-1 bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/40 rounded text-[10px] uppercase font-bold transition-colors"
             >
-              Collect Cash
+              {t("admin.payments.collectCash")}
             </button>
           )}
 
@@ -229,13 +235,13 @@ export const PaymentsPage: React.FC = () => {
                 onClick={() => verifyPayment(p.id)}
                 className="px-2 py-1 bg-gold hover:bg-goldLight text-navy font-bold rounded text-[10px] uppercase transition-colors"
               >
-                Verify
+                {t("admin.payments.verify")}
               </button>
               <button
                 onClick={() => rejectPayment(p.id)}
                 className="px-2 py-1 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/40 rounded text-[10px] uppercase font-bold transition-colors"
               >
-                Reject
+                {t("admin.payments.reject")}
               </button>
             </>
           )}
@@ -243,24 +249,24 @@ export const PaymentsPage: React.FC = () => {
           {(p.status === "Paid" || p.status === "Verified") && remainingRefundable(p) > 0 && (
             <button
               onClick={() => openRefundModal(p)}
-              className="px-2 py-1 bg-navy hover:bg-navy2 text-gold border border-gold/40 hover:border-gold rounded text-[10px] uppercase font-bold transition-colors flex items-center space-x-1"
-              title="Issue refund for this payment"
+              className="px-2 py-1 bg-navy hover:bg-navy2 text-gold border border-gold/40 hover:border-gold rounded text-[10px] uppercase font-bold transition-colors flex items-center gap-1"
+              title={t("admin.payments.issueRefundForThisPayment")}
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Refund</span>
+              <span>{t("admin.payments.refund")}</span>
             </button>
           )}
 
           <button
             onClick={() => navigate(`/admin/orders/${p.orderId}`)}
             className="p-1 text-muted hover:text-gold transition-colors"
-            title="View Order"
+            title={t("admin.payments.viewOrder")}
           >
             <Eye className="w-4 h-4" />
           </button>
         </div>
       ),
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
@@ -270,65 +276,68 @@ export const PaymentsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            FINANCIAL AUDIT & VERIFICATION
+            {t("admin.refunds.financialAuditVerification")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Boutique Payment Gateway Management
+            {t("admin.payments.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Verify Pakistan digital transfers (JazzCash, Raast, Bank Transfer) and audit Cash on Delivery collections.
+            {t("admin.payments.introBody")}
           </p>
         </div>
         <Link
           to="/admin/payments/refunds"
-          className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center space-x-1.5 shrink-0"
+          className="px-4 py-2 rounded text-xs font-sans uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 flex items-center gap-1.5 shrink-0"
         >
           <ArrowLeftRight className="w-4 h-4 text-gold" />
-          <span>Refund Ledger</span>
+          <span>{t("admin.refunds.refundLedger")}</span>
         </Link>
       </div>
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total Verified Settlement"
+          title={t("admin.payments.totalVerifiedSettlement")}
           value={`Rs. ${totalVerifiedAmount.toLocaleString()}`}
-          subtitle="Settled & verified payments"
+          subtitle={t("admin.payments.settledVerifiedPayments")}
           icon={Building2}
           accent={true}
         />
         <StatCard
-          title="Digital Pending Verification"
+          title={t("admin.payments.digitalPendingVerification")}
           value={pendingVerificationCount}
-          subtitle={`Verification Pending ${digitalAwaitingVerificationCount} · Awaiting proof ${pendingVerificationCount - digitalAwaitingVerificationCount}`}
+          subtitle={t("admin.payments.digitalPendingSubtitle", {
+            pendingProof: digitalAwaitingVerificationCount,
+            awaitingProof: pendingVerificationCount - digitalAwaitingVerificationCount,
+          })}
           icon={Clock}
         />
         <StatCard
-          title="COD Pending Collection"
+          title={t("admin.payments.codPendingCollection")}
           value={codPendingCount}
-          subtitle="Awaiting courier delivery cash"
+          subtitle={t("admin.payments.awaitingCourierCash")}
           icon={Truck}
         />
         <StatCard
-          title="Total Transactions"
+          title={t("admin.payments.totalTransactions")}
           value={payments.length}
-          subtitle="All payment records"
+          subtitle={t("admin.payments.allPaymentRecords")}
           icon={CreditCard}
         />
       </div>
 
       {/* Method Filters */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-navy2/90 border border-gold/20 p-4 rounded-lg">
-        <div className="flex items-center space-x-2 overflow-x-auto">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gold shrink-0 mr-2">
-            Payment Method:
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gold shrink-0 me-2">
+            {t("admin.payments.paymentMethodLabel")}
           </span>
           {[
-            { id: "all", label: "All Methods" },
-            { id: "Cash on Delivery", label: "COD" },
+            { id: "all", label: t("admin.payments.allMethods") },
+            { id: "Cash on Delivery", label: t("admin.payments.cod") },
             { id: "JazzCash", label: "JazzCash" },
             { id: "Raast", label: "Raast" },
-            { id: "Bank Transfer", label: "Bank Transfer" },
+            { id: "Bank Transfer", label: t("admin.payments.bankTransfer") },
           ].map((m) => (
             <button
               key={m.id}
@@ -344,23 +353,23 @@ export const PaymentsPage: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           <span className="text-[10px] font-mono uppercase tracking-wider text-gold shrink-0">
-            Status:
+            {t("admin.shared.status")}
           </span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="bg-navy border border-gold/20 px-3 py-1.5 text-xs text-ivory rounded focus:outline-none focus:border-gold"
           >
-            <option value="all">All Statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="Verification Pending">Verification Pending</option>
-            <option value="Verified">Verified</option>
-            <option value="Paid">Paid (COD Collected)</option>
-            <option value="Failed">Failed</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Refunded">Refunded</option>
+            <option value="all">{t("admin.products.allStatuses")}</option>
+            <option value="Pending">{t("status.pending")}</option>
+            <option value="Verification Pending">{t("status.verificationpending")}</option>
+            <option value="Verified">{t("status.verified")}</option>
+            <option value="Paid">{t("admin.payments.paidCodCollected")}</option>
+            <option value="Failed">{t("admin.payments.failed")}</option>
+            <option value="Rejected">{t("admin.status.rejected")}</option>
+            <option value="Refunded">{t("admin.status.refunded")}</option>
           </select>
         </div>
       </div>
@@ -370,19 +379,28 @@ export const PaymentsPage: React.FC = () => {
         columns={columns}
         data={filteredPayments}
         keyExtractor={(p) => p.id}
-        searchPlaceholder="Search by order number, client name, email, or transaction reference..."
+        searchPlaceholder={t("admin.payments.searchByOrderClientOrReference")}
       />
 
       {/* Issue Refund Modal */}
       <Modal
         isOpen={Boolean(refundTarget)}
         onClose={() => setRefundTarget(null)}
-        title="Issue Refund"
-        subtitle={refundTarget ? `Order ${refundTarget.orderNumber} • ${refundTarget.method} • Paid Rs. ${refundTarget.amount.toLocaleString()} • Remaining Rs. ${remainingRefundable(refundTarget).toLocaleString()}` : undefined}
+        title={t("admin.payments.issueRefund")}
+        subtitle={
+          refundTarget
+            ? t("admin.payments.refundSubtitle", {
+                order: refundTarget.orderNumber,
+                method: refundTarget.method,
+                paid: refundTarget.amount.toLocaleString(),
+                remaining: remainingRefundable(refundTarget).toLocaleString(),
+              })
+            : undefined
+        }
       >
         <form onSubmit={handleRefundSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Refund Amount (PKR) *</label>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">{t("admin.payments.refundAmountPkr")} *</label>
             <input
               type="number"
               required
@@ -394,63 +412,63 @@ export const PaymentsPage: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Refund / Bank Reference</label>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">{t("admin.payments.refundBankReference")}</label>
             <input
               type="text"
               value={refundReference}
               onChange={(e) => setRefundReference(e.target.value)}
-              placeholder="e.g. HBL-REF-88213"
+              placeholder={t("admin.payments.refundReferencePlaceholder")}
               className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Reason</label>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">{t("admin.payments.reason")}</label>
             <input
               type="text"
               value={refundReason}
               onChange={(e) => setRefundReason(e.target.value)}
-              placeholder="e.g. Damaged flacon on delivery"
+              placeholder={t("admin.payments.reasonPlaceholder")}
               className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Internal Notes</label>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">{t("admin.orderDetail.internalNotes")}</label>
             <textarea
               rows={2}
               value={refundNotes}
               onChange={(e) => setRefundNotes(e.target.value)}
-              placeholder="Optional note for finance records"
+              placeholder={t("admin.payments.financeRecordNotePlaceholder")}
               className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">Refund Status</label>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wider">{t("admin.refunds.refundStatus")}</label>
             <select
               value={refundStatus}
               onChange={(e) => setRefundStatus(e.target.value as "processed" | "pending")}
               className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="processed">Processed — funds returned</option>
-              <option value="pending">Pending — bank transfer in progress</option>
+              <option value="processed">{t("admin.payments.refundProcessedOption")}</option>
+              <option value="pending">{t("admin.payments.refundPendingOption")}</option>
             </select>
           </div>
           {refundError && (
             <p className="text-xs text-rose-300 font-mono">{refundError}</p>
           )}
-          <div className="flex justify-end space-x-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setRefundTarget(null)}
               className="px-4 py-2 rounded text-xs text-muted hover:text-ivory uppercase font-bold"
             >
-              Cancel
+              {t("admin.modal.cancel")}
             </button>
             <button
               type="submit"
               disabled={refundBusy}
               className="px-4 py-2 bg-gold text-navy font-bold rounded text-xs uppercase hover:bg-goldLight disabled:opacity-50"
             >
-              {refundBusy ? "Processing…" : "Record Refund"}
+              {refundBusy ? t("admin.payments.processing") : t("admin.payments.recordRefund")}
             </button>
           </div>
         </form>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth, type UserAddress } from "../context/AuthContext";
+import { useI18n } from "../i18n/I18nProvider";
 import { Check, MapPin, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 
 interface Draft {
@@ -30,7 +31,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 const fieldClass =
-  "flex-1 bg-transparent border border-gold/30 px-4 py-3 text-xs tracking-widest placeholder:text-muted focus:outline-none focus:border-gold rounded";
+"flex-1 bg-transparent border border-gold/30 px-4 py-3 text-xs tracking-widest placeholder:text-muted focus:outline-none focus:border-gold rounded";
 
 const AddressField: React.FC<{
   label: string;
@@ -57,6 +58,7 @@ const AddressField: React.FC<{
 );
 
 export default function AddressBook() {
+  const { t } = useI18n();
   const {
     addresses,
     addressesLoading,
@@ -103,11 +105,12 @@ export default function AddressBook() {
     event.preventDefault();
     if (!draft) return;
     if (!draft.addressLine1.trim() || !draft.city.trim()) {
-      setFormError("Street address and city are required.");
+      setFormError(t("validation.addressRequired"));
       return;
     }
     setBusy(true);
     const payload: Omit<UserAddress, "id"> = {
+      // Stored on the address row and shown back as its heading: kept in English on purpose.
       title: draft.title.trim() || (draft.isDefault ? "Default address" : "Saved address"),
       fullName: draft.fullName.trim(),
       phone: draft.phone.trim(),
@@ -125,9 +128,9 @@ export default function AddressBook() {
     setBusy(false);
     if (ok) {
       setDraft(null);
-      setNotice(draft.id ? "Your address was updated." : "Your address was saved.");
+      setNotice(draft.id ? t("account.addressUpdated") : t("account.addressSaved"));
     } else {
-      setFormError("The address was not saved. Please try again.");
+      setFormError(t("account.addressNotSaved"));
     }
   };
 
@@ -135,7 +138,7 @@ export default function AddressBook() {
     setBusy(true);
     const ok = await setDefaultAddress(id);
     setBusy(false);
-    setNotice(ok ? "Default delivery address updated." : "That address could not be set as default.");
+    setNotice(ok ? t("account.defaultAddressUpdated") : t("account.defaultAddressFailed"));
   };
 
   const remove = async (id: string) => {
@@ -143,7 +146,7 @@ export default function AddressBook() {
     const ok = await removeAddress(id);
     setBusy(false);
     setConfirmRemoveId(null);
-    setNotice(ok ? "Your address was removed." : "The address could not be removed.");
+    setNotice(ok ? t("account.addressRemoved") : t("account.addressNotRemoved"));
   };
 
   return (
@@ -151,20 +154,20 @@ export default function AddressBook() {
       <div className="flex items-center justify-between border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            DELIVERY DESTINATIONS
+            {t("account.deliveryDestinations")}
           </span>
           <h2 className="text-2xl font-serif font-bold text-ivory mt-0.5">
-            Your Saved Addresses ({addresses.length})
+            {t("account.savedAddressesTitle", { count: addresses.length })}
           </h2>
         </div>
         {!draft && (
           <button
             type="button"
             onClick={startAdd}
-            className="inline-flex items-center space-x-2 px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded-lg text-xs uppercase tracking-wider shadow-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded-lg text-xs uppercase tracking-wider shadow-lg transition-colors"
           >
             <Plus className="w-4 h-4" />
-            <span>Add address</span>
+            <span>{t("account.addAddress")}</span>
           </button>
         )}
       </div>
@@ -190,12 +193,12 @@ export default function AddressBook() {
         >
           <div className="flex items-center justify-between">
             <h3 className="font-serif text-lg font-bold text-ivory">
-              {draft.id ? "Edit address" : "Add a delivery address"}
+              {draft.id ? t("account.editAddress") : t("account.addDeliveryAddress")}
             </h3>
             <button
               type="button"
               onClick={() => setDraft(null)}
-              aria-label="Cancel address form"
+              aria-label={t("account.cancelAddressForm")}
               className="inline-flex items-center justify-center min-h-11 min-w-11 text-muted hover:text-ivory rounded"
             >
               <X className="w-4 h-4" />
@@ -204,74 +207,74 @@ export default function AddressBook() {
 
           <div className="grid sm:grid-cols-2 gap-4">
             <AddressField
-              label="Label"
+              label={t("account.addressLabelField")}
               value={draft.title}
               onChange={(v) => setDraft({ ...draft, title: v })}
-              placeholder="Home, Atelier apartment, Office…"
+              placeholder={t("account.addressLabelPlaceholder")}
               autoComplete="off"
             />
             <AddressField
-              label="Recipient name"
+              label={t("account.recipientName")}
               value={draft.fullName}
               onChange={(v) => setDraft({ ...draft, fullName: v })}
-              placeholder="Full name on the parcel"
+              placeholder={t("account.recipientNamePlaceholder")}
               autoComplete="name"
             />
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4">
             <AddressField
-              label="Street address"
+              label={t("account.streetAddress")}
               value={draft.addressLine1}
               onChange={(v) => setDraft({ ...draft, addressLine1: v })}
               required
-              placeholder="House / apartment number and street"
+              placeholder={t("account.streetAddressPlaceholder")}
               autoComplete="address-line1"
             />
             <AddressField
-              label="Apartment, floor (optional)"
+              label={t("account.apartmentOptional")}
               value={draft.addressLine2}
               onChange={(v) => setDraft({ ...draft, addressLine2: v })}
-              placeholder="Flat, building, landmark"
+              placeholder={t("account.apartmentPlaceholder")}
               autoComplete="address-line2"
             />
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <AddressField
-              label="City"
+              label={t("checkout.city")}
               value={draft.city}
               onChange={(v) => setDraft({ ...draft, city: v })}
               required
-              placeholder="City"
+              placeholder={t("checkout.city")}
               autoComplete="address-level2"
             />
             <AddressField
-              label="State / region"
+              label={t("account.stateRegion")}
               value={draft.state}
               onChange={(v) => setDraft({ ...draft, state: v })}
-              placeholder="Punjab"
+              placeholder={t("addressBook.regionExample")}
               autoComplete="address-level1"
             />
             <AddressField
-              label="Postal code"
+              label={t("account.postalCodeField")}
               value={draft.postalCode}
               onChange={(v) => setDraft({ ...draft, postalCode: v })}
               placeholder="54000"
               autoComplete="postal-code"
             />
             <AddressField
-              label="Country"
+              label={t("checkout.country")}
               value={draft.country}
               onChange={(v) => setDraft({ ...draft, country: v })}
               required
-              placeholder="Pakistan"
+              placeholder={t("addressBook.countryExample")}
               autoComplete="country-name"
             />
           </div>
 
           <AddressField
-            label="Contact number"
+            label={t("account.contactNumber")}
             value={draft.phone}
             onChange={(v) => setDraft({ ...draft, phone: v })}
             placeholder="+92 300 0000000"
@@ -286,7 +289,7 @@ export default function AddressBook() {
               className="w-4 h-4 accent-gold"
             />
             <span className="text-xs text-ivory font-sans">
-              Use this as my default delivery address
+              {t("account.useAsDefault")}
             </span>
           </label>
 
@@ -300,17 +303,17 @@ export default function AddressBook() {
             <button
               type="submit"
               disabled={busy}
-              className="btn-gold-fill inline-flex items-center space-x-2 disabled:opacity-60"
+              className="btn-gold-fill inline-flex items-center gap-2 disabled:opacity-60"
             >
               <Check className="w-4 h-4" />
-              <span>{busy ? "Saving…" : draft.id ? "Save changes" : "Save address"}</span>
+              <span>{busy ? t("account.saving") : draft.id ? t("account.saveChanges") : t("account.saveAddress")}</span>
             </button>
             <button
               type="button"
               onClick={() => setDraft(null)}
               className="px-4 py-2.5 border border-gold/30 text-ivory hover:border-gold rounded-lg text-xs uppercase tracking-wider transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -318,15 +321,14 @@ export default function AddressBook() {
 
       {addressesLoading ? (
         <p role="status" className="text-xs text-muted font-sans">
-          Loading your saved addresses…
+          {t("account.loadingAddresses")}
         </p>
       ) : addresses.length === 0 && !draft ? (
         <div className="bg-navy2/80 border border-gold/20 rounded-2xl p-8 text-center space-y-3">
           <MapPin className="w-7 h-7 text-gold/70 mx-auto" aria-hidden="true" />
-          <p className="font-serif text-lg text-ivory">No saved addresses yet</p>
+          <p className="font-serif text-lg text-ivory">{t("account.noAddressesTitle")}</p>
           <p className="text-xs text-muted font-light max-w-sm mx-auto">
-            Save a delivery destination once and use it on your next order. You can also enter an
-            address at checkout without signing in.
+            {t("account.noAddressesBody")}
           </p>
         </div>
       ) : (
@@ -343,9 +345,9 @@ export default function AddressBook() {
                   {address.title}
                 </h3>
                 {address.isDefault && (
-                  <span className="shrink-0 inline-flex items-center space-x-1 text-[10px] font-mono uppercase tracking-[2px] text-navy bg-gold px-2 py-0.5 rounded">
+                  <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[2px] text-navy bg-gold px-2 py-0.5 rounded">
                     <Star className="w-3 h-3" aria-hidden="true" />
-                    <span>Default</span>
+                    <span>{t("account.defaultWord")}</span>
                   </span>
                 )}
               </div>
@@ -370,19 +372,19 @@ export default function AddressBook() {
                     type="button"
                     onClick={() => makeDefault(address.id)}
                     disabled={busy}
-                    className="inline-flex items-center space-x-1.5 text-[11px] uppercase tracking-wider text-gold hover:text-goldLight disabled:opacity-60 min-h-11"
+                    className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-gold hover:text-goldLight disabled:opacity-60 min-h-11"
                   >
                     <Star className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>Set as default</span>
+                    <span>{t("account.setAsDefault")}</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => startEdit(address)}
-                  className="inline-flex items-center space-x-1.5 text-[11px] uppercase tracking-wider text-ivory hover:text-gold min-h-11"
+                  className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-ivory hover:text-gold min-h-11"
                 >
                   <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Edit</span>
+                  <span>{t("account.editWord")}</span>
                 </button>
                 {confirmRemoveId === address.id ? (
                   <span className="inline-flex items-center gap-2">
@@ -392,24 +394,24 @@ export default function AddressBook() {
                       disabled={busy}
                       className="text-[11px] uppercase tracking-wider text-rose-200 bg-rose-950/50 border border-rose-600/50 rounded px-2.5 py-1 min-h-11"
                     >
-                      Confirm remove
+                      {t("account.confirmRemove")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmRemoveId(null)}
                       className="text-[11px] uppercase tracking-wider text-muted hover:text-ivory min-h-11"
                     >
-                      Keep
+                      {t("account.keep")}
                     </button>
                   </span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setConfirmRemoveId(address.id)}
-                    className="inline-flex items-center space-x-1.5 text-[11px] uppercase tracking-wider text-rose-300 hover:text-rose-200 min-h-11"
+                    className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-rose-300 hover:text-rose-200 min-h-11"
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>Remove</span>
+                    <span>{t("common.remove")}</span>
                   </button>
                 )}
               </div>

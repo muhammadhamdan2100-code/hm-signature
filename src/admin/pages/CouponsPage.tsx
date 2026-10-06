@@ -4,8 +4,10 @@ import { DataTable, type Column } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal, ConfirmDialog } from "../components/Modal";
 import { Plus, Edit, Trash2, Tag, RefreshCw } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const CouponsPage: React.FC = () => {
+  const { t } = useI18n();
   const { coupons, addCoupon, updateCoupon, deleteCoupon } = useAdminData();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -85,9 +87,9 @@ export const CouponsPage: React.FC = () => {
 
   const columns: Column<Coupon>[] = [
     {
-      header: "Voucher Code",
+      header: t("admin.coupons.voucherCode"),
       accessor: (c) => (
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           <Tag className="w-4 h-4 text-gold shrink-0" />
           <span className="font-mono font-bold text-gold text-sm">{c.code}</span>
         </div>
@@ -95,23 +97,23 @@ export const CouponsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Discount Value",
+      header: t("admin.coupons.discountValue"),
       accessor: (c) => (
         <span className="font-mono text-ivory font-bold text-xs">
           {c.discountType === "Percentage"
-            ? `${c.discountValue}% OFF`
-            : `Rs. ${c.discountValue} OFF`}
+            ? t("admin.coupons.percentOff", { percent: c.discountValue })
+            : t("admin.coupons.rupeesOff", { amount: c.discountValue })}
         </span>
       ),
       sortable: true,
     },
     {
-      header: "Min Order",
+      header: t("admin.coupons.minOrder"),
       accessor: (c) => <span className="font-mono text-muted">Rs. {c.minOrder}</span>,
       sortable: true,
     },
     {
-      header: "Usage Count",
+      header: t("admin.coupons.usageCount"),
       accessor: (c) => (
         <span className="font-mono text-xs text-ivory">
           {c.usedCount} / {c.usageLimit}
@@ -120,23 +122,23 @@ export const CouponsPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Valid Period",
+      header: t("admin.coupons.validPeriod"),
       accessor: (c) => (
         <span className="text-[11px] font-mono text-muted">
-          {c.startDate} to {c.expiryDate}
+          {t("admin.coupons.validPeriodRange", { start: c.startDate, end: c.expiryDate })}
         </span>
       ),
       sortable: true,
     },
     {
-      header: "Status",
+      header: t("admin.shared.status"),
       accessor: (c) => <StatusBadge status={c.active ? "Active" : "Inactive"} />,
       sortable: true,
     },
     {
-      header: "Actions",
+      header: t("admin.coupons.actions"),
       accessor: (c) => (
-        <div className="flex items-center justify-end space-x-2">
+        <div className="flex items-center justify-end gap-2">
           <button
             onClick={() => handleOpenEdit(c)}
             className="p-1.5 rounded text-muted hover:text-gold hover:bg-navy transition-colors"
@@ -151,7 +153,7 @@ export const CouponsPage: React.FC = () => {
           </button>
         </div>
       ),
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
@@ -161,21 +163,21 @@ export const CouponsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            PROMOTIONAL DISCOUNTS & VOUCHERS
+            {t("admin.coupons.promotionalDiscountsVouchers")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Coupons & Exclusive Client Offers
+            {t("admin.coupons.couponsExclusiveClient")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Create percentage discounts or fixed value promo codes for boutique checkouts.
+            {t("admin.coupons.createPercentageDiscounts")}
           </p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center gap-2 shadow-lg shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Create Coupon Code</span>
+          <span>{t("admin.coupons.createCouponCode")}</span>
         </button>
       </div>
 
@@ -184,23 +186,23 @@ export const CouponsPage: React.FC = () => {
         columns={columns}
         data={coupons}
         keyExtractor={(c) => c.id}
-        searchPlaceholder="Search coupon code..."
-        emptyMessage="No promo codes found"
+        searchPlaceholder={t("admin.coupons.searchCouponCode")}
+        emptyMessage={t("admin.coupons.noPromoCodesFound")}
       />
 
       {/* Create / Edit Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingCoupon ? "Edit Voucher Code" : "Create Exclusive Promo Code"}
+        title={editingCoupon ? t("admin.coupons.editVoucherCode") : t("admin.coupons.createExclusivePromoCode")}
         maxWidth="lg"
       >
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-              Voucher Code *
+              {t("admin.coupons.voucherCodeRequired")}
             </label>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <input
                 type="text"
                 required
@@ -212,10 +214,10 @@ export const CouponsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleGenerateCode}
-                className="px-3 py-2 bg-navy border border-gold/30 hover:border-gold text-gold text-xs rounded font-sans flex items-center space-x-1"
+                className="px-3 py-2 bg-navy border border-gold/30 hover:border-gold text-gold text-xs rounded font-sans flex items-center gap-1"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Generate</span>
+                <span>{t("admin.coupons.generate")}</span>
               </button>
             </div>
           </div>
@@ -223,21 +225,21 @@ export const CouponsPage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Discount Type
+                {t("admin.coupons.discountType")}
               </label>
               <select
                 value={discountType}
                 onChange={(e) => setDiscountType(e.target.value as any)}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
               >
-                <option value="Percentage">Percentage (%)</option>
-                <option value="Fixed">Fixed Amount (PKR)</option>
+                <option value="Percentage">{t("admin.coupons.percentagePercent")}</option>
+                <option value="Fixed">{t("admin.coupons.fixedAmountPkr")}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Discount Value *
+                {t("admin.coupons.discountValueRequired")}
               </label>
               <input
                 type="number"
@@ -252,7 +254,7 @@ export const CouponsPage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Minimum Order Value (PKR)
+                {t("admin.coupons.minimumOrderValuePkr")}
               </label>
               <input
                 type="number"
@@ -264,7 +266,7 @@ export const CouponsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Maximum Discount (PKR)
+                {t("admin.coupons.maximumDiscountPkr")}
               </label>
               <input
                 type="number"
@@ -272,7 +274,7 @@ export const CouponsPage: React.FC = () => {
                 onChange={(e) =>
                   setMaxDiscount(e.target.value ? Number(e.target.value) : undefined)
                 }
-                placeholder="Unlimited if empty"
+                placeholder={t("admin.coupons.unlimitedIfEmpty")}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus:border-gold"
               />
             </div>
@@ -281,7 +283,7 @@ export const CouponsPage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Total Global Uses Limit
+                {t("admin.coupons.totalGlobalUsesLimit")}
               </label>
               <input
                 type="number"
@@ -293,7 +295,7 @@ export const CouponsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Limit Per Client
+                {t("admin.coupons.limitPerClient")}
               </label>
               <input
                 type="number"
@@ -307,7 +309,7 @@ export const CouponsPage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Start Date
+                {t("admin.coupons.startDate")}
               </label>
               <input
                 type="date"
@@ -319,7 +321,7 @@ export const CouponsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Expiry Date
+                {t("admin.coupons.expiryDate")}
               </label>
               <input
                 type="date"
@@ -330,29 +332,29 @@ export const CouponsPage: React.FC = () => {
             </div>
           </div>
 
-          <label className="flex items-center space-x-3 cursor-pointer py-1">
+          <label className="flex items-center gap-3 cursor-pointer py-1">
             <input
               type="checkbox"
               checked={active}
               onChange={(e) => setActive(e.target.checked)}
               className="rounded border-gold/30 bg-navy text-gold focus:ring-0"
             />
-            <span className="text-xs text-ivory">Active Coupon Status</span>
+            <span className="text-xs text-ivory">{t("admin.coupons.activeCouponStatus")}</span>
           </label>
 
-          <div className="pt-4 flex justify-end space-x-3 border-t border-gold/15">
+          <div className="pt-4 flex justify-end gap-3 border-t border-gold/15">
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
               className="px-4 py-2 rounded text-xs font-sans text-muted hover:text-ivory border border-gold/20"
             >
-              Cancel
+              {t("admin.modal.cancel")}
             </button>
             <button
               type="submit"
               className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider"
             >
-              Save Coupon
+              {t("admin.coupons.saveCoupon")}
             </button>
           </div>
         </form>
@@ -365,9 +367,9 @@ export const CouponsPage: React.FC = () => {
         onConfirm={() => {
           if (deleteId) deleteCoupon(deleteId);
         }}
-        title="Delete Coupon Code"
-        message="Are you sure you want to permanently delete this voucher code?"
-        confirmText="Delete Voucher"
+        title={t("admin.coupons.deleteCouponCode")}
+        message={t("admin.coupons.deleteVoucherConfirm")}
+        confirmText={t("admin.coupons.deleteVoucher")}
         isDanger={true}
       />
     </div>

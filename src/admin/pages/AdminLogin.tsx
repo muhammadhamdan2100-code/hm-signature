@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { loginStaff, getCurrentStaff } from "../../services/auth";
 import { Eye, EyeOff, Lock, Mail, ShieldCheck, AlertCircle, ArrowRight } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const AdminLogin: React.FC = () => {
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState<string>("");
@@ -28,12 +30,12 @@ export const AdminLogin: React.FC = () => {
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setAuthError("Please enter your staff email address.");
+      setAuthError(t("admin.login.staffEmailRequired"));
       return;
     }
 
     if (!password) {
-      setAuthError("Please enter your security password.");
+      setAuthError(t("admin.login.staffPasswordRequired"));
       return;
     }
 
@@ -42,7 +44,7 @@ export const AdminLogin: React.FC = () => {
     setIsLoading(false);
 
     if (!res.success || !res.staff) {
-      setAuthError(res.error || "Invalid email address or password.");
+      setAuthError(res.error || t("admin.login.invalidEmailOrPassword"));
       return;
     }
 
@@ -60,21 +62,21 @@ export const AdminLogin: React.FC = () => {
   return (
     <main className="min-h-dvh bg-navy flex items-center justify-center p-4 relative overflow-hidden">
       {/* Radial Gold Lighting */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gold/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gold/10 rounded-full blur-[140px] pointer-events-none" />
 
       <div className="w-full max-w-[440px] z-10 space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
           <img src="/logo.png" alt="HM Signature" className="h-10 mx-auto" />
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold text-[10px] font-mono tracking-widest uppercase mt-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold text-[10px] font-mono tracking-widest uppercase mt-2">
             <ShieldCheck className="w-3.5 h-3.5 text-gold" />
-            <span>STAFF ADMINISTRATIVE PORTAL</span>
+            <span>{t("admin.login.staffAdministrativePortal")}</span>
           </div>
           <h1 className="text-2xl font-serif font-bold text-ivory tracking-wide pt-1">
-            Boutique Staff Login
+            {t("admin.login.boutiqueStaffLogin")}
           </h1>
           <p className="text-xs font-sans text-muted font-light">
-            Sign in with your authorized staff credentials to access your workspace.
+            {t("admin.login.introBody")}
           </p>
         </div>
 
@@ -92,7 +94,7 @@ export const AdminLogin: React.FC = () => {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mb-5 p-3.5 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs flex items-start space-x-2"
+                className="mb-5 p-3.5 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2"
                 aria-live="polite"
               >
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
@@ -105,10 +107,10 @@ export const AdminLogin: React.FC = () => {
             {/* Email Field */}
             <div>
               <label htmlFor="staff-login-email" className="block text-ivory/80 font-medium mb-1.5">
-                Staff Email Address <span className="text-gold">*</span>
+                {t("admin.login.staffEmailAddress")} <span className="text-gold">*</span>
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-gold/60 absolute start-3 top-1/2 -translate-y-1/2" />
                 <input
                   id="staff-login-email"
                   type="email"
@@ -119,7 +121,7 @@ export const AdminLogin: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@hmsignature.com"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg ps-10 pe-4 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -127,10 +129,10 @@ export const AdminLogin: React.FC = () => {
             {/* Password Field */}
             <div>
               <label htmlFor="staff-login-password" className="block text-ivory/80 font-medium mb-1.5">
-                Password <span className="text-gold">*</span>
+                {t("auth.passwordLabel")} <span className="text-gold">*</span>
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-gold/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-gold/60 absolute start-3 top-1/2 -translate-y-1/2" />
                 <input
                   id="staff-login-password"
                   type={showPassword ? "text" : "password"}
@@ -141,13 +143,13 @@ export const AdminLogin: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg pl-10 pr-12 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
+                  className="w-full bg-navy border border-gold/20 focus:border-gold rounded-lg ps-10 pe-12 py-2.5 min-h-11 text-xs text-ivory placeholder:text-muted focus:outline-none transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-gold transition-colors"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute end-0 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-gold transition-colors"
+                  aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -156,14 +158,14 @@ export const AdminLogin: React.FC = () => {
 
             {/* Remember Me */}
             <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center space-x-2 text-xs text-muted cursor-pointer select-none py-1.5 -my-1.5">
+              <label className="flex items-center gap-2 text-xs text-muted cursor-pointer select-none py-1.5 -my-1.5">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="rounded border-gold/30 bg-navy text-gold focus:ring-gold"
                 />
-                <span>Remember staff session</span>
+                <span>{t("admin.login.rememberStaffSession")}</span>
               </label>
             </div>
 
@@ -171,13 +173,13 @@ export const AdminLogin: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
+              className="w-full py-3 min-h-11 bg-gold hover:bg-goldLight text-navy font-semibold font-sans text-xs tracking-wider uppercase rounded-lg transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-navy border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Access Staff Workspace</span>
+                  <span>{t("admin.login.accessStaffWorkspace")}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

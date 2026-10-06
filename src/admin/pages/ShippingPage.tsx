@@ -3,8 +3,10 @@ import { useAdminData, type ShippingMethod } from "../context/AdminDataContext";
 import { Modal } from "../components/Modal";
 import { formatPKR } from "../../utils/currency";
 import { Truck, Edit } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const ShippingPage: React.FC = () => {
+  const { t } = useI18n();
   const { shippingMethods, updateShippingMethod } = useAdminData();
 
   const [editingMethod, setEditingMethod] = useState<ShippingMethod | null>(null);
@@ -45,14 +47,13 @@ export const ShippingPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            DELIVERY PRICING RECORDS
+            {t("admin.shipping.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Shipping Charges & Delivery Rates
+            {t("admin.shipping.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Delivery pricing records (not shown to clients). Rates and transit times here are stored for
-            reference; the charges applied at checkout come from the delivery pricing rules in Settings.
+            {t("admin.shipping.introBody")}
           </p>
         </div>
       </div>
@@ -76,7 +77,7 @@ export const ShippingPage: React.FC = () => {
                       : "bg-navy text-muted border-gold/20"
                   }`}
                 >
-                  {m.active ? "Active Method" : "Disabled"}
+                  {m.active ? t("admin.shipping.activeMethod") : t("common.disabled")}
                 </span>
               </div>
 
@@ -87,19 +88,23 @@ export const ShippingPage: React.FC = () => {
 
               <div className="pt-2 space-y-1.5 text-xs font-mono">
                 <div className="flex justify-between">
-                  <span className="text-muted">Rate Charge:</span>
+                  <span className="text-muted">{t("admin.shipping.rateCharge")}</span>
                   <span className="text-gold font-bold">
-                    {m.charge === 0 ? `Complimentary (${formatPKR(0)})` : formatPKR(m.charge)}
+                    {m.charge === 0
+                      ? t("admin.shipping.complimentaryWithAmount", { amount: formatPKR(0) })
+                      : formatPKR(m.charge)}
                   </span>
                 </div>
 
                 <div className="flex justify-between">
-                  <span className="text-muted">Free Threshold:</span>
-                  <span className="text-ivory">Above {formatPKR(m.freeThreshold)}</span>
+                  <span className="text-muted">{t("admin.shipping.freeThreshold")}</span>
+                  <span className="text-ivory">
+                    {t("admin.shipping.aboveAmount", { amount: formatPKR(m.freeThreshold) })}
+                  </span>
                 </div>
 
                 <div className="flex justify-between">
-                  <span className="text-muted">Estimated Delivery:</span>
+                  <span className="text-muted">{t("admin.shipping.estimatedDeliveryLabel")}</span>
                   <span className="text-gold">{m.estimatedDelivery}</span>
                 </div>
               </div>
@@ -108,10 +113,10 @@ export const ShippingPage: React.FC = () => {
             <div className="pt-4 border-t border-gold/15">
               <button
                 onClick={() => handleOpenEdit(m)}
-                className="w-full py-2 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory font-semibold text-xs font-sans uppercase tracking-wider transition-colors flex items-center justify-center space-x-1"
+                className="w-full py-2 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory font-semibold text-xs font-sans uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
               >
                 <Edit className="w-3.5 h-3.5" />
-                <span>Configure Method</span>
+                <span>{t("admin.shipping.configureMethod")}</span>
               </button>
             </div>
           </div>
@@ -122,13 +127,15 @@ export const ShippingPage: React.FC = () => {
       <Modal
         isOpen={editingMethod !== null}
         onClose={() => setEditingMethod(null)}
-        title={`Configure Shipping Method — ${editingMethod?.name || ""}`}
+        title={t("admin.shipping.configureShippingMethodNamed", {
+          name: editingMethod?.name || "",
+        })}
       >
         {editingMethod && (
           <form onSubmit={handleSave} className="space-y-4">
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Method Name *
+                {t("admin.shipping.methodNameRequired")}
               </label>
               <input
                 type="text"
@@ -141,7 +148,7 @@ export const ShippingPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Service Description
+                {t("admin.shipping.serviceDescription")}
               </label>
               <textarea
                 rows={2}
@@ -154,7 +161,7 @@ export const ShippingPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Base Charge (PKR)
+                  {t("admin.shipping.baseChargePkr")}
                 </label>
                 <input
                   type="number"
@@ -166,7 +173,7 @@ export const ShippingPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Free Shipping Minimum (PKR)
+                  {t("admin.shipping.freeShippingMinimumPkr")}
                 </label>
                 <input
                   type="number"
@@ -179,40 +186,40 @@ export const ShippingPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                Estimated Transit Time
+                {t("admin.shipping.estimatedTransitTime")}
               </label>
               <input
                 type="text"
                 value={estimatedDelivery}
                 onChange={(e) => setEstimatedDelivery(e.target.value)}
-                placeholder="2–3 business days"
+                placeholder={t("admin.shipping.estimatedTransitPlaceholder")}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus:border-gold"
               />
             </div>
 
-            <label className="flex items-center space-x-3 cursor-pointer py-1">
+            <label className="flex items-center gap-3 cursor-pointer py-1">
               <input
                 type="checkbox"
                 checked={active}
                 onChange={(e) => setActive(e.target.checked)}
                 className="rounded border-gold/30 bg-navy text-gold focus:ring-0"
               />
-              <span className="text-xs text-ivory">Active Method at Checkout</span>
+              <span className="text-xs text-ivory">{t("admin.shipping.activeMethodAtCheckout")}</span>
             </label>
 
-            <div className="pt-4 flex justify-end space-x-3 border-t border-gold/15">
+            <div className="pt-4 flex justify-end gap-3 border-t border-gold/15">
               <button
                 type="button"
                 onClick={() => setEditingMethod(null)}
                 className="px-4 py-2 rounded text-xs font-sans text-muted hover:text-ivory border border-gold/20"
               >
-                Cancel
+                {t("admin.modal.cancel")}
               </button>
               <button
                 type="submit"
                 className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider"
               >
-                Save Configuration
+                {t("admin.shipping.saveConfiguration")}
               </button>
             </div>
           </form>

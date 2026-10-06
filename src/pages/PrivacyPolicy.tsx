@@ -1,42 +1,32 @@
 import LegalPage from "../components/LegalPage";
+import { useI18n } from "../i18n/I18nProvider";
 
 export default function PrivacyPolicy() {
+  const { t } = useI18n();
   return (
     <LegalPage
-      title="Privacy Policy"
-      updated="September 2026"
+      title={t("footer.privacyPolicy")}
+      updated={t("legal.updatedDate")}
       sections={[
         {
-          title: "Information We Collect",
-          body: [
-            "When you place an order, create an account, or contact us, we collect information such as your name, email address, phone number, shipping address, and payment details necessary to fulfil your order.",
-            "We also collect basic usage data — pages visited, items viewed, and cart activity — to improve your shopping experience.",
-          ],
+          title: t("legal.privacyCollectTitle"),
+          body: [t("legal.privacyCollectBody1"), t("legal.privacyCollectBody2")],
         },
         {
-          title: "How We Use Your Information",
-          body: [
-            "Your information is used to process orders, provide customer support, personalize recommendations (such as Scent Finder results), and send order updates or marketing communications you've opted into.",
-            "We never sell your personal information to third parties.",
-          ],
+          title: t("legal.privacyUseTitle"),
+          body: [t("legal.privacyUseBody1"), t("legal.privacyUseBody2")],
         },
         {
-          title: "Data Storage & Security",
-          body: [
-            "We take reasonable technical and organizational measures to protect your data from unauthorized access, alteration, or disclosure. Payment details are processed through secure, encrypted channels.",
-          ],
+          title: t("legal.privacySecurityTitle"),
+          body: [t("legal.privacySecurityBody1")],
         },
         {
-          title: "Cookies",
-          body: [
-            "Our site uses cookies and local storage to remember your cart, wishlist, and preferences between visits. You can clear these at any time through your browser settings.",
-          ],
+          title: t("legal.privacyCookiesTitle"),
+          body: [t("legal.privacyCookiesBody1")],
         },
         {
-          title: "Your Rights",
-          body: [
-            "You may request access to, correction of, or deletion of your personal data at any time by contacting us through our Contact page.",
-          ],
+          title: t("legal.privacyRightsTitle"),
+          body: [t("legal.privacyRightsBody1")],
         },
       ]}
     />

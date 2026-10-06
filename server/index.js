@@ -28,6 +28,13 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({ origin: allowedOrigins(), credentials: false }));
+
+// Stripe signs the exact request bytes, so the webhook must be read before anything parses it.
+// Mounted first: express hands a request to the first matching layer, and a parsed-and-reserialized
+// body can never be signature-verified.
+const stripeNotifyHandler = (await import("../api/stripe-notify.js")).default;
+app.post("/api/stripe-notify", express.raw({ type: () => true, limit: "256kb" }), withRequestId(stripeNotifyHandler));
+
 app.use(express.json({ limit: "64kb" }));
 
 // Payment providers live inside api/ so the dev proxy and the deployed functions
@@ -151,6 +158,25 @@ app.post("/api/email-worker", emailWorkerHandler);
 const automationWorkerHandler = (await import("../api/automation-worker.js")).default;
 app.get("/api/automation-worker", automationWorkerHandler);
 app.post("/api/automation-worker", automationWorkerHandler);
+
+// 3c. PAYMENT-METHOD ARCHITECTURE — the same three functions Vercel runs. The method list
+// resolves availability from the configuration table plus this process's provider credentials, so
+// with no Stripe key deployed it reports every card rail as not_configured and checkout shows it
+// as coming soon instead of pretending.
+const paymentMethodsHandler = (await import("../api/payment-methods.js")).default;
+const stripeStartHandler = (await import("../api/stripe-start.js")).default;
+app.get("/api/payment-methods", withRequestId(paymentMethodsHandler));
+app.post("/api/stripe-start", withRequestId(stripeStartHandler));
+
+// 3d. PHASE 8 BRAND EXPERIENCE — recommendation rails are ranked in the database under the
+// caller's own RLS context, so the dev server forwards the bearer token exactly as Vercel does.
+const recommendationsHandler = (await import("../api/recommendations.js")).default;
+app.get("/api/recommendations", withRequestId(recommendationsHandler));
+
+const discoveryHandler = (await import("../api/discovery.js")).default;
+const giftFinderHandler = (await import("../api/gift-finder.js")).default;
+app.get("/api/discovery", withRequestId(discoveryHandler));
+app.get("/api/gift-finder", withRequestId(giftFinderHandler));
 
 // 4. HOSTED PAYMENTS — the same two functions Vercel runs. Both answer honestly
 // while PayFast credentials are absent: start returns 503, notify acknowledges and

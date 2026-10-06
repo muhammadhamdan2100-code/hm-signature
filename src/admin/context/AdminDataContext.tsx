@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { products as initialProductsData, type ProductVariant, generateDefaultVariants } from "../../data/products";
 import { type StaffMember, type StaffStatus, PRIMARY_ADMIN_EMAIL, isPrimaryAdmin } from "../../types/staff";
 import { INITIAL_STAFF_MEMBERS } from "../../services/staff";
@@ -63,6 +63,15 @@ import {
   recordCartRecoveryInDB,
   fetchStaffMembersFromDB,
 } from "../../services/adminContent";
+import { useI18n } from "../../i18n/I18nProvider";
+import {
+  bundleFor,
+  getActiveContentLanguage,
+  readTranslationMap,
+  SOURCE_LANGUAGE_CODE,
+  type EntityKind,
+  type TranslationBundle,
+} from "../../services/localizedContent";
 
 export type { StaffMember, ProductVariant };
 export { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin };
@@ -142,14 +151,14 @@ export type OrderStatus =
 
 /** Lifecycle order, used wherever the full status vocabulary must be enumerated. */
 export const ORDER_STATUS_ORDER: OrderStatus[] = [
-  "Pending",
-  "Confirmed",
-  "Processing",
-  "Shipped",
-  "Out for Delivery",
-  "Delivered",
-  "Cancelled",
-  "Returned",
+"Pending",
+"Confirmed",
+"Processing",
+"Shipped",
+"Out for Delivery",
+"Delivered",
+"Cancelled",
+"Returned",
 ];
 
 export type PaymentMethod = "Cash on Delivery" | "JazzCash" | "Raast" | "Bank Transfer" | "Credit Card" | "PayFast" | "payfast";
@@ -213,6 +222,13 @@ export interface Order {
   discount: number;
   shippingFee: number;
   total: number;
+  /** Snapshot taken when the order was placed; never recomputed from current settings. */
+  currency?: string;
+  taxAmount?: number;
+  taxRate?: number;
+  taxLabel?: string;
+  destinationCountry?: string | null;
+  totalInCurrency?: number | null;
   status: OrderStatus;
   shippingStatus: "Unfulfilled" | "Processing" | "In Transit" | "Delivered" | "Returned";
   paymentStatus: PaymentStatus;
@@ -1074,12 +1090,13 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   sections: [
     { id: "hero", name: "Hero Banner", enabled: true, order: 1 },
     { id: "collections", name: "Scented Stories Collection Grid", enabled: true, order: 2 },
-    { id: "values", name: "House Values Panel", enabled: true, order: 3 },
-    { id: "story", name: "Brand Heritage Story", enabled: true, order: 4 },
-    { id: "spotlight", name: "Featured Fragrance Spotlight", enabled: true, order: 5 },
-    { id: "journal", name: "Journal & Notes Editor", enabled: true, order: 6 },
-    { id: "reviews", name: "Client Reviews", enabled: true, order: 7 },
-    { id: "newsletter", name: "Private Atelier Newsletter", enabled: true, order: 8 },
+    { id: "recommended", name: "Personalised Discovery", enabled: true, order: 3 },
+    { id: "values", name: "House Values Panel", enabled: true, order: 4 },
+    { id: "story", name: "Brand Heritage Story", enabled: true, order: 5 },
+    { id: "spotlight", name: "Featured Fragrance Spotlight", enabled: true, order: 6 },
+    { id: "journal", name: "Journal & Notes Editor", enabled: true, order: 7 },
+    { id: "reviews", name: "Client Reviews", enabled: true, order: 8 },
+    { id: "newsletter", name: "Private Atelier Newsletter", enabled: true, order: 9 },
   ],
 };
 
@@ -1163,28 +1180,28 @@ const initialSystemNotifications: SystemNotification[] = [
 
 const initialEmailTemplates: EmailTemplate[] = [
   {
-    id: "tmpl-1",
+    id: "tmps-1",
     type: "Order Confirmation",
     subject: "HM SIGNATURE — Order Confirmation #{{order_number}}",
     body: "Dear {{customer_name}},\n\nThank you for choosing HM Signature. Your luxury fragrance order #{{order_number}} has been received and is being prepared in our private atelier.\n\nTotal: {{order_total}}\n\nWarm regards,\nHM Signature Concierge",
     active: true,
   },
   {
-    id: "tmpl-2",
+    id: "tmps-2",
     type: "Order Shipped",
     subject: "HM SIGNATURE — Your Fragrance is In Transit #{{order_number}}",
     body: "Dear {{customer_name}},\n\nYour signature package has dispatched via {{courier}}. Tracking Number: {{tracking_number}}.\n\nThank you for your patience.",
     active: true,
   },
   {
-    id: "tmpl-3",
+    id: "tmps-3",
     type: "Order Delivered",
     subject: "HM SIGNATURE — Delivery Confirmed #{{order_number}}",
     body: "Dear {{customer_name}},\n\nYour order has been delivered. We hope your new signature scent brings you elegance and confidence.\n\nWarm regards,\nHM Signature",
     active: true,
   },
   {
-    id: "tmpl-4",
+    id: "tmps-4",
     type: "Welcome Member",
     subject: "Welcome to the World of HM Signature",
     body: "Dear {{customer_name}},\n\nWelcome to our private atelier circle. Explore our rare extraits de parfum crafted with uncompromising artisanal quality.",
@@ -1272,6 +1289,10 @@ const initialSeoEntries: SeoEntry[] = [
 
 // --- CONTEXT INTERFACE ---
 interface AdminDataContextType {
+  /** Display name of a DB row in the console language, falling back to the stored source text. */
+  contentName: (kind: EntityKind, id: string | null | undefined, fallback: string) => string;
+  /** The active console language, so a page can tell source text from displayed text. */
+  contentLanguage: string;
   products: AdminProduct[];
   categories: Category[];
   collections: Collection[];
@@ -1382,6 +1403,7 @@ interface AdminDataContextType {
 const AdminDataContext = createContext<AdminDataContextType | undefined>(undefined);
 
 export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { t, language } = useI18n();
   // When Supabase is connected, demo/seed rows must not masquerade as store
   // data: every business collection starts empty and is filled from the DB.
   const seed = <T,>(fallback: T[]): T[] => (isSupabaseConfigured() ? [] : fallback);
@@ -1452,17 +1474,20 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   }, []);
 
-  const showToast = (type: ToastMessage["type"], message: string) => {
+  // Stable identities on purpose: pages list `showToast` in useEffect/useCallback dependency
+  // arrays, and a fresh function on every provider render makes those effects re-fire in a loop
+  // ("Maximum update depth exceeded" on the localization screen).
+  const showToast = useCallback((type: ToastMessage["type"], message: string) => {
     const id = "t-" + Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
-  };
+  }, []);
 
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
   // Hydration for every visitor: only the datasets the storefront itself renders.
   useEffect(() => {
@@ -1611,7 +1636,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
   const addProduct = async (prodData: Omit<AdminProduct, "id" | "createdAt">): Promise<boolean> => {
     const success = await saveProductToDB(prodData);
     if (!success) {
-      showToast("error", `Product "${prodData.name}" could not be saved. Check the size, SKU and price values.`);
+      showToast("error", t("admin.adminDataContext.productCouldNotBeSavedName", { name: prodData.name }));
       return false;
     }
     if (isSupabaseConfigured()) {
@@ -1625,7 +1650,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
       setProducts((prev) => [newProd, ...prev]);
     }
-    showToast("success", `Product "${prodData.name}" saved.`);
+    showToast("success", t("admin.adminDataContext.productNameSaved", { name: prodData.name }));
     return true;
   };
 
@@ -1638,7 +1663,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     const merged = { ...(existing ?? { id }), ...updates } as AdminProduct;
     const success = await saveProductToDB(merged);
     if (!success) {
-      showToast("error", "Product could not be saved. Check the size, SKU and price values.");
+      showToast("error", t("admin.adminDataContext.productCouldNotBeSaved"));
       return false;
     }
     if (isSupabaseConfigured()) {
@@ -1649,14 +1674,14 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
       );
     }
-    showToast("success", `${existing?.name || updates.name || "Product"} updated.`);
+    showToast("success", t("admin.adminDataContext.nameUpdated", { name: existing?.name || updates.name || "Product" }));
     return true;
   };
 
   const deleteProduct = async (id: string) => {
     const removed = await deleteProductSafeFromDB(id);
     if (!removed) {
-      showToast("error", "The fragrance could not be removed or archived. Please try again.");
+      showToast("error", t("admin.adminDataContext.theFragranceCouldNotBe"));
       return;
     }
     if (isSupabaseConfigured()) {
@@ -1665,7 +1690,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     } else {
       setProducts((prev) => prev.filter((p) => p.id !== id));
     }
-    showToast("success", "Fragrance removed or archived (archived when it has order or stock history).");
+    showToast("success", t("admin.adminDataContext.fragranceRemovedOrArchivedArchived"));
   };
 
   const bulkDeleteProducts = async (ids: string[]) => {
@@ -1678,7 +1703,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     } else {
       setProducts((prev) => prev.filter((p) => !ids.includes(p.id)));
     }
-    showToast("info", `${ids.length} products processed.`);
+    showToast("info", t("admin.adminDataContext.countProductsProcessed", { count: ids.length }));
   };
 
   const bulkToggleProductStatus = async (ids: string[], active: boolean) => {
@@ -1693,7 +1718,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         prev.map((p) => (ids.includes(p.id) ? { ...p, active } : p))
       );
     }
-    showToast("success", `Status updated for ${ids.length} products.`);
+    showToast("success", t("admin.adminDataContext.statusUpdatedForCountProducts", { count: ids.length }));
   };
 
   const duplicateProduct = async (id: string) => {
@@ -1717,7 +1742,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
       setProducts((prev) => [duplicated, ...prev]);
     }
-    showToast("success", `Duplicated product "${target.name}".`);
+    showToast("success", t("admin.adminDataContext.duplicatedProduct", { name: target.name }));
   };
 
   // Categories
@@ -1730,7 +1755,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const newCat: Category = { ...cat, id: "cat-" + Date.now(), productCount: 0 };
       setCategories((prev) => [...prev, newCat]);
     }
-    showToast("success", `Category "${cat.name}" created.`);
+    showToast("success", t("admin.adminDataContext.categoryNameCreated", { name: cat.name }));
   };
 
   const updateCategory = async (id: string, updates: Partial<Category>) => {
@@ -1744,7 +1769,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     } else {
       setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
     }
-    showToast("success", "Category updated.");
+    showToast("success", t("admin.adminDataContext.categoryUpdated"));
   };
 
   const deleteCategory = async (id: string) => {
@@ -1755,7 +1780,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     } else {
       setCategories((prev) => prev.filter((c) => c.id !== id));
     }
-    showToast("info", "Category processed.");
+    showToast("info", t("admin.adminDataContext.categoryProcessed"));
   };
 
   // Collections
@@ -1768,7 +1793,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const newCol: Collection = { ...col, id: "col-" + Date.now() };
       setCollections((prev) => [...prev, newCol]);
     }
-    showToast("success", `Collection "${col.name}" created.`);
+    showToast("success", t("admin.adminDataContext.collectionNameCreated", { name: col.name }));
   };
 
   const updateCollection = async (id: string, updates: Partial<Collection>) => {
@@ -1782,7 +1807,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     } else {
       setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
     }
-    showToast("success", "Collection updated.");
+    showToast("success", t("admin.adminDataContext.collectionUpdated"));
   };
 
   const deleteCollection = async (id: string) => {
@@ -1793,7 +1818,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     } else {
       setCollections((prev) => prev.filter((c) => c.id !== id));
     }
-    showToast("info", "Collection processed.");
+    showToast("info", t("admin.adminDataContext.collectionProcessed"));
   };
 
   // Orders
@@ -1813,7 +1838,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured() && isRealDbId(orderData.id)) {
       // Order already persisted by place_order RPC — refresh authoritative state
       await refreshOrdersAndPayments();
-      showToast("success", `New Order #${orderData.orderNumber} placed via ${orderData.paymentMethod}.`);
+      showToast("success", t("admin.adminDataContext.newOrderPlacedVia", { number: orderData.orderNumber, method: orderData.paymentMethod }));
       return;
     }
 
@@ -1843,18 +1868,18 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       date: timeString,
     };
     setPayments((prev) => [newPayment, ...prev]);
-    showToast("success", `New Order #${newOrder.orderNumber} placed via ${newOrder.paymentMethod}.`);
+    showToast("success", t("admin.adminDataContext.newOrderPlacedVia2", { number: newOrder.orderNumber, method: newOrder.paymentMethod }));
   };
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus, note?: string) => {
     if (isSupabaseConfigured() && isRealDbId(orderId)) {
       const ok = await updateOrderStatusInDB(orderId, status, note);
       if (!ok) {
-        showToast("error", "Failed to update order status in database.");
+        showToast("error", t("admin.adminDataContext.failedToUpdateOrderStatus"));
         return;
       }
       await refreshOrdersAndPayments();
-      showToast("success", `Order status changed to ${status}.`);
+      showToast("success", t("admin.adminDataContext.orderStatusChangedTo", { status }));
       return;
     }
     const timeString = new Date().toISOString().replace("T", " ").slice(0, 16);
@@ -1871,7 +1896,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return o;
       })
     );
-    showToast("success", `Order #${orderId} status changed to ${status}.`);
+    showToast("success", t("admin.adminDataContext.orderStatusChangedToId", { id: orderId, status }));
   };
 
   const updateOrderShipping = async (
@@ -1888,7 +1913,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return { success: false };
       }
       await refreshOrdersAndPayments();
-      showToast("success", res.trackingId ? `Tracking saved — ${res.trackingId}.` : "Tracking information saved.");
+      showToast("success", res.trackingId ? t("admin.adminDataContext.trackingSavedWithId", { id: res.trackingId }) : t("admin.adminDataContext.trackingInformationSaved"));
       return { success: true, trackingId: res.trackingId };
     }
     setOrders((prev) =>
@@ -1903,19 +1928,19 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           : o
       )
     );
-    showToast("success", "Tracking information saved.");
+    showToast("success", t("admin.adminDataContext.trackingInformationSaved"));
     return { success: true };
   };
 
   const saveAdminNotes = async (orderId: string, adminNotes: string) => {
     if (isSupabaseConfigured() && isRealDbId(orderId)) {
       const ok = await updateOrderNotesInDB(orderId, { adminNotes });
-      showToast(ok ? "success" : "error", ok ? "Internal note saved." : "Internal note could not be saved.");
+      showToast(ok ? "success" : "error", ok ? t("admin.adminDataContext.internalNoteSaved") : t("admin.adminDataContext.internalNoteCouldNotBeSaved"));
       if (ok) await refreshOrdersAndPayments();
       return ok;
     }
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, adminNotes } : o)));
-    showToast("success", "Internal note saved.");
+    showToast("success", t("admin.adminDataContext.internalNoteSaved"));
     return true;
   };
 
@@ -1936,11 +1961,11 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured() && isRealDbId(paymentId)) {
       const ok = await verifyPaymentInDB(paymentId, note);
       if (!ok) {
-        showToast("error", "Failed to verify payment. Check staff authorization.");
+        showToast("error", t("admin.adminDataContext.failedToVerifyPaymentCheck"));
         return;
       }
       await refreshOrdersAndPayments();
-      showToast("success", "Payment verified successfully.");
+      showToast("success", t("admin.adminDataContext.paymentVerifiedSuccessfully"));
       return;
     }
     setPayments((prev) =>
@@ -1954,18 +1979,18 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return p;
       })
     );
-    showToast("success", "Payment verified successfully.");
+    showToast("success", t("admin.adminDataContext.paymentVerifiedSuccessfully"));
   };
 
   const rejectPayment = async (paymentId: string, reason?: string) => {
     if (isSupabaseConfigured() && isRealDbId(paymentId)) {
       const ok = await rejectPaymentInDB(paymentId, reason);
       if (!ok) {
-        showToast("error", "Failed to reject payment.");
+        showToast("error", t("admin.adminDataContext.failedToRejectPayment"));
         return;
       }
       await refreshOrdersAndPayments();
-      showToast("error", "Payment rejected.");
+      showToast("error", t("admin.adminDataContext.paymentRejected"));
       return;
     }
     setPayments((prev) =>
@@ -1979,18 +2004,18 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return p;
       })
     );
-    showToast("error", "Payment rejected.");
+    showToast("error", t("admin.adminDataContext.paymentRejected"));
   };
 
   const markCodCollected = async (paymentId: string) => {
     if (isSupabaseConfigured() && isRealDbId(paymentId)) {
       const ok = await markCodCollectedInDB(paymentId);
       if (!ok) {
-        showToast("error", "Failed to mark COD as collected.");
+        showToast("error", t("admin.adminDataContext.failedToMarkCodAs"));
         return;
       }
       await refreshOrdersAndPayments();
-      showToast("success", "COD payment marked as Collected.");
+      showToast("success", t("admin.adminDataContext.codPaymentMarkedAsCollected"));
       return;
     }
     setPayments((prev) =>
@@ -2004,7 +2029,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return p;
       })
     );
-    showToast("success", "COD payment marked as Collected.");
+    showToast("success", t("admin.adminDataContext.codPaymentMarkedAsCollected"));
   };
 
   const createRefund = async (input: {
@@ -2017,14 +2042,14 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     status?: "pending" | "processed" | "failed" | "rejected";
   }): Promise<{ success: boolean; error?: string }> => {
     if (!isSupabaseConfigured()) {
-      return { success: false, error: "Refunds require the Supabase backend to be configured." };
+      return { success: false, error: t("admin.adminDataContext.refundsRequireSupabase") };
     }
     const res = await recordRefundInDB(input);
     if (res.success) {
       await refreshOrdersAndPayments();
-      showToast("success", res.fullyRefunded ? "Payment fully refunded." : "Refund recorded.");
+      showToast("success", res.fullyRefunded ? t("admin.adminDataContext.paymentFullyRefunded") : t("admin.adminDataContext.refundRecorded"));
     } else {
-      showToast("error", "Refund could not be recorded.");
+      showToast("error", t("admin.adminDataContext.refundCouldNotBeRecorded"));
     }
     return { success: res.success, error: res.error };
   };
@@ -2069,7 +2094,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       setInventoryLogs((prev) => [newLog, ...prev]);
     }
-    showToast("success", `Stock for "${prod.name}" adjusted by ${change > 0 ? "+" : ""}${change}.`);
+    showToast("success", t("admin.adminDataContext.stockAdjustedFor", { name: prod.name, amount: `${change > 0 ? "+" : ""}${change}` }));
   };
 
   // Coupons
@@ -2082,16 +2107,16 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured()) {
       const ok = await saveCouponToDB({ ...coupon, usedCount: 0 } as Partial<Coupon>);
       if (!ok) {
-        showToast("error", "Failed to create coupon in database.");
+        showToast("error", t("admin.adminDataContext.failedToCreateCouponIn"));
         return;
       }
       await refreshCoupons();
-      showToast("success", `Coupon code "${coupon.code}" created.`);
+      showToast("success", t("admin.adminDataContext.couponCodeCreated", { code: coupon.code }));
       return;
     }
     const newCoup: Coupon = { ...coupon, id: "coup-" + Date.now(), usedCount: 0 };
     setCoupons((prev) => [newCoup, ...prev]);
-    showToast("success", `Coupon code "${newCoup.code}" created.`);
+    showToast("success", t("admin.adminDataContext.couponCodeCreated2", { code: newCoup.code }));
   };
 
   const updateCoupon = async (id: string, updates: Partial<Coupon>) => {
@@ -2099,26 +2124,26 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const existing = coupons.find((c) => c.id === id);
       const ok = await saveCouponToDB({ ...existing, ...updates, id });
       if (!ok) {
-        showToast("error", "Failed to update coupon.");
+        showToast("error", t("admin.adminDataContext.failedToUpdateCoupon"));
         return;
       }
       await refreshCoupons();
-      showToast("success", "Coupon updated.");
+      showToast("success", t("admin.adminDataContext.couponUpdated"));
       return;
     }
     setCoupons((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
-    showToast("success", "Coupon updated.");
+    showToast("success", t("admin.adminDataContext.couponUpdated"));
   };
 
   const deleteCoupon = async (id: string) => {
     if (isSupabaseConfigured()) {
       await deleteCouponFromDB(id);
       await refreshCoupons();
-      showToast("info", "Coupon removed.");
+      showToast("info", t("admin.adminDataContext.couponRemoved"));
       return;
     }
     setCoupons((prev) => prev.filter((c) => c.id !== id));
-    showToast("info", "Coupon removed.");
+    showToast("info", t("admin.adminDataContext.couponRemoved"));
   };
 
   // Shipping
@@ -2132,17 +2157,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const existing = shippingMethods.find((s) => s.id === id);
       const ok = await saveShippingMethodToDB({ ...existing, ...updates, id });
       if (!ok) {
-        showToast("error", "Failed to update shipping method.");
+        showToast("error", t("admin.adminDataContext.failedToUpdateShippingMethod"));
         return;
       }
       await refreshShippingMethods();
-      showToast("success", "Shipping method updated.");
+      showToast("success", t("admin.adminDataContext.shippingMethodUpdated"));
       return;
     }
     setShippingMethods((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
     );
-    showToast("success", "Shipping method updated.");
+    showToast("success", t("admin.adminDataContext.shippingMethodUpdated"));
   };
 
   // Reviews
@@ -2155,26 +2180,26 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured() && isRealDbId(id)) {
       const ok = await updateReviewStatusInDB(id, status);
       if (!ok) {
-        showToast("error", "Failed to update review status.");
+        showToast("error", t("admin.adminDataContext.failedToUpdateReviewStatus"));
         return;
       }
       await refreshReviews();
-      showToast("success", `Review status changed to ${status}.`);
+      showToast("success", t("admin.adminDataContext.reviewStatusChangedTo", { status }));
       return;
     }
     setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
-    showToast("success", `Review status changed to ${status}.`);
+    showToast("success", t("admin.adminDataContext.reviewStatusChangedTo", { status }));
   };
 
   const deleteReview = async (id: string) => {
     if (isSupabaseConfigured() && isRealDbId(id)) {
       await deleteReviewFromDB(id);
       await refreshReviews();
-      showToast("info", "Review deleted.");
+      showToast("info", t("admin.adminDataContext.reviewDeleted"));
       return;
     }
     setReviews((prev) => prev.filter((r) => r.id !== id));
-    showToast("info", "Review deleted.");
+    showToast("info", t("admin.adminDataContext.reviewDeleted"));
   };
 
   // Homepage Config
@@ -2183,13 +2208,13 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured()) {
       const ok = await saveHomepageConfigToDB(merged);
       if (!ok) {
-        showToast("error", "Failed to save homepage settings to database.");
+        showToast("error", t("admin.adminDataContext.failedToSaveHomepageSettings"));
         return;
       }
       setHomepageConfigPersisted(true);
     }
     setHomepageConfig(merged);
-    showToast("success", "Homepage CMS settings saved.");
+    showToast("success", t("admin.adminDataContext.homepageCmsSettingsSaved"));
   };
 
   // Campaigns
@@ -2203,16 +2228,16 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured()) {
       const ok = await saveCampaignToDB(camp);
       if (!ok) {
-        showToast("error", "Failed to create campaign.");
+        showToast("error", t("admin.adminDataContext.failedToCreateCampaign"));
         return;
       }
       await refreshCampaigns();
-      showToast("success", `Marketing campaign "${camp.name}" saved as ${camp.status}.`);
+      showToast("success", t("admin.adminDataContext.campaignSavedAs", { name: camp.name, status: camp.status }));
       return;
     }
     const newCamp: Campaign = { ...camp, id: "camp-" + Date.now() };
     setCampaigns((prev) => [newCamp, ...prev]);
-    showToast("success", `Marketing campaign "${newCamp.name}" saved as ${newCamp.status}.`);
+    showToast("success", t("admin.adminDataContext.campaignSavedAs2", { name: newCamp.name, status: newCamp.status }));
   };
 
   const updateCampaign = async (id: string, updates: Partial<Campaign>) => {
@@ -2220,30 +2245,30 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const existing = campaigns.find((c) => c.id === id);
       const ok = await saveCampaignToDB({ ...existing, ...updates, id });
       if (!ok) {
-        showToast("error", "Failed to update campaign.");
+        showToast("error", t("admin.adminDataContext.failedToUpdateCampaign"));
         return;
       }
       await refreshCampaigns();
-      showToast("success", "Campaign updated.");
+      showToast("success", t("admin.adminDataContext.campaignUpdated"));
       return;
     }
     setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
-    showToast("success", "Campaign updated.");
+    showToast("success", t("admin.adminDataContext.campaignUpdated"));
   };
 
   const deleteCampaign = async (id: string) => {
     if (isSupabaseConfigured()) {
       const ok = await deleteCampaignFromDB(id);
       if (!ok) {
-        showToast("error", "Failed to remove campaign.");
+        showToast("error", t("admin.adminDataContext.failedToRemoveCampaign"));
         return;
       }
       await refreshCampaigns();
-      showToast("info", "Campaign removed.");
+      showToast("info", t("admin.adminDataContext.campaignRemoved"));
       return;
     }
     setCampaigns((prev) => prev.filter((c) => c.id !== id));
-    showToast("info", "Campaign removed.");
+    showToast("info", t("admin.adminDataContext.campaignRemoved"));
   };
 
   // Abandoned Carts — recovery state lives in the database, written only through
@@ -2253,17 +2278,17 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured() && /^[0-9a-f]{8}-/i.test(cartId)) {
       const result = await recordCartRecoveryInDB(cartId, action);
       if (!result.success) {
-        showToast("error", result.error || "Failed to record cart recovery.");
+        showToast("error", result.error || t("admin.adminDataContext.failedToRecordCartRecovery"));
         return false;
       }
       setAbandonedCarts(await fetchAbandonedCartsAggFromDB());
       showToast(
-        "success",
+"success",
         action === "reminder"
-          ? "Reminder recorded for this client. No email is dispatched while the mail service is unconfigured."
+          ? t("admin.adminDataContext.reminderRecordedNoEmail")
           : action === "recovered"
-            ? "Bag marked as recovered."
-            : "Recovery state cleared."
+            ? t("admin.adminDataContext.bagMarkedAsRecovered")
+            : t("admin.adminDataContext.recoveryStateCleared")
       );
       return true;
     }
@@ -2286,7 +2311,7 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
         return next;
       })
     );
-    showToast("success", action === "reminder" ? "Recovery reminder recorded." : action === "recovered" ? "Bag marked as recovered." : "Recovery state cleared.");
+    showToast("success", action === "reminder" ? t("admin.adminDataContext.recoveryReminderRecorded") : action === "recovered" ? t("admin.adminDataContext.bagMarkedAsRecovered") : t("admin.adminDataContext.recoveryStateCleared"));
     return true;
   };
 
@@ -2310,16 +2335,16 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const existing = emailTemplates.find((t) => t.id === id);
       const ok = await saveEmailTemplateToDB({ ...existing, ...updates, id });
       if (!ok) {
-        showToast("error", "Failed to update template.");
+        showToast("error", t("admin.adminDataContext.failedToUpdateTemplate"));
         return;
       }
       const dbTemplates = await fetchEmailTemplatesFromDB();
       if (dbTemplates.length > 0) setEmailTemplates(dbTemplates);
-      showToast("success", "Notification template updated.");
+      showToast("success", t("admin.adminDataContext.notificationTemplateUpdated"));
       return;
     }
     setEmailTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
-    showToast("success", "Notification template updated.");
+    showToast("success", t("admin.adminDataContext.notificationTemplateUpdated"));
   };
 
   // Staff & Permissions
@@ -2330,20 +2355,20 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       lastActive: "Never",
     };
     setStaffMembers((prev) => [...prev, newStaff]);
-    showToast("success", `Staff member "${newStaff.name}" added.`);
+    showToast("success", t("admin.adminDataContext.staffAdded", { name: newStaff.name }));
   };
 
   const updateStaffPermissions = (id: string, permissions: Record<string, boolean>) => {
     setStaffMembers((prev) =>
       prev.map((s) => (s.id === id ? { ...s, permissions } : s))
     );
-    showToast("success", "Staff permissions saved.");
+    showToast("success", t("admin.adminDataContext.staffPermissionsSaved"));
   };
 
   const updateStaffStatus = (id: string, status: StaffStatus) => {
     const target = staffMembers.find((s) => s.id === id);
     if (target && isPrimaryAdmin(target)) {
-      showToast("error", "The Primary Super Admin (Muhammad Hamdan) is protected and cannot be deactivated.");
+      showToast("error", t("admin.adminDataContext.thePrimarySuperAdminMuhammad"));
       return;
     }
 
@@ -2355,22 +2380,22 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       dbService.updateStaffProfileStatus(id, status.toLowerCase()).catch(() => {});
     }
 
-    showToast("success", `Staff member ${target?.name || ""} status set to ${status}.`);
+    showToast("success", t("admin.adminDataContext.staffStatusSetTo", { name: target?.name || "", status }));
   };
 
   const updateStaffMember = (id: string, updates: Partial<StaffMember>) => {
     setStaffMembers((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
-    showToast("success", "Staff profile updated.");
+    showToast("success", t("admin.adminDataContext.staffProfileUpdated"));
   };
 
   const deleteStaffMember = (id: string) => {
     const target = staffMembers.find((s) => s.id === id);
     if (target && isPrimaryAdmin(target)) {
-      showToast("error", "The Primary Super Admin (Muhammad Hamdan) is protected and cannot be removed.");
+      showToast("error", t("admin.adminDataContext.thePrimarySuperAdminMuhammad2"));
       return;
     }
     setStaffMembers((prev) => prev.filter((s) => s.id !== id));
-    showToast("info", `Staff member ${target?.name || ""} removed successfully.`);
+    showToast("info", t("admin.adminDataContext.staffRemoved", { name: target?.name || "" }));
   };
 
   // Store Settings & SEO
@@ -2379,12 +2404,12 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isSupabaseConfigured()) {
       const ok = await saveStoreSettingsToDB(merged);
       if (!ok) {
-        showToast("error", "Failed to save store settings to database.");
+        showToast("error", t("admin.adminDataContext.failedToSaveStoreSettings"));
         return;
       }
     }
     setStoreSettings(merged);
-    showToast("success", "Store settings saved.");
+    showToast("success", t("admin.adminDataContext.storeSettingsSaved"));
   };
 
   const updateSeoEntry = async (id: string, updates: Partial<SeoEntry>) => {
@@ -2392,21 +2417,56 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
       const existing = seoEntries.find((s) => s.id === id);
       const ok = await saveSeoEntryToDB({ ...existing, ...updates, id });
       if (!ok) {
-        showToast("error", "Failed to save SEO entry.");
+        showToast("error", t("admin.adminDataContext.failedToSaveSeoEntry"));
         return;
       }
       const dbSeo = await fetchSeoEntriesFromDB();
       if (dbSeo.length > 0) setSeoEntries(dbSeo);
-      showToast("success", "SEO metadata updated.");
+      showToast("success", t("admin.adminDataContext.seoMetadataUpdated"));
       return;
     }
     setSeoEntries((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
-    showToast("success", "SEO metadata updated.");
+    showToast("success", t("admin.adminDataContext.seoMetadataUpdated"));
   };
+
+  // Merchandising copy is translated in the database, and the storefront already reads it.
+  // The console reads the same bundles here, but only for display: the row objects keep their
+  // stored source text, so an editor opening a product in Arabic still edits the English source
+  // and a save can never overwrite source copy with a translation.
+  const [contentBundles, setContentBundles] = useState<Map<string, TranslationBundle>>(new Map());
+
+  useEffect(() => {
+    if (getActiveContentLanguage() === SOURCE_LANGUAGE_CODE) {
+      setContentBundles(new Map());
+      return;
+    }
+    let alive = true;
+    readTranslationMap(language.code)
+      .then((map) => {
+        if (alive) setContentBundles(map);
+      })
+      .catch(() => {
+        // An unreachable translation table is not a reason to show blank cells.
+        if (alive) setContentBundles(new Map());
+      });
+    return () => {
+      alive = false;
+    };
+  }, [language.code]);
+
+  const contentName = useCallback(
+    (kind: EntityKind, id: string | null | undefined, fallback: string) => {
+      const bundle = bundleFor(contentBundles, kind, id);
+      return bundle?.name?.trim() || fallback;
+    },
+    [contentBundles]
+  );
 
   return (
     <AdminDataContext.Provider
       value={{
+        contentName,
+        contentLanguage: language.code,
         products,
         categories,
         collections,

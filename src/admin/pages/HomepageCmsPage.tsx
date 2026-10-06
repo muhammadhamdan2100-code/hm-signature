@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import { useAdminData } from "../context/AdminDataContext";
 import { ImageUploader } from "../components/ImageUploader";
 import { Save, Eye, ArrowUp, ArrowDown } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const HomepageCmsPage: React.FC = () => {
+  const { t } = useI18n();
   const { homepageConfig, updateHomepageConfig } = useAdminData();
 
   // Hero Form State
@@ -97,21 +99,21 @@ export const HomepageCmsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            STOREFRONT CONTENT MANAGEMENT SYSTEM
+            {t("admin.homepageCms.eyebrow")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Homepage Content & Hero Banner CMS
+            {t("admin.homepageCms.title")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Control headlines, hero banners, section ordering, and top announcement tickers without modifying code.
+            {t("admin.homepageCms.introBody")}
           </p>
         </div>
         <button
           type="submit"
-          className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-5 py-2.5 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs font-sans uppercase tracking-wider transition-colors flex items-center gap-2 shadow-lg shrink-0"
         >
           <Save className="w-4 h-4" />
-          <span>Save Homepage CMS</span>
+          <span>{t("admin.homepageCms.saveHomepageCms")}</span>
         </button>
       </div>
 
@@ -122,23 +124,23 @@ export const HomepageCmsPage: React.FC = () => {
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-gold/15 pb-3">
               <h3 className="font-serif text-base font-bold text-ivory">
-                Top Ticker Announcement Bar
+                {t("admin.homepageCms.topTickerAnnouncementBar")}
               </h3>
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={announcementEnabled}
                   onChange={(e) => setAnnouncementEnabled(e.target.checked)}
                   className="rounded border-gold/30 bg-navy text-gold focus:ring-0"
                 />
-                <span className="text-xs text-gold font-medium">Enable Ticker</span>
+                <span className="text-xs text-gold font-medium">{t("admin.homepageCms.enableTicker")}</span>
               </label>
             </div>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Announcement Message
+                  {t("admin.homepageCms.announcementMessage")}
                 </label>
                 <input
                   type="text"
@@ -151,7 +153,7 @@ export const HomepageCmsPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Ticker Click Target URL
+                  {t("admin.homepageCms.tickerClickTargetUrl")}
                 </label>
                 <input
                   type="text"
@@ -167,14 +169,14 @@ export const HomepageCmsPage: React.FC = () => {
           {/* Hero Section Editor */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-3">
-              Hero Section Banner Configuration
+              {t("admin.homepageCms.heroSectionBannerConfiguration")}
             </h3>
 
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                    Hero Eyebrow Subheading
+                    {t("admin.homepageCms.heroEyebrowSubheading")}
                   </label>
                   <input
                     type="text"
@@ -187,7 +189,7 @@ export const HomepageCmsPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                    Main Hero Title
+                    {t("admin.homepageCms.mainHeroTitle")}
                   </label>
                   <input
                     type="text"
@@ -200,14 +202,13 @@ export const HomepageCmsPage: React.FC = () => {
               </div>
 
               <p className="text-[11px] font-sans text-muted -mt-2">
-                A vertical bar <span className="text-gold font-mono">|</span> in the title or body copy
-                starts a new line on the storefront, exactly where the headline currently breaks.
+                {t("admin.homepageCms.pipeHintPrefix")} <span className="text-gold font-mono">|</span> {t("admin.homepageCms.pipeHintSuffix")}
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                    Title Accent (gold italic)
+                    {t("admin.homepageCms.titleAccentGoldItalic")}
                   </label>
                   <input
                     type="text"
@@ -221,7 +222,7 @@ export const HomepageCmsPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                  Hero Body Copy
+                  {t("admin.homepageCms.heroBodyCopy")}
                 </label>
                 <textarea
                   rows={3}
@@ -234,7 +235,7 @@ export const HomepageCmsPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-sans text-muted mb-2 uppercase tracking-wider">
-                  Hero Image
+                  {t("admin.homepageCms.heroImage")}
                 </label>
                 <ImageUploader
                   images={heroImage}
@@ -249,15 +250,14 @@ export const HomepageCmsPage: React.FC = () => {
                   onAltTextsChange={setHeroImageAlt}
                 />
                 <p className="text-[11px] font-sans text-muted mt-2">
-                  The most recently added image is the one shown in the hero circle. Leave this untouched to
-                  keep the current photography.
+                  {t("admin.homepageCms.heroImageNote")}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                    Button CTA Text
+                    {t("admin.homepageCms.buttonCtaText")}
                   </label>
                   <input
                     type="text"
@@ -270,7 +270,7 @@ export const HomepageCmsPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-sans text-muted mb-1 uppercase tracking-wider">
-                    Button CTA Link
+                    {t("admin.homepageCms.buttonCtaLink")}
                   </label>
                   <input
                     type="text"
@@ -287,10 +287,10 @@ export const HomepageCmsPage: React.FC = () => {
           {/* Section Ordering & Visibility */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-3">
-              Homepage Layout & Section Ordering
+              {t("admin.homepageCms.homepageLayoutSectionOrdering")}
             </h3>
             <p className="text-xs text-muted font-light">
-              Toggle visibility or reorder sections on the live customer website.
+              {t("admin.homepageCms.toggleVisibilityNote")}
             </p>
 
             <div className="space-y-2">
@@ -299,7 +299,7 @@ export const HomepageCmsPage: React.FC = () => {
                   key={sec.id}
                   className="flex items-center justify-between p-3 rounded bg-navy border border-gold/15 hover:border-gold/30 transition-colors"
                 >
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center gap-3">
                     <span className="font-mono text-gold font-bold text-xs">
                       #{idx + 1}
                     </span>
@@ -308,7 +308,7 @@ export const HomepageCmsPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       disabled={idx === 0}
@@ -335,7 +335,7 @@ export const HomepageCmsPage: React.FC = () => {
                           : "bg-navy text-muted border border-gold/20"
                       }`}
                     >
-                      {sec.enabled ? "Visible" : "Hidden"}
+                      {sec.enabled ? t("admin.homepageCms.visible") : t("admin.homepageCms.hidden")}
                     </button>
                   </div>
                 </div>
@@ -347,17 +347,17 @@ export const HomepageCmsPage: React.FC = () => {
         {/* Live Preview Simulator */}
         <div className="space-y-6">
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4 shadow-xl sticky top-24">
-            <div className="flex items-center space-x-2 border-b border-gold/15 pb-3">
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3">
               <Eye className="w-4 h-4 text-gold" />
               <h3 className="font-serif text-base font-bold text-ivory">
-                Live Storefront Simulator
+                {t("admin.homepageCms.liveStorefrontSimulator")}
               </h3>
             </div>
 
             {/* Announcement Bar Preview */}
             {announcementEnabled && (
               <div className="bg-gold text-navy text-[10px] font-sans font-bold tracking-widest text-center py-1.5 px-2 uppercase truncate">
-                {announcementText || "ANNOUNCEMENT TICKER PREVIEW"}
+                {announcementText || t("admin.homepageCms.announcementTickerPreview")}
               </div>
             )}
 
@@ -379,7 +379,7 @@ export const HomepageCmsPage: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-muted text-center italic">
-              Preview updates in real-time as you edit form fields above.
+              {t("admin.homepageCms.previewRealtimeNote")}
             </p>
           </div>
         </div>

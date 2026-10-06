@@ -19,6 +19,7 @@ import {
 const STOREFRONT_BLOCKS = [
   "hero",
   "collections",
+  "recommended",
   "values",
   "story",
   "spotlight",
@@ -67,7 +68,7 @@ describe("homepage CMS record", () => {
     // are re-added rather than vanishing from the homepage.
     expect(ids).not.toContain("bestsellers");
     expect([...STOREFRONT_BLOCKS].sort()).toEqual([...ids].sort());
-    expect(merged.sections.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(merged.sections.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("honours a stored hide flag and a stored reorder", () => {

@@ -1,5 +1,6 @@
 import React, { useId, useState } from "react";
 import { BarChart2, ChevronDown, TrendingUp } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 /** One real, server-aggregated datum. Nothing here is generated client side. */
 export interface ChartPoint {
@@ -46,8 +47,13 @@ function tickStep(count: number) {
   return Math.max(1, Math.ceil(count / MAX_TICKS));
 }
 
-function describeSeries(label: string, series: ChartPoint[], fmt: (n: number) => string) {
-  if (series.length === 0) return `${label}: no rows.`;
+function describeSeries(
+  label: string,
+  series: ChartPoint[],
+  fmt: (n: number) => string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  if (series.length === 0) return t("admin.chartCard.seriesNoRows", { label });
   return `${label}: ${series.map((p) => `${p.label} ${fmt(p.value)}`).join("; ")}.`;
 }
 
@@ -61,13 +67,20 @@ export const ChartCard: React.FC<ChartCardProps> = ({
   caption,
   variant,
   type,
-  primaryLabel = "Value",
-  secondaryLabel = "Secondary",
-  axisLabel = "Bucket",
-  emptyMessage = "The aggregation returned no rows for this panel.",
+  primaryLabel,
+  secondaryLabel,
+  axisLabel,
+  emptyMessage,
 }) => {
+  const { t } = useI18n();
   const uid = `cc-${useId().replace(/[^A-Za-z0-9]/g, "")}`;
   const [open, setOpen] = useState(false);
+
+  // Defaults are copy, so they resolve through the dictionary rather than a parameter.
+  const primaryLabelText = primaryLabel ?? t("admin.chartCard.value");
+  const secondaryLabelText = secondaryLabel ?? t("admin.chartCard.secondary");
+  const axisLabelText = axisLabel ?? t("admin.chartCard.bucket");
+  const emptyText = emptyMessage ?? t("admin.chartCard.noRowsForPanel");
 
   const points = seriesProp ?? [];
   const kind: "line" | "bar" = variant ?? (type === "line" ? "line" : "bar");
@@ -83,8 +96,8 @@ export const ChartCard: React.FC<ChartCardProps> = ({
   const chartVariant: "line" | "bar" = points.length === 1 ? "bar" : kind;
 
   const altText = [
-    describeSeries(primaryLabel, points, formatter),
-    hasSecondary ? describeSeries(secondaryLabel, sec, fmtSecondary) : null,
+    describeSeries(primaryLabelText, points, formatter, t),
+    hasSecondary ? describeSeries(secondaryLabelText, sec, fmtSecondary, t) : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -107,7 +120,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
     >
       {/* Header */}
       <div className="border-b border-gold/15 pb-3">
-        <div className="flex items-center space-x-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <h3
             id={`${uid}-title`}
             className="font-serif text-base sm:text-lg font-bold text-ivory tracking-wide truncate"
@@ -130,29 +143,29 @@ export const ChartCard: React.FC<ChartCardProps> = ({
       {/* Derived summary + legend (computed from the series, never hardcoded) */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-mono uppercase tracking-[1.5px] text-muted">
         <span>
-          {primaryLabel}{" "}
+          {primaryLabelText}{" "}
           <span className="text-gold num-lining normal-case tracking-normal">{formatter(primaryTotal)}</span>
-          <span className="text-muted/70 normal-case tracking-normal"> total · peak </span>
+          <span className="text-muted/70 normal-case tracking-normal"> {t("admin.chartCard.totalPeak")} </span>
           <span className="text-gold num-lining normal-case tracking-normal">{formatter(primaryMax)}</span>
         </span>
         {hasSecondary && (
           <span>
-            {secondaryLabel}{" "}
+            {secondaryLabelText}{" "}
             <span className="text-ivory num-lining normal-case tracking-normal">{fmtSecondary(secondaryTotal)}</span>
-            <span className="text-muted/70 normal-case tracking-normal"> total · peak </span>
+            <span className="text-muted/70 normal-case tracking-normal"> {t("admin.chartCard.totalPeak")} </span>
             <span className="text-ivory num-lining normal-case tracking-normal">{fmtSecondary(secondaryMax)}</span>
           </span>
         )}
-        <span className="num-lining normal-case tracking-normal">{points.length} points</span>
+        <span className="num-lining normal-case tracking-normal">{t("admin.chartCard.pointsCount", { count: points.length })}</span>
         {hasSecondary && (
           <span className="flex items-center gap-3 normal-case tracking-normal font-sans">
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-2 rounded-sm bg-gold" aria-hidden="true" />
-              {primaryLabel}
+              {primaryLabelText}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-2 rounded-sm bg-ivory/40" aria-hidden="true" />
-              {secondaryLabel}
+              {secondaryLabelText}
             </span>
           </span>
         )}
@@ -163,8 +176,10 @@ export const ChartCard: React.FC<ChartCardProps> = ({
         <div className="h-28 sm:h-32 flex items-center justify-center border border-dashed border-gold/20 rounded bg-navy/40 px-4 text-center">
           <p className="text-xs text-muted font-light">
             {points.length === 0
-              ? emptyMessage
-              : `${points.length} ${points.length === 1 ? "row" : "rows"} returned, every value is zero.`}
+              ? emptyText
+              : points.length === 1
+                ? t("admin.chartCard.rowAllZero")
+                : t("admin.chartCard.rowsAllZero", { count: points.length })}
           </p>
         </div>
       ) : (
@@ -176,7 +191,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
             role="img"
             aria-labelledby={`${uid}-svg-title ${uid}-svg-desc`}
           >
-            <title id={`${uid}-svg-title`}>{`${title} — ${primaryLabel}`}</title>
+            <title id={`${uid}-svg-title`}>{`${title} — ${primaryLabelText}`}</title>
             <desc id={`${uid}-svg-desc`}>{altText}</desc>
             <defs>
               <linearGradient id={`${uid}-fill`} x1="0" y1="0" x2="0" y2="1">
@@ -243,7 +258,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
                         height={h}
                         fill="rgba(246,241,231,0.28)"
                       >
-                        <title>{`${p.label} — ${secondaryLabel}: ${fmtSecondary(p.value)}`}</title>
+                        <title>{`${p.label} — ${secondaryLabelText}: ${fmtSecondary(p.value)}`}</title>
                       </rect>
                     );
                   })}
@@ -259,7 +274,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
                       height={h}
                       fill={`url(#${uid}-fill)`}
                     >
-                      <title>{`${p.label} — ${primaryLabel}: ${formatter(p.value)}`}</title>
+                      <title>{`${p.label} — ${primaryLabelText}: ${formatter(p.value)}`}</title>
                     </rect>
                   );
                 })}
@@ -279,8 +294,8 @@ export const ChartCard: React.FC<ChartCardProps> = ({
                   fill="transparent"
                 >
                   <title>
-                    {`${p.label}: ${primaryLabel} ${formatter(p.value)}${
-                      secPoint ? ` · ${secondaryLabel} ${fmtSecondary(secPoint.value)}` : ""
+                    {`${p.label}: ${primaryLabelText} ${formatter(p.value)}${
+                      secPoint ? ` · ${secondaryLabelText} ${fmtSecondary(secPoint.value)}` : ""
                     }`}
                   </title>
                 </rect>
@@ -315,7 +330,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
             className="self-start sm:self-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gold/25 text-[10px] font-mono uppercase tracking-[1.5px] text-muted hover:text-ivory hover:border-gold/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold focus-visible:text-ivory transition-colors"
           >
             <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
-            {open ? "Hide data" : "Show data"}
+            {open ? t("admin.chartCard.hideData") : t("admin.chartCard.showData")}
           </button>
         )}
       </div>
@@ -325,19 +340,19 @@ export const ChartCard: React.FC<ChartCardProps> = ({
           id={`${uid}-table`}
           className="overflow-x-auto border border-gold/20 rounded-lg bg-navy/40 max-h-72"
         >
-          <table className="w-full min-w-[240px] text-left text-xs font-sans">
-            <caption className="sr-only">{`${title}, presented as a table.`}</caption>
+          <table className="w-full min-w-[240px] text-start text-xs font-sans">
+            <caption className="sr-only">{t("admin.chartCard.presentedAsTable", { title })}</caption>
             <thead className="bg-navy text-gold uppercase tracking-[1.5px] text-[10px] border-b border-gold/15">
               <tr>
                 <th scope="col" className="px-3 py-2.5 whitespace-nowrap">
-                  {axisLabel}
+                  {axisLabelText}
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right whitespace-nowrap">
-                  {primaryLabel}
+                <th scope="col" className="px-3 py-2.5 text-end whitespace-nowrap">
+                  {primaryLabelText}
                 </th>
                 {hasSecondary && (
-                  <th scope="col" className="px-3 py-2.5 text-right whitespace-nowrap">
-                    {secondaryLabel}
+                  <th scope="col" className="px-3 py-2.5 text-end whitespace-nowrap">
+                    {secondaryLabelText}
                   </th>
                 )}
               </tr>
@@ -347,14 +362,14 @@ export const ChartCard: React.FC<ChartCardProps> = ({
                 const secPoint = sec[i];
                 return (
                   <tr key={`${p.label}-${i}`} className="hover:bg-navy/60 transition-colors">
-                    <th scope="row" className="px-3 py-2.5 font-sans font-normal text-left">
+                    <th scope="row" className="px-3 py-2.5 font-sans font-normal text-start">
                       {p.label}
                     </th>
-                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-gold">
+                    <td className="px-3 py-2.5 text-end whitespace-nowrap font-mono text-gold">
                       {formatter(p.value)}
                     </td>
                     {hasSecondary && (
-                      <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono">
+                      <td className="px-3 py-2.5 text-end whitespace-nowrap font-mono">
                         {secPoint ? fmtSecondary(secPoint.value) : "—"}
                       </td>
                     )}

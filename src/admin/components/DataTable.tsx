@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Inbox, ArrowUpDown } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export interface Column<T> {
   header: string;
@@ -46,6 +47,22 @@ const compareSortKeys = (a: SortPrimitive | null, b: SortPrimitive | null, asc: 
   return 0;
 };
 
+/**
+ * Interpolates React nodes into a translated sentence, so the gold count styling follows the
+ * placeholder instead of the fixed English word order.
+ */
+const withNodes = (template: string, nodes: Record<string, React.ReactNode>) => {
+  const tokens = template.match(/\{\w+\}/g) ?? [];
+  return template
+    .split(/\{\w+\}/g)
+    .flatMap((part, i) =>
+      i < tokens.length
+        ? [part, <React.Fragment key={tokens[i]}>{nodes[tokens[i].slice(1, -1)]}</React.Fragment>]
+        : [part]
+    )
+    .filter((node) => node !== "" && node !== undefined && node !== null);
+};
+
 interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
@@ -71,12 +88,17 @@ export function DataTable<T>({
   selectedIds = [],
   onSelectRow,
   onSelectAll,
-  searchPlaceholder = "Search records...",
-  emptyMessage = "No records found",
-  emptySubtitle = "Try adjusting your search filters or add a new record.",
+  searchPlaceholder,
+  emptyMessage,
+  emptySubtitle,
   actions,
   filterControls,
 }: DataTableProps<T>) {
+  const { t } = useI18n();
+  // Defaults live in the dictionaries, so they follow the language a parameter cannot.
+  const searchText = searchPlaceholder ?? t("admin.dataTable.searchRecords");
+  const emptyText = emptyMessage ?? t("admin.dataTable.noRecordsFound");
+  const emptySubtext = emptySubtitle ?? t("admin.dataTable.tryAdjustingFilters");
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortIndex, setSortIndex] = useState<number | null>(null);
@@ -156,9 +178,9 @@ export function DataTable<T>({
     <div className="bg-navy2/90 rounded-lg border border-gold/20 overflow-hidden shadow-xl">
       {/* Top Filter & Action Bar */}
       <div className="p-4 border-b border-gold/15 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-navy/40">
-        <div className="flex flex-1 items-center space-x-3">
+        <div className="flex flex-1 items-center gap-3">
           <div className="relative flex-1 max-w-sm">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <Search className="w-4 h-4 absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
             <input
               type="text"
               value={searchQuery}
@@ -166,18 +188,18 @@ export function DataTable<T>({
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder={searchPlaceholder}
-              className="w-full bg-navy/80 border border-gold/20 rounded pl-9 pr-4 py-2 text-xs font-sans text-ivory placeholder-muted focus:outline-none focus:border-gold transition-colors"
+              placeholder={searchText}
+              className="w-full bg-navy/80 border border-gold/20 rounded ps-9 pe-4 py-2 text-xs font-sans text-ivory placeholder-muted focus:outline-none focus:border-gold transition-colors"
             />
           </div>
           {filterControls}
         </div>
-        {actions && <div className="flex items-center space-x-2 shrink-0">{actions}</div>}
+        {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
       </div>
 
       {/* Table Element */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs font-sans">
+        <table className="w-full text-start text-xs font-sans">
           <thead className="bg-navy text-gold uppercase tracking-[1.5px] text-[10px] font-medium border-b border-gold/15">
             <tr>
               {selectable && (
@@ -191,7 +213,7 @@ export function DataTable<T>({
                       )
                     }
                     onChange={handleSelectAllOnPage}
-                    aria-label="Select all rows on this page"
+                    aria-label={t("admin.dataTable.selectAllRowsOnThis")}
                     className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold cursor-pointer"
                   />
                 </th>
@@ -231,10 +253,10 @@ export function DataTable<T>({
                         aria-disabled={canSort ? undefined : true}
                         title={
                           canSort
-                            ? `Sort by ${col.header}`
-                            : `${col.header} has no sortable value`
+                            ? t("admin.dataTable.sortBy", { column: col.header })
+                            : t("admin.dataTable.noSortableValue", { column: col.header })
                         }
-                        className={`flex items-center space-x-1 rounded-sm text-left ${
+                        className={`flex items-center gap-1 rounded-sm text-start ${
                           canSort
                             ? "cursor-pointer hover:text-ivory select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                             : "cursor-default"
@@ -243,7 +265,7 @@ export function DataTable<T>({
                         {headerLabel}
                       </button>
                     ) : (
-                      <div className="flex items-center space-x-1">{headerLabel}</div>
+                      <div className="flex items-center gap-1">{headerLabel}</div>
                     )}
                   </th>
                 );
@@ -262,10 +284,10 @@ export function DataTable<T>({
                       <Inbox className="w-6 h-6" />
                     </div>
                     <p className="font-serif text-base text-ivory font-semibold">
-                      {emptyMessage}
+                      {emptyText}
                     </p>
                     <p className="text-xs text-muted max-w-sm font-light">
-                      {emptySubtitle}
+                      {emptySubtext}
                     </p>
                   </div>
                 </td>
@@ -288,7 +310,7 @@ export function DataTable<T>({
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => onSelectRow && onSelectRow(id)}
-                          aria-label="Select this row"
+                          aria-label={t("admin.dataTable.selectThisRow")}
                           className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold cursor-pointer"
                         />
                       </td>
@@ -321,25 +343,31 @@ export function DataTable<T>({
       {/* Pagination Footer */}
       <div className="px-4 py-3 border-t border-gold/15 bg-navy/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted font-sans">
         <div>
-          Showing{" "}
-          <span className="text-gold font-medium font-mono num-lining">
-            {sortedData.length > 0 ? (activePage - 1) * pageSize + 1 : 0}
-          </span>{" "}
-          to{" "}
-          <span className="text-gold font-medium font-mono num-lining">
-            {Math.min(activePage * pageSize, sortedData.length)}
-          </span>{" "}
-          of <span className="text-gold font-medium font-mono num-lining">{sortedData.length}</span> entries
+          {withNodes(t("admin.dataTable.showingRange"), {
+            from: (
+              <span className="text-gold font-medium font-mono num-lining">
+                {sortedData.length > 0 ? (activePage - 1) * pageSize + 1 : 0}
+              </span>
+            ),
+            to: (
+              <span className="text-gold font-medium font-mono num-lining">
+                {Math.min(activePage * pageSize, sortedData.length)}
+              </span>
+            ),
+            total: (
+              <span className="text-gold font-medium font-mono num-lining">{sortedData.length}</span>
+            ),
+          })}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={activePage === 1}
-            aria-label="Previous page"
+            aria-label={t("admin.dataTable.previousPage")}
             className="p-1.5 rounded border border-gold/20 text-muted hover:text-ivory disabled:opacity-30 disabled:cursor-not-allowed hover:bg-navy transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
           </button>
           <span className="px-3 py-1 font-mono text-[11px] text-ivory num-lining">
             {activePage} / {totalPages}
@@ -347,10 +375,10 @@ export function DataTable<T>({
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={activePage === totalPages}
-            aria-label="Next page"
+            aria-label={t("admin.dataTable.nextPage")}
             className="p-1.5 rounded border border-gold/20 text-muted hover:text-ivory disabled:opacity-30 disabled:cursor-not-allowed hover:bg-navy transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4 rtl:rotate-180" />
           </button>
         </div>
       </div>

@@ -19,6 +19,7 @@ import {
   type CustomerAggregateRow,
 } from "../../services/adminOps";
 import { formatPKR } from "../../utils/currency";
+import { useI18n } from "../../i18n/I18nProvider";
 
 /* ------------------------------------------------------------------ *
  * Every figure below is read straight from the get_admin_customers RPC
@@ -28,13 +29,15 @@ import { formatPKR } from "../../utils/currency";
 
 type SortKey = "name" | "ordersCount" | "totalSpent" | "lastOrderDate" | "segment" | "joinedDate";
 
-const SORT_LABELS: Record<SortKey, string> = {
-  name: "Sort: Client name",
-  ordersCount: "Sort: Orders",
-  totalSpent: "Sort: Total spent",
-  lastOrderDate: "Sort: Last order",
-  segment: "Sort: Segment",
-  joinedDate: "Sort: Joined",
+/* Column labels are dictionary keys; they are resolved with t() where the
+   select is rendered, because t() is only available inside a component. */
+const SORT_LABEL_KEYS: Record<SortKey, string> = {
+  name: "admin.customers.sortClientName",
+  ordersCount: "admin.customers.sortOrders",
+  totalSpent: "admin.customers.sortTotalSpent",
+  lastOrderDate: "admin.customers.sortLastOrder",
+  segment: "admin.customers.sortSegment",
+  joinedDate: "admin.customers.sortJoined",
 };
 
 /* profiles.status is stored lower-case; the admin vocabulary used across this
@@ -55,12 +58,12 @@ const toDateOnly = (value: string | null | undefined) =>
   value ? String(value).replace("T", " ").slice(0, 10) : "";
 
 const controlClass =
-  "min-w-0 shrink-0 bg-navy border border-gold/20 rounded px-2.5 py-1.5 text-xs text-ivory " +
-  "w-[calc(50%-4px)] sm:w-auto focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold transition-colors";
+"min-w-0 shrink-0 bg-navy border border-gold/20 rounded px-2.5 py-1.5 text-xs text-ivory " +
+"w-[calc(50%-4px)] sm:w-auto focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold transition-colors";
 
 const iconButtonClass =
-  "shrink-0 p-1.5 rounded border border-gold/20 text-gold hover:text-ivory hover:border-gold/60 " +
-  "disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold";
+"shrink-0 p-1.5 rounded border border-gold/20 text-gold hover:text-ivory hover:border-gold/60 " +
+"disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold";
 
 const TableSkeleton: React.FC = () => (
   <div
@@ -87,6 +90,7 @@ const TableSkeleton: React.FC = () => (
 );
 
 export const CustomersList: React.FC = () => {
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const [rows, setRows] = useState<CustomerAggregateRow[]>([]);
@@ -166,7 +170,7 @@ export const CustomersList: React.FC = () => {
 
   const columns: Column<CustomerAggregateRow>[] = [
     {
-      header: "Customer",
+      header: t("admin.customers.customer"),
       accessor: (c) => (
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-full bg-gold/15 border border-gold flex items-center justify-center text-gold font-serif font-bold text-sm shrink-0">
@@ -176,18 +180,18 @@ export const CustomersList: React.FC = () => {
             <h3 className="font-serif font-bold text-sm text-ivory flex items-center gap-1.5">
               <span className="truncate max-w-[160px]">{c.name}</span>
               {c.segment === "VIP" && (
-                <span className="text-[9px] font-mono uppercase tracking-wider text-gold">VIP</span>
+                <span className="text-[9px] font-mono uppercase tracking-wider text-gold">{t("admin.status.vip")}</span>
               )}
             </h3>
             <span className="block text-[10px] font-mono text-muted truncate max-w-[180px]">
-              {c.email || "No email on file"}
+              {c.email || t("admin.customerDetail.noEmailOnFile")}
             </span>
           </div>
         </div>
       ),
     },
     {
-      header: "Phone",
+      header: t("admin.customers.phone"),
       accessor: (c) => (
         <span className="text-xs font-mono text-ivory/90 whitespace-nowrap">
           {c.phone || <span className="text-muted">—</span>}
@@ -195,7 +199,7 @@ export const CustomersList: React.FC = () => {
       ),
     },
     {
-      header: "Orders",
+      header: t("admin.nav.orders"),
       accessor: (c) => (
         <span className="text-xs font-mono font-semibold text-ivory num-lining">
           {c.ordersCount}
@@ -203,7 +207,7 @@ export const CustomersList: React.FC = () => {
       ),
     },
     {
-      header: "Total Spent",
+      header: t("admin.customers.totalSpent"),
       accessor: (c) => (
         <span className="text-xs font-mono font-bold text-gold num-lining whitespace-nowrap">
           {formatPKR(c.totalSpent)}
@@ -211,79 +215,79 @@ export const CustomersList: React.FC = () => {
       ),
     },
     {
-      header: "Last Order",
+      header: t("admin.customers.lastOrder"),
       accessor: (c) =>
         c.lastOrderDate ? (
           <span className="text-xs font-mono text-ivory/80 whitespace-nowrap num-lining">
             {toDateOnly(c.lastOrderDate)}
           </span>
         ) : (
-          <span className="text-xs text-muted">No orders yet</span>
+          <span className="text-xs text-muted">{t("admin.customers.noOrdersYet")}</span>
         ),
     },
     {
-      header: "Segment",
+      header: t("admin.customers.segment"),
       accessor: (c) => <StatusBadge status={c.segment} />,
     },
     {
-      header: "Account Status",
+      header: t("admin.customers.accountStatus"),
       accessor: (c) => <StatusBadge status={toStatusLabel(c.status)} />,
     },
     {
-      header: "Action",
+      header: t("admin.orders.action"),
       accessor: (c) => (
         <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={() => navigate(`/admin/customers/${c.id}`)}
-            aria-label={`Open profile for ${c.name}`}
+            aria-label={t("admin.customers.openProfileFor", { name: c.name })}
             className="px-3 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center gap-1 focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>Profile</span>
+            <span>{t("admin.shared.profile")}</span>
           </button>
         </div>
       ),
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
   const toolbar = (
     <div className="flex w-full flex-wrap items-center justify-end gap-2 md:w-[270px] lg:w-[290px] xl:w-auto">
       <select
-        aria-label="Filter clients by segment"
+        aria-label={t("admin.customers.filterClientsBySegment")}
         value={segmentFilter}
         onChange={(e) => setSegmentFilter(e.target.value)}
         className={controlClass}
       >
-        <option value="all">All segments</option>
-        <option value="Unconverted">Unconverted</option>
-        <option value="New">New</option>
-        <option value="Returning">Returning</option>
-        <option value="VIP">VIP</option>
+        <option value="all">{t("admin.customers.allSegments")}</option>
+        <option value="Unconverted">{t("admin.status.unconverted")}</option>
+        <option value="New">{t("admin.status.new")}</option>
+        <option value="Returning">{t("admin.status.returning")}</option>
+        <option value="VIP">{t("admin.status.vip")}</option>
       </select>
 
       <select
-        aria-label="Filter clients by account status"
+        aria-label={t("admin.customers.filterClientsByAccountStatus")}
         value={statusFilter}
         onChange={(e) => setStatusFilter(e.target.value)}
         className={controlClass}
       >
-        <option value="all">All statuses</option>
-        <option value="active">Active</option>
-        <option value="inactive">Inactive</option>
-        <option value="suspended">Suspended</option>
+        <option value="all">{t("admin.customers.allStatuses")}</option>
+        <option value="active">{t("admin.status.active")}</option>
+        <option value="inactive">{t("admin.status.inactive")}</option>
+        <option value="suspended">{t("admin.status.suspended")}</option>
       </select>
 
       <select
-        aria-label="Sort clients"
+        aria-label={t("admin.customers.sortClients")}
         value={sortKey}
         onChange={(e) => setSortKey(e.target.value as SortKey)}
         className={controlClass}
       >
-        {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+        {(Object.keys(SORT_LABEL_KEYS) as SortKey[]).map((key) => (
           <option key={key} value={key}>
-            {SORT_LABELS[key]}
+            {t(SORT_LABEL_KEYS[key])}
           </option>
         ))}
       </select>
@@ -291,8 +295,10 @@ export const CustomersList: React.FC = () => {
       <button
         type="button"
         onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-        aria-label={`Change sort direction (currently ${sortDir === "asc" ? "ascending" : "descending"})`}
-        title={sortDir === "asc" ? "Ascending" : "Descending"}
+        aria-label={t("admin.customers.changeSortDirection", {
+          direction: sortDir === "asc" ? t("admin.customers.ascending") : t("admin.customers.descending"),
+        })}
+        title={sortDir === "asc" ? t("admin.customers.ascending") : t("admin.customers.descending")}
         className={iconButtonClass}
       >
         {sortDir === "asc" ? (
@@ -306,8 +312,8 @@ export const CustomersList: React.FC = () => {
         type="button"
         onClick={() => void load()}
         disabled={loading}
-        aria-label="Reload client directory"
-        title="Reload"
+        aria-label={t("admin.customers.reloadClientDirectory")}
+        title={t("admin.customers.reload")}
         className={iconButtonClass}
       >
         <RefreshCw className="w-4 h-4" />
@@ -322,20 +328,19 @@ export const CustomersList: React.FC = () => {
       {/* Header */}
       <div className="border-b border-gold/20 pb-4">
         <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-          Client Relations
+          {t("admin.customers.eyebrow")}
         </span>
         <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-          Registered Clients
+          {t("admin.customers.pageTitle")}
         </h1>
         <p className="text-xs text-muted font-sans font-light mt-0.5 max-w-2xl">
-          Order counts, lifetime spend and segments come from the customer aggregates query and
-          exclude cancelled orders.
+          {t("admin.customers.intro")}
         </p>
       </div>
 
       {/* Stat row */}
       <h2 className="text-[10px] font-mono uppercase tracking-[2px] text-gold/80">
-        Directory overview
+        {t("admin.customers.directoryOverview")}
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {loading ? (
@@ -349,28 +354,28 @@ export const CustomersList: React.FC = () => {
         ) : (
           <>
             <StatCard
-              title="Total Clients"
+              title={t("admin.customers.totalClients")}
               value={stats.totalClients}
-              subtitle="Registered customer accounts"
+              subtitle={t("admin.customers.registeredCustomerAccounts")}
               icon={Users}
               accent
             />
             <StatCard
-              title="Clients With Orders"
+              title={t("admin.customers.clientsWithOrders")}
               value={stats.withOrders}
-              subtitle="At least one non-cancelled order"
+              subtitle={t("admin.customers.atLeastOneNonCancelled")}
               icon={ShoppingBag}
             />
             <StatCard
-              title="Repeat Clients"
+              title={t("admin.customers.repeatClients")}
               value={stats.repeatClients}
-              subtitle="Two or more orders"
+              subtitle={t("admin.customers.twoOrMoreOrders")}
               icon={Repeat}
             />
             <StatCard
-              title="Total Captured Value"
+              title={t("admin.customers.totalCapturedValue")}
               value={formatPKR(stats.capturedValue)}
-              subtitle="Sum of lifetime spend, excludes cancelled"
+              subtitle={t("admin.customers.sumOfLifetimeSpendExcludes")}
               icon={Coins}
             />
           </>
@@ -389,7 +394,7 @@ export const CustomersList: React.FC = () => {
             </div>
             <div className="min-w-0">
               <h2 className="font-serif text-base font-bold text-ivory">
-                Client directory unavailable
+                {t("admin.customers.clientDirectory")}
               </h2>
               <p className="text-xs text-muted font-light mt-0.5 break-words">{error}</p>
             </div>
@@ -400,7 +405,7 @@ export const CustomersList: React.FC = () => {
             className="px-4 py-2 rounded bg-gold hover:bg-goldLight text-navy text-xs font-sans font-semibold uppercase tracking-wider transition-colors flex items-center gap-2 shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Retry
+            {t("admin.customers.retry")}
           </button>
         </div>
       )}
@@ -408,36 +413,41 @@ export const CustomersList: React.FC = () => {
       {/* Directory */}
       {loading ? (
         <div role="status" aria-live="polite" className="space-y-2">
-          <span className="sr-only text-xs text-muted">Loading client directory…</span>
+          <span className="sr-only text-xs text-muted">{t("admin.customers.loadingClientDirectory")}</span>
           <TableSkeleton />
         </div>
       ) : (
         !error && (
           <>
-            <h2 className="sr-only">Client directory</h2>
+            <h2 className="sr-only">{t("admin.customers.clientDirectory")}</h2>
             <DataTable
               columns={columns}
               data={visibleRows}
               keyExtractor={(r) => r.id}
               pageSize={10}
-              searchPlaceholder="Search name, email or phone..."
+              searchPlaceholder={t("admin.customers.searchNameEmailOrPhone")}
               emptyMessage={
                 rows.length === 0
-                  ? "No clients registered yet"
-                  : "No clients match these filters"
+                  ? t("admin.customers.noClientsRegisteredYet")
+                  : t("admin.customers.noClientsMatchFilters")
               }
               emptySubtitle={
                 rows.length === 0
-                  ? "Customer accounts created on the storefront appear here, together with their order activity."
-                  : "Adjust the search term or clear the segment and status filters."
+                  ? t("admin.customers.clientsEmptyBody")
+                  : t("admin.customers.clientsFilteredEmptyBody")
               }
               actions={toolbar}
             />
             <p className="text-[10px] text-muted font-light">
-              {visibleRows.length} of {rows.length} clients shown
-              {filtersActive ? " (filtered)" : ""}. Search is applied to the loaded client records.
-              Lifetime spend and order counts exclude cancelled orders; “Last Order” reflects the most
-              recent order of any status.
+              {filtersActive
+                ? t("admin.customers.shownSummaryFiltered", {
+                    shown: visibleRows.length,
+                    total: rows.length,
+                  })
+                : t("admin.customers.shownSummary", {
+                    shown: visibleRows.length,
+                    total: rows.length,
+                  })}
             </p>
           </>
         )

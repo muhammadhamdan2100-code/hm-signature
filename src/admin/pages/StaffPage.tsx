@@ -7,23 +7,25 @@ import { StatusBadge } from "../components/StatusBadge";
 import { Modal, ConfirmDialog } from "../components/Modal";
 import { PrimaryAdminSecurityCard } from "../components/PrimaryAdminSecurityCard";
 import { Plus, Trash2, KeyRound, ShieldCheck, Users, UserCheck, ShieldAlert, Award, Ban, CheckCircle2 } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export const PERMISSION_KEYS = [
-  { key: "products", label: "Products Management" },
-  { key: "orders", label: "Orders & Fulfilment" },
-  { key: "customers", label: "Client Records" },
-  { key: "inventory", label: "Inventory Control" },
-  { key: "coupons", label: "Coupons & Discounts" },
-  { key: "shipping", label: "Shipping Logistics" },
-  { key: "reviews", label: "Reviews Moderation" },
-  { key: "homepage", label: "Homepage CMS" },
-  { key: "marketing", label: "Marketing Campaigns" },
-  { key: "analytics", label: "Analytics & Telemetry" },
-  { key: "settings", label: "Website Settings" },
-  { key: "staff", label: "Staff Management" },
+  { key: "products", labelKey: "admin.staff.productsManagement" },
+  { key: "orders", labelKey: "admin.staff.ordersFulfilment" },
+  { key: "customers", labelKey: "admin.staff.clientRecords" },
+  { key: "inventory", labelKey: "admin.staff.inventoryControl" },
+  { key: "coupons", labelKey: "admin.staff.couponsDiscounts" },
+  { key: "shipping", labelKey: "admin.staff.shippingLogistics" },
+  { key: "reviews", labelKey: "admin.staff.reviewsModeration" },
+  { key: "homepage", labelKey: "admin.staff.homepageCms" },
+  { key: "marketing", labelKey: "admin.staff.marketingCampaigns" },
+  { key: "analytics", labelKey: "admin.staff.analyticsTelemetry" },
+  { key: "settings", labelKey: "admin.staff.websiteSettings" },
+  { key: "staff", labelKey: "admin.staff.staffManagement" },
 ];
 
 export const StaffPage: React.FC = () => {
+  const { t } = useI18n();
   const {
     staffMembers,
     addStaffMember,
@@ -107,7 +109,7 @@ export const StaffPage: React.FC = () => {
 
   const columns: Column<StaffMember>[] = [
     {
-      header: "Staff Member",
+      header: t("admin.staff.staffMember"),
       accessor: (st) => {
         const isPrimary = isPrimaryAdmin(st);
         const initials = st.name
@@ -118,7 +120,7 @@ export const StaffPage: React.FC = () => {
           .toUpperCase();
 
         return (
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-3">
             <div
               className={`w-10 h-10 rounded-full flex items-center justify-center font-serif font-bold text-sm shrink-0 border ${
                 isPrimary
@@ -129,11 +131,11 @@ export const StaffPage: React.FC = () => {
               {initials}
             </div>
             <div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <h4 className="font-serif font-bold text-sm text-ivory">{st.name}</h4>
                 {isPrimary && (
                   <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-gold bg-gold/15 border border-gold/40 px-2 py-0.5 rounded uppercase tracking-wider">
-                    <ShieldCheck className="w-3 h-3" /> Protected Primary Admin
+                    <ShieldCheck className="w-3 h-3" /> {t("admin.staff.protectedPrimaryAdmin")}
                   </span>
                 )}
               </div>
@@ -145,7 +147,7 @@ export const StaffPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Role Assignment",
+      header: t("admin.staff.roleAssignment"),
       accessor: (st) => {
         const displayRole = toDisplayRole(st.role);
         return (
@@ -167,12 +169,12 @@ export const StaffPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Login Access & Status",
+      header: t("admin.staff.loginAccessStatus"),
       accessor: (st) => {
         const isActive = st.status.toLowerCase() === "active";
         return (
           <div className="space-y-1">
-            <div className="flex items-center space-x-1.5">
+            <div className="flex items-center gap-1.5">
               <StatusBadge status={st.status} />
               <span
                 className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
@@ -181,7 +183,7 @@ export const StaffPage: React.FC = () => {
                     : "bg-rose-950/60 text-rose-300 border border-rose-500/30"
                 }`}
               >
-                {isActive ? "Enabled" : "Disabled"}
+                {isActive ? t("admin.staff.enabled") : t("admin.staff.disabled")}
               </span>
             </div>
           </div>
@@ -190,7 +192,7 @@ export const StaffPage: React.FC = () => {
       sortable: true,
     },
     {
-      header: "Dashboard Access",
+      header: t("admin.staff.dashboardAccess"),
       accessor: (st) => (
         <span className="text-xs font-sans text-ivory font-medium block">
           {getDashboardName(st.role)}
@@ -198,51 +200,51 @@ export const StaffPage: React.FC = () => {
       ),
     },
     {
-      header: "Last Login",
-      accessor: (st) => <span className="text-xs text-muted font-mono">{st.lastActive || "Never"}</span>,
+      header: t("admin.staff.lastLogin"),
+      accessor: (st) => <span className="text-xs text-muted font-mono">{st.lastActive || t("admin.staff.never")}</span>,
       sortable: true,
     },
     {
-      header: "Actions",
+      header: t("admin.staff.actions"),
       accessor: (st) => {
         const isPrimary = isPrimaryAdmin(st);
         const isActive = st.status.toLowerCase() === "active";
 
         return (
-          <div className="flex items-center justify-end space-x-2">
+          <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => handleOpenPermissions(st)}
-              className="px-2.5 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center space-x-1"
-              title="Edit Permissions Matrix"
+              className="px-2.5 py-1.5 rounded bg-navy border border-gold/30 hover:border-gold text-gold hover:text-ivory text-xs font-sans transition-colors flex items-center gap-1"
+              title={t("admin.staff.editPermissionsMatrix")}
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Permissions</span>
+              <span>{t("admin.staff.permissions")}</span>
             </button>
 
             {isPrimary ? (
               <span className="px-2.5 py-1.5 rounded bg-navy2 border border-gold/20 text-gold/80 text-[11px] font-mono font-medium flex items-center gap-1 opacity-90 cursor-not-allowed">
                 <ShieldCheck className="w-3.5 h-3.5 text-gold" />
-                <span>Protected</span>
+                <span>{t("admin.staff.protected")}</span>
               </span>
             ) : (
               <>
                 <button
                   onClick={() => handleToggleStatus(st)}
-                  className={`px-2.5 py-1.5 rounded text-xs font-sans transition-colors flex items-center space-x-1 border ${
+                  className={`px-2.5 py-1.5 rounded text-xs font-sans transition-colors flex items-center gap-1 border ${
                     isActive
                       ? "bg-amber-950/30 border-amber-500/30 hover:border-amber-400 text-amber-300"
                       : "bg-emerald-950/30 border-emerald-500/30 hover:border-emerald-400 text-emerald-300"
                   }`}
-                  title={isActive ? "Deactivate Staff Account" : "Activate Staff Account"}
+                  title={isActive ? t("admin.staff.deactivateStaffAccount") : t("admin.staff.activateStaffAccount")}
                 >
                   {isActive ? <Ban className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>{isActive ? "Deactivate" : "Activate"}</span>
+                  <span>{isActive ? t("admin.staff.deactivate") : t("admin.staff.activate")}</span>
                 </button>
 
                 <button
                   onClick={() => setTargetDeleteStaff(st)}
                   className="p-1.5 rounded bg-rose-950/30 border border-rose-500/30 hover:border-rose-400 text-rose-300 hover:text-rose-100 transition-colors"
-                  title="Remove Staff Access"
+                  title={t("admin.staff.removeStaffAccess")}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -251,7 +253,7 @@ export const StaffPage: React.FC = () => {
           </div>
         );
       },
-      className: "text-right",
+      className: "text-end",
     },
   ];
 
@@ -261,21 +263,21 @@ export const StaffPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-            ATELIER GOVERNANCE & ACCESS CONTROL
+            {t("admin.staff.atelierGovernanceAccess")}
           </span>
           <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight mt-0.5">
-            Staff & Login Access Control
+            {t("admin.staff.staffLoginAccessControl")}
           </h1>
           <p className="text-xs text-muted font-sans font-light mt-0.5">
-            Manage authenticated staff accounts, audit login access, and assign role-specific dashboards.
+            {t("admin.staff.manageAuthenticatedStaff")}
           </p>
         </div>
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center space-x-2 shadow-lg shrink-0"
+          className="px-4 py-2.5 bg-gold hover:bg-goldLight text-navy font-semibold rounded text-xs font-sans tracking-wider uppercase transition-colors flex items-center gap-2 shadow-lg shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Staff Account</span>
+          <span>{t("admin.staff.addStaffAccount")}</span>
         </button>
       </div>
 
@@ -285,28 +287,28 @@ export const StaffPage: React.FC = () => {
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">TOTAL STAFF</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">{t("admin.staff.totalStaff")}</span>
           <div className="text-2xl font-serif font-bold text-ivory flex items-center gap-2">
             <Users className="w-5 h-5 text-gold" />
             <span>{totalStaffCount}</span>
           </div>
         </div>
         <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">ACTIVE LOGIN ACCESS</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">{t("admin.staff.activeLoginAccess")}</span>
           <div className="text-2xl font-serif font-bold text-emerald-400 flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-emerald-400" />
             <span>{activeStaffCount}</span>
           </div>
         </div>
         <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">SUPER ADMINS</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">{t("admin.staff.superAdmins")}</span>
           <div className="text-2xl font-serif font-bold text-gold flex items-center gap-2">
             <Award className="w-5 h-5 text-gold" />
             <span>{superAdminCount}</span>
           </div>
         </div>
         <div className="p-4 rounded-lg bg-navy2/80 border border-gold/20 space-y-1">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">OPERATIONAL MANAGERS</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">{t("admin.staff.operationalManagers")}</span>
           <div className="text-2xl font-serif font-bold text-sky-400 flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-sky-400" />
             <span>{managerCount}</span>
@@ -319,73 +321,73 @@ export const StaffPage: React.FC = () => {
         columns={columns}
         data={staffMembers}
         keyExtractor={(st) => st.id}
-        searchPlaceholder="Search staff by name, email, or role…"
-        emptyMessage="No staff members found"
+        searchPlaceholder={t("admin.staff.searchStaffByNameEmail")}
+        emptyMessage={t("admin.staff.noStaffMembersFound")}
       />
 
       {/* Modal: Add New Staff */}
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        title="Create Staff Account"
+        title={t("admin.staff.createStaffAccount")}
       >
         <form onSubmit={handleAddStaff} className="space-y-4 text-xs font-sans">
           <div>
-            <label className="block text-ivory mb-1">Full Name *</label>
+            <label className="block text-ivory mb-1">{t("admin.staff.fullNameRequired")}</label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Ali Khan"
+              placeholder={t("admin.staff.aliKhanPlaceholder")}
               className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             />
           </div>
 
           <div>
-            <label className="block text-ivory mb-1">Staff Email Address *</label>
+            <label className="block text-ivory mb-1">{t("admin.staff.staffEmailAddressRequired")}</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. ali@hmsignature.com"
+              placeholder={t("admin.staff.staffEmailPlaceholder")}
               className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             />
           </div>
 
           <div>
-            <label className="block text-ivory mb-1">Assigned Staff Role *</label>
+            <label className="block text-ivory mb-1">{t("admin.staff.assignedStaffRoleRequired")}</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as StaffRole)}
               className="w-full bg-navy border border-gold/20 rounded px-3 py-2 text-ivory focus:outline-none focus:border-gold"
             >
-              <option value="Order Manager">Order Manager (Fulfilment & Tracking)</option>
-              <option value="Content Manager">Content Manager (Catalog & CMS)</option>
-              <option value="Manager">Manager (Boutique Store Operations)</option>
-              <option value="Super Admin">Super Admin (Full Governance Access)</option>
+              <option value="Order Manager">{t("admin.staff.orderManagerFulfilmentTracking")}</option>
+              <option value="Content Manager">{t("admin.staff.contentManagerCatalog")}</option>
+              <option value="Manager">{t("admin.staff.managerBoutiqueOperations")}</option>
+              <option value="Super Admin">{t("admin.staff.superAdminFullGovernance")}</option>
             </select>
           </div>
 
           <div className="p-3 rounded bg-navy/60 border border-gold/15 text-[11px] text-muted leading-relaxed">
-            <span className="text-gold font-bold block mb-0.5">Authentication Note:</span>
-            Staff accounts require authentication via Supabase Auth. Passwords are never stored in plain text or public tables.
+            <span className="text-gold font-bold block mb-0.5">{t("admin.staff.authenticationNote")}</span>
+            {t("admin.staff.staffAccountsRequireAuth")}
           </div>
 
-          <div className="flex justify-end space-x-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setIsAddModalOpen(false)}
               className="px-4 py-2 rounded text-muted hover:text-ivory"
             >
-              Cancel
+              {t("admin.modal.cancel")}
             </button>
             <button
               type="submit"
               className="px-4 py-2 bg-gold text-navy font-semibold rounded hover:bg-goldLight"
             >
-              Create Account
+              {t("admin.staff.createAccount")}
             </button>
           </div>
         </form>
@@ -395,19 +397,19 @@ export const StaffPage: React.FC = () => {
       <Modal
         isOpen={Boolean(editingPermissionsStaff)}
         onClose={() => setEditingPermissionsStaff(null)}
-        title={`Permissions Matrix: ${editingPermissionsStaff?.name}`}
+        title={t("admin.staff.permissionsMatrixName", { name: editingPermissionsStaff?.name || "" })}
       >
         <div className="space-y-4 text-xs font-sans">
           <div className="flex items-center justify-between border-b border-gold/15 pb-2">
             <span className="text-gold font-mono uppercase tracking-wider text-[10px]">
-              Assigned Role: {editingPermissionsStaff?.role}
+              {t("admin.staff.assignedRoleName", { role: editingPermissionsStaff?.role || "" })}
             </span>
             {isPrimaryAdmin(editingPermissionsStaff) && (
-              <span className="text-[10px] text-gold font-mono font-bold">FULL UNRESTRICTED ACCESS</span>
+              <span className="text-[10px] text-gold font-mono font-bold">{t("admin.staff.fullUnrestrictedAccess")}</span>
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pe-1">
             {PERMISSION_KEYS.map((item) => {
               const isChecked = Boolean(permissionsState[item.key]);
               const isDisabled = isPrimaryAdmin(editingPermissionsStaff);
@@ -415,7 +417,7 @@ export const StaffPage: React.FC = () => {
               return (
                 <label
                   key={item.key}
-                  className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
+                  className={`flex items-center gap-2 p-2 rounded border transition-colors ${
                     isChecked
                       ? "bg-gold/10 border-gold/40 text-ivory"
                       : "bg-navy border-gold/10 text-muted"
@@ -428,25 +430,25 @@ export const StaffPage: React.FC = () => {
                     onChange={() => handleTogglePermission(item.key)}
                     className="rounded border-gold/30 bg-navy text-gold focus:ring-gold"
                   />
-                  <span>{item.label}</span>
+                  <span>{t(item.labelKey)}</span>
                 </label>
               );
             })}
           </div>
 
-          <div className="flex justify-end space-x-2 pt-2 border-t border-gold/15">
+          <div className="flex justify-end gap-2 pt-2 border-t border-gold/15">
             <button
               onClick={() => setEditingPermissionsStaff(null)}
               className="px-4 py-2 rounded text-muted hover:text-ivory"
             >
-              Close
+              {t("admin.staff.close")}
             </button>
             {!isPrimaryAdmin(editingPermissionsStaff) && (
               <button
                 onClick={handleSavePermissions}
                 className="px-4 py-2 bg-gold text-navy font-semibold rounded hover:bg-goldLight"
               >
-                Save Permissions
+                {t("admin.staff.savePermissions")}
               </button>
             )}
           </div>
@@ -458,9 +460,9 @@ export const StaffPage: React.FC = () => {
         isOpen={Boolean(targetDeleteStaff)}
         onClose={() => setTargetDeleteStaff(null)}
         onConfirm={handleConfirmRemove}
-        title="Deactivate & Remove Staff Access"
-        message={`Are you sure you want to deactivate and remove login access for ${targetDeleteStaff?.name} (${targetDeleteStaff?.email})?`}
-        confirmText="Remove Access"
+        title={t("admin.staff.deactivateRemoveStaffAccess")}
+        message={t("admin.staff.removeAccessConfirm", { name: targetDeleteStaff?.name || "", email: targetDeleteStaff?.email || "" })}
+        confirmText={t("admin.staff.removeAccess")}
       />
     </div>
   );

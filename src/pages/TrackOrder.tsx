@@ -28,6 +28,7 @@ import {
 import { OrderTimeline, formatOrderStamp } from "../components/OrderTimeline";
 import { lookupOrderTracking, type TrackingResult } from "../services/tracking";
 import { formatPKR } from "../utils/currency";
+import { useI18n } from "../i18n/I18nProvider";
 
 // Shared concierge line, the same number used by /contact and the floating button.
 const WHATSAPP_NUMBER = "923218602034";
@@ -35,28 +36,31 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 type LookupPhase = "idle" | "loading" | "found" | "not_found" | "error";
 
-const STATUS_BADGES: Record<string, { label: string; icon: ElementType; tone: string }> = {
-  Pending: { label: "Pending Review", icon: Clock, tone: "bg-navy text-muted border-gold/25" },
-  Confirmed: { label: "Order Confirmed", icon: ShieldCheck, tone: "bg-sky-950/60 text-sky-300 border-sky-800/40" },
-  Processing: { label: "Atelier Processing", icon: Package, tone: "bg-amber-950/60 text-amber-300 border-amber-800/40" },
-  Shipped: { label: "Shipped · In Transit", icon: Truck, tone: "bg-gold/10 text-gold border-gold/40" },
-  "Out for Delivery": { label: "Out For Delivery", icon: Truck, tone: "bg-emerald-950/50 text-emerald-300 border-emerald-800/40" },
-  Delivered: { label: "Delivered", icon: Home, tone: "bg-emerald-950/60 text-emerald-300 border-emerald-800/40" },
-  Cancelled: { label: "Cancelled", icon: AlertCircle, tone: "bg-rose-950/60 text-rose-300 border-rose-800/40" },
-  Returned: { label: "Returned", icon: RotateCw, tone: "bg-rose-950/40 text-rose-200 border-rose-800/40" },
+// The key and the raw value stay the persisted order status; only the badge label is localised.
+type StatusBadge = { labelKey: string; rawLabel?: string; icon: ElementType; tone: string };
+
+const STATUS_BADGES: Record<string, StatusBadge> = {
+  Pending: { labelKey: "track.statusPendingReview", icon: Clock, tone: "bg-navy text-muted border-gold/25" },
+  Confirmed: { labelKey: "track.statusOrderConfirmed", icon: ShieldCheck, tone: "bg-sky-950/60 text-sky-300 border-sky-800/40" },
+  Processing: { labelKey: "track.statusAtelierProcessing", icon: Package, tone: "bg-amber-950/60 text-amber-300 border-amber-800/40" },
+  Shipped: { labelKey: "track.statusShippedTransit", icon: Truck, tone: "bg-gold/10 text-gold border-gold/40" },
+"Out for Delivery": { labelKey: "track.statusOutForDelivery", icon: Truck, tone: "bg-emerald-950/50 text-emerald-300 border-emerald-800/40" },
+  Delivered: { labelKey: "status.delivered", icon: Home, tone: "bg-emerald-950/60 text-emerald-300 border-emerald-800/40" },
+  Cancelled: { labelKey: "status.cancelled", icon: AlertCircle, tone: "bg-rose-950/60 text-rose-300 border-rose-800/40" },
+  Returned: { labelKey: "status.returned", icon: RotateCw, tone: "bg-rose-950/40 text-rose-200 border-rose-800/40" },
 };
 
 const PAYMENT_TONES: Record<string, string> = {
   Paid: "bg-emerald-950/60 text-emerald-300 border-emerald-800/40",
   Verified: "bg-emerald-950/60 text-emerald-300 border-emerald-800/40",
-  "Verification Pending": "bg-amber-950/60 text-amber-300 border-amber-800/40",
+"Verification Pending": "bg-amber-950/60 text-amber-300 border-amber-800/40",
   Failed: "bg-rose-950/60 text-rose-300 border-rose-800/40",
   Rejected: "bg-rose-950/60 text-rose-300 border-rose-800/40",
   Refunded: "bg-sky-950/60 text-sky-300 border-sky-800/40",
 };
 
-function getStatusBadge(status?: string) {
-  return STATUS_BADGES[status ?? ""] ?? { label: status || "Status Unavailable", icon: Package, tone: "bg-navy text-muted border-gold/25" };
+function getStatusBadge(status?: string): StatusBadge {
+  return STATUS_BADGES[status ?? ""] ?? { labelKey: "", rawLabel: status || "", icon: Package, tone: "bg-navy text-muted border-gold/25" };
 }
 
 function getPaymentTone(paymentStatus?: string) {
@@ -87,6 +91,7 @@ function conciergeLink(reference: string) {
 
 export default function TrackOrder() {
   const [searchParams] = useSearchParams();
+  const { t } = useI18n();
 
   const deepLink =
     searchParams.get("id") ||
@@ -94,7 +99,7 @@ export default function TrackOrder() {
     searchParams.get("tracking") ||
     searchParams.get("trackingId") ||
     searchParams.get("orderId") ||
-    "";
+"";
   const deepEmail = searchParams.get("email") || "";
 
   const [lookupValue, setLookupValue] = useState(deepLink);
@@ -155,12 +160,12 @@ export default function TrackOrder() {
 
     const errors: { lookup?: string; email?: string } = {};
     if (!term) {
-      errors.lookup = "Enter your order number or tracking reference.";
+      errors.lookup = t("track.errorReferenceRequired");
     } else if (term.length < 4) {
-      errors.lookup = "That reference looks incomplete. Please enter the full order number or tracking ID.";
+      errors.lookup = t("track.errorReferenceIncomplete");
     }
     if (email && !EMAIL_PATTERN.test(email)) {
-      errors.email = "Enter a valid email address, or leave this field empty.";
+      errors.email = t("track.errorEmailInvalid");
     }
 
     setFieldErrors(errors);
@@ -208,26 +213,32 @@ export default function TrackOrder() {
 
   const statusMessage =
     phase === "loading"
-      ? `Searching for "${activeQuery}".`
+      ? t("track.searchingFor", { query: activeQuery })
       : phase === "found" && result
-      ? `Order ${result.orderNumber || activeQuery} found. Current status: ${result.status || "unavailable"}.`
+      ? t("track.foundStatus", {
+          order: result.orderNumber || activeQuery,
+          status: result.status || t("track.statusUnavailableWord"),
+        })
       : phase === "not_found"
-      ? `No order matched "${activeQuery}".`
+      ? t("track.notFoundStatus", { query: activeQuery })
       : phase === "error"
-      ? "We could not reach the tracking service."
+      ? t("track.serviceUnreachable")
       : "";
 
   const StatusIcon = getStatusBadge(result?.status).icon;
+  const matchedBadge = getStatusBadge(result?.status);
+  const matchedStatusLabel = matchedBadge.labelKey
+    ? t(matchedBadge.labelKey)
+    : matchedBadge.rawLabel || t("track.statusUnavailable");
 
   return (
     <div className="pt-24 pb-20 bg-navy min-h-screen text-ivory font-sans overflow-x-hidden">
       <section className="py-12 sm:py-16 border-b border-gold/15 text-center">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 space-y-3">
-          <div className="eyebrow">BOUTIQUE CONCIERGE</div>
-          <h1 className="font-serif text-3xl sm:text-5xl font-bold">Track Your Fragrance Shipment</h1>
+          <div className="eyebrow">{t("track.eyebrow")}</div>
+          <h1 className="font-serif text-3xl sm:text-5xl font-bold">{t("track.title")}</h1>
           <p className="text-muted max-w-lg mx-auto leading-relaxed text-xs sm:text-sm font-light px-1">
-            Enter your order number or tracking reference to see atelier preparation status, courier details
-            and the full delivery timeline.
+            {t("track.intro")}
           </p>
         </div>
       </section>
@@ -242,10 +253,10 @@ export default function TrackOrder() {
           >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gold/20 pb-4">
               <span className="text-[10px] font-mono uppercase tracking-[2.5px] text-gold font-semibold">
-                Order Lookup
+                {t("track.lookupHeading")}
               </span>
               <span className="text-[10px] font-mono uppercase tracking-wider text-muted">
-                Verified against our fulfilment records
+                {t("track.verifiedNote")}
               </span>
             </div>
 
@@ -255,7 +266,7 @@ export default function TrackOrder() {
                   htmlFor="order-reference"
                   className="text-[10px] tracking-[2px] text-gold uppercase mb-1.5 block font-mono font-semibold"
                 >
-                  Order Number or Tracking ID
+                  {t("track.referenceLabel")}
                 </label>
                 <input
                   id="order-reference"
@@ -266,7 +277,7 @@ export default function TrackOrder() {
                     setLookupValue(e.target.value);
                     if (fieldErrors.lookup) setFieldErrors((prev) => ({ ...prev, lookup: undefined }));
                   }}
-                  placeholder="HMS-20261002-4173 or HMS-TRK-8F42A91"
+                  placeholder={t("track.referencePlaceholder")}
                   autoComplete="off"
                   spellCheck={false}
                   aria-invalid={fieldErrors.lookup ? true : undefined}
@@ -276,7 +287,7 @@ export default function TrackOrder() {
                   }`}
                 />
                 <p id="order-reference-help" className="text-[10px] text-muted font-light mt-1.5 leading-relaxed">
-                  Shown on your confirmation page and in your account orders.
+                  {t("track.referenceHelp")}
                 </p>
                 {fieldErrors.lookup && (
                   <p
@@ -295,8 +306,8 @@ export default function TrackOrder() {
                   htmlFor="checkout-email"
                   className="text-[10px] tracking-[2px] text-gold uppercase mb-1.5 block font-mono font-semibold"
                 >
-                  Email Used at Checkout
-                  <span className="text-muted normal-case tracking-normal font-sans font-light"> (optional)</span>
+                  {t("track.emailLabel")}
+                  <span className="text-muted normal-case tracking-normal font-sans font-light"> ({t("common.optional")})</span>
                 </label>
                 <input
                   id="checkout-email"
@@ -317,7 +328,7 @@ export default function TrackOrder() {
                   }`}
                 />
                 <p id="checkout-email-help" className="text-[10px] text-muted font-light mt-1.5 leading-relaxed">
-                  Needed for guest orders so we can confirm the order belongs to you.
+                  {t("track.emailHelp")}
                 </p>
                 {fieldErrors.email && (
                   <p
@@ -341,12 +352,12 @@ export default function TrackOrder() {
               {phase === "loading" ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                  <span>Searching…</span>
+                  <span>{t("track.searching")}</span>
                 </>
               ) : (
                 <>
                   <Search className="w-4 h-4" aria-hidden="true" />
-                  <span>Track Order</span>
+                  <span>{t("footer.trackOrder")}</span>
                 </>
               )}
             </button>
@@ -384,21 +395,21 @@ export default function TrackOrder() {
           {phase === "not_found" && (
             <div role="alert" className="bg-navy2/90 border border-rose-800/30 p-6 sm:p-8 text-center rounded-2xl space-y-4 shadow-xl">
               <AlertCircle className="w-10 h-10 text-rose-400 mx-auto" aria-hidden="true" />
-              <h2 className="font-serif text-lg sm:text-xl font-bold">We Could Not Match That Reference</h2>
+              <h2 className="font-serif text-lg sm:text-xl font-bold">{t("track.notFoundTitle")}</h2>
               <p className="text-xs text-muted max-w-md mx-auto leading-relaxed font-light break-words">
-                Nothing in our fulfilment records matches <span className="text-ivory font-mono break-all">“{activeQuery}”</span>.
-                Please check the following and try again:
+                {t("track.notFoundPrefix")} <span className="text-ivory font-mono break-all">“{activeQuery}”</span>.
+                {t("track.notFoundSuffix")}
               </p>
-              <ul className="text-xs text-muted font-light space-y-2 max-w-md mx-auto text-left">
+              <ul className="text-xs text-muted font-light space-y-2 max-w-md mx-auto text-start">
                 {[
-                  "Order numbers look like HMS-20261002-4173 — watch for a missing digit or an extra space.",
-                  "Tracking IDs are only issued once your parcel leaves the atelier, so a dispatch reference may not exist yet.",
-                  "For guest checkouts, enter the email address used at checkout as well — it confirms the order belongs to you.",
-                  "If you signed in at checkout, your full order history is on your account page.",
+"track.notFoundTip1",
+"track.notFoundTip2",
+"track.notFoundTip3",
+"track.notFoundTip4",
                 ].map((line) => (
                   <li key={line} className="flex items-start gap-2 leading-relaxed">
                     <span className="w-1.5 h-1.5 rounded-full bg-gold/70 mt-1.5 shrink-0" aria-hidden="true" />
-                    <span className="min-w-0">{line}</span>
+                    <span className="min-w-0">{t(line)}</span>
                   </li>
                 ))}
               </ul>
@@ -410,13 +421,13 @@ export default function TrackOrder() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 border border-gold/40 text-gold hover:bg-gold/10 rounded font-sans text-xs uppercase tracking-wider font-semibold transition-colors"
                 >
                   <MessageCircle className="w-4 h-4" aria-hidden="true" />
-                  <span>Ask the Concierge on WhatsApp</span>
+                  <span>{t("track.askConciergeWhatsapp")}</span>
                 </a>
                 <Link
                   to="/account/orders"
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 bg-gold hover:bg-goldLight text-navy rounded font-sans text-xs uppercase tracking-wider font-bold transition-colors shadow-md"
                 >
-                  <span>View My Account Orders</span>
+                  <span>{t("track.viewAccountOrders")}</span>
                 </Link>
               </div>
             </div>
@@ -426,10 +437,9 @@ export default function TrackOrder() {
           {phase === "error" && (
             <div role="alert" className="bg-navy2/90 border border-amber-800/40 p-6 sm:p-8 text-center rounded-2xl space-y-4 shadow-xl">
               <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" aria-hidden="true" />
-              <h2 className="font-serif text-lg sm:text-xl font-bold">Tracking Is Temporarily Unavailable</h2>
+              <h2 className="font-serif text-lg sm:text-xl font-bold">{t("track.unavailableTitle")}</h2>
               <p className="text-xs text-muted max-w-md mx-auto leading-relaxed font-light">
-                We could not reach our fulfilment service just now. This is usually a connection issue — please
-                try again in a moment.
+                {t("track.unavailableBody")}
               </p>
               <div className="flex flex-col sm:flex-row gap-3 pt-2 justify-center">
                 <button
@@ -438,7 +448,7 @@ export default function TrackOrder() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 bg-gold hover:bg-goldLight text-navy rounded font-sans text-xs uppercase tracking-wider font-bold transition-colors shadow-md"
                 >
                   <RotateCw className="w-4 h-4" aria-hidden="true" />
-                  <span>Try Again</span>
+                  <span>{t("account.tryAgain")}</span>
                 </button>
                 <a
                   href={conciergeLink(activeQuery)}
@@ -447,7 +457,7 @@ export default function TrackOrder() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 border border-gold/40 text-gold hover:bg-gold/10 rounded font-sans text-xs uppercase tracking-wider font-semibold transition-colors"
                 >
                   <MessageCircle className="w-4 h-4" aria-hidden="true" />
-                  <span>Ask the Concierge</span>
+                  <span>{t("track.askConcierge")}</span>
                 </a>
               </div>
             </div>
@@ -465,14 +475,14 @@ export default function TrackOrder() {
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-gold/20 pb-5">
                 <div className="min-w-0 space-y-1">
                   <span className="text-[10px] font-mono text-gold uppercase tracking-[2.5px] block">
-                    Matched Order
+                    {t("track.matchedOrder")}
                   </span>
                   <h2 className="font-mono font-bold text-lg sm:text-xl text-ivory break-all num-lining">
                     {result.orderNumber || activeQuery}
                   </h2>
                   {result.placedAt && (
                     <p className="text-[11px] text-muted font-light">
-                      Placed on <span className="text-ivory font-mono">{formatOrderStamp(result.placedAt)}</span>
+                      {t("account.placedOn")} <span className="text-ivory font-mono">{formatOrderStamp(result.placedAt)}</span>
                     </p>
                   )}
                 </div>
@@ -482,59 +492,59 @@ export default function TrackOrder() {
                   }`}
                 >
                   <StatusIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span>{getStatusBadge(result.status).label}</span>
+                  <span>{matchedStatusLabel}</span>
                 </div>
               </div>
 
               {/* Courier & tracking */}
               <div className="space-y-3">
                 <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
-                  Courier & Tracking
+                  {t("track.courierHeading")}
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Detail label="Courier Service" value={result.courier || "our delivery team"} icon={Truck} />
+                  <Detail label={t("track.courierService")} value={result.courier || t("track.deliveryTeamFallback")} icon={Truck} />
                   {result.trackingId ? (
                     <div className="p-3.5 rounded-xl bg-navy/60 border border-gold/15 min-w-0">
                       <span className="text-[10px] font-mono uppercase tracking-wider text-muted block mb-1">
-                        Tracking Reference
+                        {t("track.trackingReference")}
                       </span>
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-mono text-xs font-bold text-goldLight break-all">{result.trackingId}</span>
                         <button
                           type="button"
                           onClick={() => copyTrackingReference(result.trackingId || "")}
-                          aria-label={`Copy tracking reference ${result.trackingId}`}
+                          aria-label={t("track.copyReference", { reference: result.trackingId })}
                           className="shrink-0 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded border border-gold/20 text-muted hover:text-gold hover:border-gold/50 transition-colors"
                         >
                           {copied ? <Check className="w-4 h-4 text-emerald-300" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
                         </button>
                       </div>
                       <p aria-live="polite" className="text-[10px] text-emerald-300 font-mono h-4">
-                        {copied ? "Copied to clipboard" : ""}
+                        {copied ? t("track.copied") : ""}
                       </p>
                     </div>
                   ) : (
                     <Detail
-                      label="Tracking Reference"
-                      value="Issued as soon as your parcel is dispatched"
+                      label={t("track.trackingReference")}
+                      value={t("track.trackingIssuedOnDispatch")}
                       muted
                       icon={Package}
                     />
                   )}
-                  {result.shipmentStatus && <Detail label="Shipment Status" value={result.shipmentStatus} icon={ShieldCheck} />}
+                  {result.shipmentStatus && <Detail label={t("track.shipmentStatus")} value={result.shipmentStatus} icon={ShieldCheck} />}
                   {result.estimatedDelivery && (
                     <Detail
-                      label="Estimated Delivery"
+                      label={t("track.estimatedDelivery")}
                       value={formatOrderStamp(result.estimatedDelivery)}
                       highlight
                       icon={CalendarDays}
                     />
                   )}
-                  {result.city && <Detail label="Destination City" value={result.city} icon={MapPin} />}
+                  {result.city && <Detail label={t("track.destinationCity")} value={result.city} icon={MapPin} />}
                   {result.trackingUrl && (
                     <div className="sm:col-span-2 p-3.5 rounded-xl bg-navy/60 border border-gold/15 min-w-0">
                       <span className="text-[10px] font-mono uppercase tracking-wider text-muted block mb-1.5">
-                        Live Carrier Page
+                        {t("track.liveCarrierPage")}
                       </span>
                       <a
                         href={result.trackingUrl}
@@ -544,7 +554,7 @@ export default function TrackOrder() {
                       >
                         <span className="break-all">{result.trackingUrl}</span>
                         <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                        <span className="sr-only">(opens the carrier website in a new tab)</span>
+                        <span className="sr-only">{t("track.newTabHint")}</span>
                       </a>
                     </div>
                   )}
@@ -555,26 +565,26 @@ export default function TrackOrder() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 rounded-xl bg-navy/60 border border-gold/15 min-w-0">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-muted block mb-1.5">
-                    Payment Status
+                    {t("track.paymentStatus")}
                   </span>
                   <span
                     className={`inline-block px-2.5 py-1 rounded text-[11px] font-semibold border uppercase tracking-wider font-mono ${getPaymentTone(
                       result.paymentStatus
                     )}`}
                   >
-                    {result.paymentStatus || "Pending"}
+                    {result.paymentStatus || t("status.pending")}
                   </span>
                 </div>
                 <div className="p-3.5 rounded-xl bg-navy/60 border border-gold/15 min-w-0">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-muted block mb-1.5">
-                    Payment Method
+                    {t("track.paymentMethod")}
                   </span>
                   <span className="inline-flex items-center gap-2 text-xs text-ivory font-semibold min-w-0">
                     {(() => {
                       const MethodIcon = getPaymentMethodIcon(result.paymentMethod);
                       return <MethodIcon className="w-4 h-4 text-gold shrink-0" aria-hidden="true" />;
                     })()}
-                    <span className="break-words">{result.paymentMethod || "Not recorded"}</span>
+                    <span className="break-words">{result.paymentMethod || t("track.notRecorded")}</span>
                   </span>
                   {typeof result.total === "number" && (
                     <span className="block mt-1 font-mono text-sm font-bold text-gold num-lining">
@@ -589,7 +599,7 @@ export default function TrackOrder() {
                 <div className="p-4 rounded-xl bg-gold/5 border border-gold/25 space-y-1.5">
                   <p className="inline-flex items-center gap-2 text-xs font-semibold text-gold uppercase tracking-wider">
                     <Gift className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span>Signature Gift Wrap Included</span>
+                    <span>{t("track.giftWrapIncluded")}</span>
                   </p>
                   {result.giftMessage ? (
                     <p className="text-xs text-ivory/90 font-light leading-relaxed font-serif italic break-words">
@@ -597,7 +607,7 @@ export default function TrackOrder() {
                     </p>
                   ) : (
                     <p className="text-[11px] text-muted font-light">
-                      Your order is marked for gift presentation. The atelier confirms what can be included before dispatch.
+                      {t("track.giftWrapBody")}
                     </p>
                   )}
                 </div>
@@ -606,12 +616,12 @@ export default function TrackOrder() {
               {/* Items */}
               <div className="space-y-3 border-t border-gold/15 pt-5">
                 <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold block">
-                  Order Contents
+                  {t("track.orderContents")}
                 </span>
                 <div className="bg-navy/70 border border-gold/15 rounded-xl divide-y divide-gold/10 overflow-hidden">
                   {result.items.length === 0 ? (
                     <p className="p-4 text-[11px] text-muted italic font-light">
-                      Item details are not available for this order.
+                      {t("track.noItems")}
                     </p>
                   ) : (
                     result.items.map((item, idx) => (
@@ -629,11 +639,11 @@ export default function TrackOrder() {
                               {item.name}
                             </h3>
                             <p className="text-[11px] text-muted flex flex-wrap gap-x-2">
-                              <span className="font-mono text-gold">{item.size || "Size not recorded"}</span>
+                              <span className="font-mono text-gold">{item.size || t("track.sizeNotRecorded")}</span>
                               <span aria-hidden="true">•</span>
-                              <span>Qty {item.quantity}</span>
+                              <span>{t("track.qty", { n: item.quantity })}</span>
                               <span aria-hidden="true">•</span>
-                              <span className="font-mono">{formatPKR(item.unitPrice)} each</span>
+                              <span className="font-mono">{formatPKR(item.unitPrice)} {t("account.each")}</span>
                             </p>
                           </div>
                         </div>
@@ -650,10 +660,10 @@ export default function TrackOrder() {
               <div className="space-y-4 border-t border-gold/15 pt-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="text-[10px] font-mono uppercase tracking-[2px] text-gold font-semibold">
-                    Fulfilment Timeline
+                    {t("track.fulfilmentTimeline")}
                   </span>
                   <span className="text-[10px] text-muted font-light">
-                    {result.timeline.length} recorded {result.timeline.length === 1 ? "update" : "updates"}
+                    {result.timeline.length} {t("track.recorded")} {result.timeline.length === 1 ? t("track.updateOne") : t("track.updatesMany")}
                   </span>
                 </div>
                 <OrderTimeline events={result.timeline} />
@@ -667,7 +677,7 @@ export default function TrackOrder() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 border border-gold/30 text-ivory hover:border-gold rounded font-sans text-xs uppercase tracking-wider font-semibold transition-colors"
                 >
                   <Search className="w-4 h-4" aria-hidden="true" />
-                  <span>Track Another Order</span>
+                  <span>{t("track.trackAnotherOrder")}</span>
                 </button>
                 <a
                   href={conciergeLink(result.orderNumber || activeQuery)}
@@ -676,13 +686,13 @@ export default function TrackOrder() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 border border-gold/30 text-gold hover:bg-gold/10 rounded font-sans text-xs uppercase tracking-wider font-semibold transition-colors"
                 >
                   <MessageCircle className="w-4 h-4" aria-hidden="true" />
-                  <span>Ask About This Order</span>
+                  <span>{t("track.askAboutOrder")}</span>
                 </a>
                 <Link
                   to="/account/orders"
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[48px] px-5 bg-gold hover:bg-goldLight text-navy rounded font-sans text-xs uppercase tracking-wider font-bold transition-colors shadow-md"
                 >
-                  <span>My Account Orders</span>
+                  <span>{t("track.myAccountOrders")}</span>
                 </Link>
               </div>
             </motion.div>
@@ -693,18 +703,17 @@ export default function TrackOrder() {
             <div className="bg-navy2/60 border border-gold/15 rounded-2xl p-5 sm:p-6 space-y-2 text-center">
               <Clock className="w-6 h-6 text-gold/70 mx-auto" aria-hidden="true" />
               <p className="text-xs text-muted font-light leading-relaxed">
-                Have your order number or tracking reference ready. Guest orders also need the email address used
-                at checkout so we can verify the order belongs to you.
+                {t("track.idleBody")}
               </p>
               <p className="text-[11px] text-muted/80 font-light">
-                Need a hand?{" "}
+                {t("track.needHelp")}{" "}
                 <a
                   href={conciergeLink("")}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-gold hover:text-goldLight underline underline-offset-4 decoration-gold/30"
                 >
-                  Message the boutique concierge
+                  {t("track.messageConcierge")}
                 </a>
                 .
               </p>

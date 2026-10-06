@@ -30,7 +30,11 @@ const directive = (name: string) =>
     .map((d) => d.trim())
     .find((d) => d.startsWith(`${name} `)) ?? "";
 
-const rewriteSource = config.rewrites?.[0]?.source ?? "";
+const rewrites = config.rewrites ?? [];
+// The single-page fallback is identified by its destination, not its position, so adding
+// another rewrite in front of it cannot silently change what this file asserts.
+const spaRewrite = rewrites.find((r) => r.destination === "/index.html");
+const rewriteSource = spaRewrite?.source ?? "";
 // Vercel turns a `source` into a path matcher; the compiled form is what is asserted.
 const matches = (path: string) => new RegExp(`^${rewriteSource}$`).test(path);
 
@@ -38,6 +42,15 @@ describe("vercel.json routing configuration", () => {
   it("compiles the SPA rewrite into a usable matcher", () => {
     expect(rewriteSource).toMatch(/^\//);
     expect(() => new RegExp(`^${rewriteSource}$`)).not.toThrow();
+  });
+
+  it("routes the international SEO documents to their generators, ahead of the fallback", () => {
+    const sitemap = rewrites.find((r) => r.source === "/sitemap.xml");
+    const robots = rewrites.find((r) => r.source === "/robots.txt");
+    expect(sitemap?.destination).toBe("/api/sitemap");
+    expect(robots?.destination).toBe("/api/robots");
+    expect(rewrites.indexOf(sitemap!)).toBeLessThan(rewrites.indexOf(spaRewrite!));
+    expect(rewrites.indexOf(robots!)).toBeLessThan(rewrites.indexOf(spaRewrite!));
   });
 
   it("never rewrites an API route to the single-page app", () => {

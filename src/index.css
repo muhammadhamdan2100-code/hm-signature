@@ -137,3 +137,55 @@ h1, h2, h3, h4, .font-serif { font-family: 'Cormorant Garamond', serif; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/*
+ * Phase 9 report printing. The reports page offers "Print / PDF" rather than a
+ * server-side PDF renderer, so the printed sheet has to be legible on paper:
+ * the dark navy palette would print as a solid block, and a table clipped to a
+ * 288px scroll box would lose every row after the first screen.
+ */
+@media print {
+  .admin-print-sheet main {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* A scroll box is a screen affordance. Left alone it clips the paper too, and the
+     report silently loses its right-hand columns, so on paper every wrapper opens up
+     and the table is allowed to wrap instead of overflow. */
+  .admin-print-sheet [class*="overflow-x-auto"],
+  .admin-print-sheet [class*="overflow-auto"],
+  .admin-print-sheet [class*="max-h-"] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .admin-print-sheet table {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 10pt !important;
+  }
+  .admin-print-sheet th,
+  .admin-print-sheet td {
+    white-space: normal !important;
+    padding: 3pt 4pt !important;
+  }
+  .admin-print-sheet thead {
+    display: table-header-group;
+  }
+  .admin-print-sheet tr,
+  .admin-print-sheet td,
+  .admin-print-sheet th {
+    break-inside: avoid;
+  }
+  .admin-print-sheet section[class*="border-gold"] {
+    background: #fff !important;
+    border-color: #bbb !important;
+    color: #111 !important;
+    box-shadow: none !important;
+  }
+  .admin-print-sheet .text-ivory,
+  .admin-print-sheet .text-muted,
+  .admin-print-sheet .text-gold,
+  .admin-print-sheet .text-\[11px\] {
+    color: #111 !important;
+  }
+}

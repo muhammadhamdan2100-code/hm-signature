@@ -17,6 +17,7 @@ import {
 import { ImageUploader } from "../components/ImageUploader";
 import { GoogleSeoPreview } from "../components/GoogleSeoPreview";
 import { Breadcrumb } from "../components/Breadcrumb";
+import { useI18n } from "../../i18n/I18nProvider";
 import {
   ArrowLeft,
   Save,
@@ -32,12 +33,16 @@ import { useNavigate, useParams } from "react-router-dom";
 type Intensity = NonNullable<AdminProduct["intensity"]>;
 
 const SHORT_DESCRIPTION_MAX = 160;
-const SIZE_INPUT_ERROR = "Use a whole millilitre value such as 75ml.";
 
 export const ProductFormPage: React.FC = () => {
+  const { t } = useI18n();
   const { products, categories, collections, addProduct, updateProduct } = useAdminData();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+
+  // Resolved at render because `t` is only available inside a component; the size rule
+  // sentence is reused verbatim inside three separate validation messages.
+  const sizeInputError = t("admin.productForm.sizeInputError");
 
   const isEditing = Boolean(id && id !== "new");
   const existingProduct = products.find((p) => p.id === id);
@@ -282,12 +287,14 @@ export const ProductFormPage: React.FC = () => {
   const handleAddVariant = (presetSize: string) => {
     const label = presetSize.trim();
     if (!isValidSizeLabel(label)) {
-      setPricingError(`"${label}" is not a valid size. ${SIZE_INPUT_ERROR}`);
+      setPricingError(
+        t("admin.productForm.sizeRejectedOnAdd", { size: label, hint: sizeInputError })
+      );
       return;
     }
     const norm = normalizeSizeLabel(label);
     if (variants.some((v) => normalizeSizeLabel(v.size) === norm)) {
-      setPricingError(`A ${norm} row already exists. Each bottle size can appear only once.`);
+      setPricingError(t("admin.productForm.duplicateSizeRow", { size: norm }));
       return;
     }
     const newV: ProductVariant = {
@@ -342,13 +349,18 @@ export const ProductFormPage: React.FC = () => {
     e.preventDefault();
 
     if (!Number.isFinite(price) || price <= 0) {
-      setPricingError("The 50ml base price is required and must be greater than 0.");
+      setPricingError(t("admin.productForm.basePriceRequiredError"));
       return;
     }
 
     const invalidSize = variants.find((v) => !isValidSizeLabel(v.size));
     if (invalidSize) {
-      setPricingError(`“${invalidSize.size || "Empty"}” is not a valid bottle size. ${SIZE_INPUT_ERROR}`);
+      setPricingError(
+        t("admin.productForm.invalidBottleSizeError", {
+          size: invalidSize.size || t("admin.productForm.emptySizeValue"),
+          hint: sizeInputError,
+        })
+      );
       return;
     }
 
@@ -356,7 +368,7 @@ export const ProductFormPage: React.FC = () => {
     for (const v of variants) {
       const norm = normalizeSizeLabel(v.size);
       if (seenSizes.has(norm)) {
-        setPricingError(`The ${norm} size appears more than once. Each bottle size can appear only once.`);
+        setPricingError(t("admin.productForm.duplicateSizeSubmitError", { size: norm }));
         return;
       }
       seenSizes.add(norm);
@@ -367,7 +379,7 @@ export const ProductFormPage: React.FC = () => {
         (v.salePrice !== undefined && (!Number.isFinite(Number(v.salePrice)) || Number(v.salePrice) <= 0 || Number(v.salePrice) >= Number(v.price)))
     );
     if (badVariant) {
-      setPricingError(`Invalid price for ${badVariant.size}. Prices must be numbers greater than 0, and a sale price must be below the price.`);
+      setPricingError(t("admin.productForm.invalidVariantPriceError", { size: badVariant.size }));
       return;
     }
     setPricingError("");
@@ -433,23 +445,29 @@ export const ProductFormPage: React.FC = () => {
     trimmedCustomSize === ""
       ? ""
       : !customSizeValid
-        ? SIZE_INPUT_ERROR
+        ? sizeInputError
         : customSizeDuplicate
-          ? `A ${normalizeSizeLabel(trimmedCustomSize)} row already exists.`
+          ? t("admin.productForm.customSizeDuplicateError", {
+              size: normalizeSizeLabel(trimmedCustomSize),
+            })
           : "";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in max-w-5xl mx-auto font-sans">
       <Breadcrumb
         items={[
-          { label: "Products", path: "/admin/products" },
-          { label: isEditing ? name || "Edit Product" : "New Fragrance" },
+          { label: t("admin.nav.products"), path: "/admin/products" },
+          {
+            label: isEditing
+              ? name || t("admin.productForm.editProductCrumb")
+              : t("admin.productForm.newFragrance"),
+          },
         ]}
       />
 
       {/* Top Action Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gold/20 pb-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate("/admin/products")}
@@ -459,28 +477,34 @@ export const ProductFormPage: React.FC = () => {
           </button>
           <div>
             <span className="text-[10px] font-mono uppercase tracking-[3px] text-gold font-semibold">
-              {isEditing ? "EDIT FRAGRANCE RECORD" : "CREATE NEW FRAGRANCE"}
+              {isEditing
+                ? t("admin.productForm.editFragranceRecord")
+                : t("admin.productForm.createNewFragrance")}
             </span>
             <h1 className="text-2xl font-serif text-ivory font-bold tracking-tight">
-              {isEditing ? `Editing "${name}"` : "Add Signature Extrait"}
+              {isEditing
+                ? t("admin.productForm.editingFragranceTitle", { name })
+                : t("admin.productForm.addSignatureExtrait")}
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate("/admin/products")}
             className="px-4 py-2 rounded text-xs uppercase tracking-wider text-muted hover:text-ivory border border-gold/20 hover:border-gold/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
           >
-            Cancel
+            {t("admin.modal.cancel")}
           </button>
           <button
             type="submit"
-            className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors flex items-center space-x-2 shadow-lg focus:outline-none focus-visible:ring-1 focus-visible:ring-goldLight"
+            className="px-5 py-2 bg-gold hover:bg-goldLight text-navy font-bold rounded text-xs uppercase tracking-wider transition-colors flex items-center gap-2 shadow-lg focus:outline-none focus-visible:ring-1 focus-visible:ring-goldLight"
           >
             <Save className="w-4 h-4" />
-            <span>{isEditing ? "Save Changes" : "Publish Fragrance"}</span>
+            <span>
+              {isEditing ? t("admin.productForm.saveChanges") : t("admin.productForm.publishFragrance")}
+            </span>
           </button>
         </div>
       </div>
@@ -491,13 +515,13 @@ export const ProductFormPage: React.FC = () => {
           {/* General Information */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Fragrance Identity & Nomenclature
+              {t("admin.productForm.identityHeading")}
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="product-name" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Product Name *
+                  {t("admin.productForm.productNameRequired")}
                 </label>
                 <input
                   id="product-name"
@@ -505,14 +529,14 @@ export const ProductFormPage: React.FC = () => {
                   required
                   value={name}
                   onChange={(e) => handleNameChange(e.target.value)}
-                  placeholder="e.g. Royal Amber Oud"
+                  placeholder={t("admin.productForm.productNamePlaceholder")}
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                 />
               </div>
 
               <div>
                 <label htmlFor="product-slug" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  URL Slug *
+                  {t("admin.productForm.urlSlugRequired")}
                 </label>
                 <input
                   id="product-slug"
@@ -529,7 +553,7 @@ export const ProductFormPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="product-sku" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Base SKU Code *
+                  {t("admin.productForm.baseSkuRequired")}
                 </label>
                 <input
                   id="product-sku"
@@ -544,7 +568,7 @@ export const ProductFormPage: React.FC = () => {
 
               <div>
                 <label htmlFor="product-category" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Fragrance Family / Category
+                  {t("admin.productForm.familyCategoryLabel")}
                 </label>
                 <select
                   id="product-category"
@@ -563,28 +587,28 @@ export const ProductFormPage: React.FC = () => {
 
             <div>
               <label htmlFor="product-teaser" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Short Teaser Description
+                {t("admin.productForm.shortTeaserLabel")}
               </label>
               <textarea
                 id="product-teaser"
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="A rich, magnetic blend of oud and amber…"
+                placeholder={t("admin.productForm.shortTeaserPlaceholder")}
                 className="w-full bg-navy border border-gold/30 rounded p-3 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
               />
             </div>
 
             <div>
               <label htmlFor="product-story" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Full Atelier Story & Formulation
+                {t("admin.productForm.atelierStoryLabel")}
               </label>
               <textarea
                 id="product-story"
                 rows={4}
                 value={fullDescription}
                 onChange={(e) => setFullDescription(e.target.value)}
-                placeholder="Handcrafted in small batches using rare botanical extracts…"
+                placeholder={t("admin.productForm.atelierStoryPlaceholder")}
                 className="w-full bg-navy border border-gold/30 rounded p-3 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
               />
             </div>
@@ -593,16 +617,18 @@ export const ProductFormPage: React.FC = () => {
           {/* Fragrance Profile */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <div className="border-b border-gold/15 pb-2">
-              <h3 className="font-serif text-base font-bold text-ivory">Fragrance Profile</h3>
+              <h3 className="font-serif text-base font-bold text-ivory">
+                {t("admin.productForm.profileHeading")}
+              </h3>
               <p className="text-xs text-muted font-light">
-                The details shoppers scan before they buy: a one-line summary, family, character and when to wear it.
+                {t("admin.productForm.profileHelp")}
               </p>
             </div>
 
             <div>
               <div className="flex items-baseline justify-between gap-2">
                 <label htmlFor="short-description" className="block text-xs text-muted uppercase tracking-wider">
-                  Short description
+                  {t("admin.productForm.shortDescriptionLabel")}
                 </label>
                 <span
                   className="text-[10px] font-mono text-muted tabular-nums"
@@ -617,19 +643,19 @@ export const ProductFormPage: React.FC = () => {
                 maxLength={SHORT_DESCRIPTION_MAX}
                 value={shortDescription}
                 onChange={(e) => setShortDescription(e.target.value)}
-                placeholder="A magnetic oud wrapped in amber and rose."
+                placeholder={t("admin.productForm.shortDescriptionPlaceholder")}
                 aria-describedby="short-description-help"
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
               />
               <p id="short-description-help" className="text-[10px] text-muted mt-1">
-                One line used on cards and search results. Up to {SHORT_DESCRIPTION_MAX} characters.
+                {t("admin.productForm.shortDescriptionHelp", { max: SHORT_DESCRIPTION_MAX })}
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="fragrance-family" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Fragrance family
+                  {t("admin.productForm.fragranceFamilyLabel")}
                 </label>
                 <input
                   id="fragrance-family"
@@ -647,13 +673,13 @@ export const ProductFormPage: React.FC = () => {
                   ))}
                 </datalist>
                 <p id="fragrance-family-help" className="text-[10px] text-muted mt-1">
-                  Choose a listed family or type your own.
+                  {t("admin.productForm.fragranceFamilyHelp")}
                 </p>
               </div>
 
               <div>
                 <label htmlFor="intensity" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Intensity
+                  {t("admin.productForm.intensityLabel")}
                 </label>
                 <select
                   id="intensity"
@@ -661,7 +687,7 @@ export const ProductFormPage: React.FC = () => {
                   onChange={(e) => setIntensity(e.target.value as Intensity | "")}
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                 >
-                  <option value="">Not set</option>
+                  <option value="">{t("admin.productForm.notSet")}</option>
                   {INTENSITY_OPTIONS.map((i) => (
                     <option key={i} value={i}>
                       {i}
@@ -673,25 +699,25 @@ export const ProductFormPage: React.FC = () => {
 
             <div>
               <label htmlFor="scent-profile" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Scent profile
+                {t("admin.productForm.scentProfileLabel")}
               </label>
               <input
                 id="scent-profile"
                 type="text"
                 value={scentProfile}
                 onChange={(e) => setScentProfile(e.target.value)}
-                placeholder="Smoky, resinous, softly sweet"
+                placeholder={t("admin.productForm.scentProfilePlaceholder")}
                 aria-describedby="scent-profile-help"
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
               />
               <p id="scent-profile-help" className="text-[10px] text-muted mt-1">
-                A short description of how the fragrance reads on skin.
+                {t("admin.productForm.scentProfileHelp")}
               </p>
             </div>
 
             <fieldset className="pt-1">
               <legend className="text-xs text-muted uppercase tracking-wider mb-2">
-                Occasions
+                {t("admin.productForm.occasionsLegend")}
               </legend>
               <div className="flex flex-wrap gap-2">
                 {Array.from(new Set([...OCCASION_OPTIONS, ...occasions])).map((opt) => {
@@ -718,7 +744,7 @@ export const ProductFormPage: React.FC = () => {
 
             <fieldset>
               <legend className="text-xs text-muted uppercase tracking-wider mb-2">
-                Seasons
+                {t("admin.productForm.seasonsLegend")}
               </legend>
               <div className="flex flex-wrap gap-2">
                 {Array.from(new Set([...SEASON_OPTIONS, ...seasons])).map((opt) => {
@@ -749,11 +775,10 @@ export const ProductFormPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gold/15 pb-3">
               <div>
                 <h3 className="font-serif text-base font-bold text-ivory">
-                  Bottle Sizes & ML Variants
+                  {t("admin.productForm.variantsHeading")}
                 </h3>
                 <p className="text-xs text-muted font-light">
-                  Manage variant prices, sale prices, SKUs, stock, low-stock alerts and active availability for each size.
-                  Non-50ml sizes price automatically from the 50ml base (proportional per ml) unless manually overridden.
+                  {t("admin.productForm.variantsHelp")}
                 </p>
               </div>
               <button
@@ -761,10 +786,10 @@ export const ProductFormPage: React.FC = () => {
                 onClick={() => setCustomSizeOpen((o) => !o)}
                 aria-expanded={customSizeOpen}
                 aria-controls="custom-size-form"
-                className="px-3 py-1.5 bg-gold/15 border border-gold/30 text-gold hover:bg-gold hover:text-navy rounded text-xs uppercase font-bold transition-all flex items-center space-x-1 shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
+                className="px-3 py-1.5 bg-gold/15 border border-gold/30 text-gold hover:bg-gold hover:text-navy rounded text-xs uppercase font-bold transition-all flex items-center gap-1 shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Custom Size</span>
+                <span>{t("admin.productForm.addCustomSize")}</span>
               </button>
             </div>
 
@@ -783,7 +808,7 @@ export const ProductFormPage: React.FC = () => {
               <div id="custom-size-form" className="flex flex-wrap items-start gap-2">
                 <div>
                   <label htmlFor="custom-size" className="block text-[10px] uppercase tracking-wider text-muted mb-1">
-                    New size
+                    {t("admin.productForm.newSizeLabel")}
                   </label>
                   <input
                     id="custom-size"
@@ -810,10 +835,10 @@ export const ProductFormPage: React.FC = () => {
                   disabled={!customSizeValid || customSizeDuplicate}
                   className="mt-[18px] px-3 py-1.5 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
                 >
-                  Add row
+                  {t("admin.productForm.addRow")}
                 </button>
                 <p id="custom-size-help" className={customSizeError ? "hidden" : "text-[10px] text-muted mt-[22px]"}>
-                  Enter a whole millilitre value, for example 75ml.
+                  {t("admin.productForm.newSizeHelp")}
                 </p>
                 {customSizeError && (
                   <p id="custom-size-error" role="alert" className="text-[10px] text-rose-400 mt-[22px]">
@@ -826,7 +851,7 @@ export const ProductFormPage: React.FC = () => {
             {/* Quick Presets Bar */}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-muted text-[10px] uppercase font-mono" id="preset-sizes-label">
-                Add preset size:
+                {t("admin.productForm.addPresetSize")}
               </span>
               {SIZE_PRESETS.map((pz) => {
                 const exists = hasSizeAt(variants, pz);
@@ -843,7 +868,9 @@ export const ProductFormPage: React.FC = () => {
                         : "bg-navy border-gold/30 text-gold hover:bg-gold/15 hover:border-gold"
                     }`}
                   >
-                    {exists ? `Added ${pz}` : `+ ${pz}`}
+                    {exists
+                      ? t("admin.productForm.presetAdded", { size: pz })
+                      : t("admin.productForm.presetAdd", { size: pz })}
                   </button>
                 );
               })}
@@ -851,23 +878,23 @@ export const ProductFormPage: React.FC = () => {
 
             {/* Variants Table */}
             <div
-              className="overflow-x-auto"
+              className="max-w-full min-w-0 overflow-x-auto"
               role="region"
-              aria-label="Bottle size variants"
+              aria-label={t("admin.productForm.variantsRegionLabel")}
               tabIndex={0}
             >
-              <table className="w-full text-left text-xs border-collapse min-w-[900px]">
+              <table className="w-full text-start text-xs border-collapse min-w-[900px]">
                 <thead className="bg-navy text-gold uppercase tracking-wider text-[10px] border-b border-gold/15">
                   <tr>
-                    <th scope="col" className="py-2.5 px-3">Size</th>
-                    <th scope="col" className="py-2.5 px-3">Price (PKR)</th>
-                    <th scope="col" className="py-2.5 px-3">Sale Price</th>
-                    <th scope="col" className="py-2.5 px-3">Variant SKU</th>
-                    <th scope="col" className="py-2.5 px-3">Stock</th>
-                    <th scope="col" className="py-2.5 px-3">Low-stock alert</th>
-                    <th scope="col" className="py-2.5 px-3 text-center">Status</th>
-                    <th scope="col" className="py-2.5 px-3">Photos</th>
-                    <th scope="col" className="py-2.5 px-3 text-right">Action</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.inventory.size")}</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.productForm.pricePkrColumn")}</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.productForm.salePriceColumn")}</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.productForm.variantSkuColumn")}</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.productForm.stockColumn")}</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.productForm.lowStockAlertColumn")}</th>
+                    <th scope="col" className="py-2.5 px-3 text-center">{t("admin.shared.status")}</th>
+                    <th scope="col" className="py-2.5 px-3">{t("admin.productForm.photosColumn")}</th>
+                    <th scope="col" className="py-2.5 px-3 text-end">{t("admin.orders.action")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gold/10 text-ivory">
@@ -886,7 +913,7 @@ export const ProductFormPage: React.FC = () => {
                           {/* Size */}
                           <td className="py-2.5 px-3 w-28">
                             <label htmlFor={`${rowId}-size`} className="sr-only">
-                              Bottle size for row {idx + 1}
+                              {t("admin.productForm.bottleSizeForRow", { row: idx + 1 })}
                             </label>
                             <input
                               id={`${rowId}-size`}
@@ -902,12 +929,12 @@ export const ProductFormPage: React.FC = () => {
                             />
                             {sizeInvalid && (
                               <p id={sizeErrorId} role="alert" className="mt-1 text-[10px] leading-tight text-rose-400">
-                                {SIZE_INPUT_ERROR}
+                                {sizeInputError}
                               </p>
                             )}
                             {!sizeInvalid && sizeDuplicate && (
                               <p id={sizeErrorId} role="alert" className="mt-1 text-[10px] leading-tight text-rose-400">
-                                This size is used by another row.
+                                {t("admin.productForm.sizeUsedByAnotherRow")}
                               </p>
                             )}
                           </td>
@@ -916,7 +943,7 @@ export const ProductFormPage: React.FC = () => {
                             {isBaseRow(v) ? (
                               <div className="space-y-0.5">
                                 <label htmlFor={`${rowId}-price`} className="sr-only">
-                                  50ml base price
+                                  {t("admin.productForm.basePriceSrLabel")}
                                 </label>
                                 <input
                                   id={`${rowId}-price`}
@@ -927,12 +954,14 @@ export const ProductFormPage: React.FC = () => {
                                   onChange={(e) => handleUpdateVariant(idx, "price", Number(e.target.value))}
                                   className="w-full bg-navy border border-gold/40 rounded px-2 py-1 text-xs text-gold font-mono font-bold focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                                 />
-                                <span className="text-[9px] font-mono tracking-widest text-gold/70">50ML BASE PRICE</span>
+                                <span className="text-[9px] font-mono tracking-widest text-gold/70">
+                                  {t("admin.productForm.basePriceBadge")}
+                                </span>
                               </div>
                             ) : isAutoRow(v) ? (
                               <div className="flex items-center gap-1.5">
                                 <label htmlFor={`${rowId}-price`} className="sr-only">
-                                  Automatic price for {v.size}
+                                  {t("admin.productForm.autoPriceSrLabel", { size: v.size })}
                                 </label>
                                 <input
                                   id={`${rowId}-price`}
@@ -940,14 +969,16 @@ export const ProductFormPage: React.FC = () => {
                                   readOnly
                                   value={autoPriceFor(price, v.size)}
                                   className="w-full bg-navy/50 border border-gold/15 rounded px-2 py-1 text-xs text-muted font-mono cursor-default"
-                                  title="Calculated automatically from the 50ml base price"
+                                  title={t("admin.productForm.autoPriceTitle")}
                                 />
-                                <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-gold/10 text-gold border border-gold/25 shrink-0">AUTO</span>
+                                <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-gold/10 text-gold border border-gold/25 shrink-0">
+                                  {t("admin.productForm.autoBadge")}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => handleOverrideVariant(idx)}
-                                  title="Override this size's price manually"
-                                  aria-label={`Override the ${v.size} price manually`}
+                                  title={t("admin.productForm.overridePriceTitle")}
+                                  aria-label={t("admin.productForm.overridePriceAria", { size: v.size })}
                                   className="p-1 text-muted hover:text-gold transition-colors shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
                                 >
                                   <Unlock className="w-3.5 h-3.5" />
@@ -956,7 +987,7 @@ export const ProductFormPage: React.FC = () => {
                             ) : (
                               <div className="flex items-center gap-1.5">
                                 <label htmlFor={`${rowId}-price`} className="sr-only">
-                                  Manual price for {v.size}
+                                  {t("admin.productForm.manualPriceSrLabel", { size: v.size })}
                                 </label>
                                 <input
                                   id={`${rowId}-price`}
@@ -967,12 +998,14 @@ export const ProductFormPage: React.FC = () => {
                                   onChange={(e) => handleUpdateVariant(idx, "price", Number(e.target.value))}
                                   className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                                 />
-                                <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/50 shrink-0">MANUAL</span>
+                                <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/50 shrink-0">
+                                  {t("admin.productForm.manualBadge")}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => handleResetAutoVariant(idx)}
-                                  title="Reset to automatic pricing"
-                                  aria-label={`Reset the ${v.size} price to automatic`}
+                                  title={t("admin.productForm.resetAutoTitle")}
+                                  aria-label={t("admin.productForm.resetAutoAria", { size: v.size })}
                                   className="p-1 text-muted hover:text-gold transition-colors shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
                                 >
                                   <RotateCcw className="w-3.5 h-3.5" />
@@ -983,7 +1016,7 @@ export const ProductFormPage: React.FC = () => {
                           {/* Sale Price */}
                           <td className="py-2.5 px-3 w-32">
                             <label htmlFor={`${rowId}-sale`} className="sr-only">
-                              Sale price for {v.size}
+                              {t("admin.productForm.salePriceSrLabel", { size: v.size })}
                             </label>
                             <input
                               id={`${rowId}-sale`}
@@ -992,28 +1025,28 @@ export const ProductFormPage: React.FC = () => {
                               onChange={(e) =>
                                 handleUpdateVariant(idx, "salePrice", e.target.value ? Number(e.target.value) : undefined)
                               }
-                              placeholder="Optional"
+                              placeholder={t("admin.productForm.optionalPlaceholder")}
                               className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                             />
                           </td>
                           {/* SKU */}
                           <td className="py-2.5 px-3">
                             <label htmlFor={`${rowId}-sku`} className="sr-only">
-                              Variant SKU for {v.size}
+                              {t("admin.productForm.variantSkuSrLabel", { size: v.size })}
                             </label>
                             <input
                               id={`${rowId}-sku`}
                               type="text"
                               value={v.sku}
                               onChange={(e) => handleUpdateVariant(idx, "sku", e.target.value)}
-                              placeholder="SKU"
+                              placeholder={t("admin.inventory.sku")}
                               className="w-full bg-navy border border-gold/20 rounded px-2 py-1 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                             />
                           </td>
                           {/* Stock */}
                           <td className="py-2.5 px-3 w-24">
                             <label htmlFor={`${rowId}-stock`} className="sr-only">
-                              Stock for {v.size}
+                              {t("admin.productForm.stockSrLabel", { size: v.size })}
                             </label>
                             <input
                               id={`${rowId}-stock`}
@@ -1026,7 +1059,7 @@ export const ProductFormPage: React.FC = () => {
                           {/* Low-stock threshold */}
                           <td className="py-2.5 px-3 w-28">
                             <label htmlFor={`${rowId}-low`} className="sr-only">
-                              Low-stock alert threshold for {v.size}
+                              {t("admin.productForm.lowStockSrLabel", { size: v.size })}
                             </label>
                             <input
                               id={`${rowId}-low`}
@@ -1042,7 +1075,7 @@ export const ProductFormPage: React.FC = () => {
                           {/* Status Toggle */}
                           <td className="py-2.5 px-3 text-center">
                             <label htmlFor={`${rowId}-active`} className="sr-only">
-                              Active for {v.size}
+                              {t("admin.productForm.activeSrLabel", { size: v.size })}
                             </label>
                             <input
                               id={`${rowId}-active`}
@@ -1063,15 +1096,17 @@ export const ProductFormPage: React.FC = () => {
                               className="px-2 py-1 rounded border border-gold/30 text-[11px] font-mono text-gold hover:bg-gold/15 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-gold flex items-center gap-1"
                             >
                               <ImagePlus className="w-3.5 h-3.5" />
-                              {assignedCount > 0 ? `${assignedCount} assigned` : "Assign"}
+                              {assignedCount > 0
+                                ? t("admin.productForm.photosAssigned", { count: assignedCount })
+                                : t("admin.productForm.assignPhotos")}
                             </button>
                           </td>
                           {/* Remove Action */}
-                          <td className="py-2.5 px-3 text-right">
+                          <td className="py-2.5 px-3 text-end">
                             <button
                               type="button"
                               onClick={() => handleRemoveVariant(idx)}
-                              aria-label={`Remove the ${v.size} variant`}
+                              aria-label={t("admin.productForm.removeVariantAria", { size: v.size })}
                               className="p-1 text-muted hover:text-rose-400 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-gold rounded"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1084,11 +1119,11 @@ export const ProductFormPage: React.FC = () => {
                           <tr className="bg-navy/60">
                             <td colSpan={9} className="px-3 py-3">
                               <p id={`${rowId}-photos`} className="text-[10px] uppercase tracking-wider text-muted mb-2">
-                                Photos shown for {v.size}
+                                {t("admin.productForm.photosShownFor", { size: v.size })}
                               </p>
                               {availablePhotos.length === 0 ? (
                                 <p className="text-xs text-muted">
-                                  Upload photos above before assigning images to a size.
+                                  {t("admin.productForm.uploadPhotosFirst")}
                                 </p>
                               ) : (
                                 <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 gap-2">
@@ -1100,7 +1135,17 @@ export const ProductFormPage: React.FC = () => {
                                         type="button"
                                         onClick={() => toggleVariantPhoto(idx, url)}
                                         aria-pressed={assigned}
-                                        aria-label={`${assigned ? "Remove" : "Assign"} photo ${pIdx + 1} for ${v.size}`}
+                                        aria-label={
+                                          assigned
+                                            ? t("admin.productForm.removePhotoAria", {
+                                                number: pIdx + 1,
+                                                size: v.size,
+                                              })
+                                            : t("admin.productForm.assignPhotoAria", {
+                                                number: pIdx + 1,
+                                                size: v.size,
+                                              })
+                                        }
                                         className={`relative h-16 rounded border overflow-hidden transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-gold ${
                                           assigned ? "border-gold ring-1 ring-gold" : "border-gold/20 hover:border-gold/50"
                                         }`}
@@ -1118,7 +1163,7 @@ export const ProductFormPage: React.FC = () => {
                                           />
                                         )}
                                         {assigned && (
-                                          <span className="absolute top-1 right-1 p-0.5 rounded-full bg-gold text-navy">
+                                          <span className="absolute top-1 end-1 p-0.5 rounded-full bg-gold text-navy">
                                             <Check className="w-3 h-3" />
                                           </span>
                                         )}
@@ -1141,16 +1186,16 @@ export const ProductFormPage: React.FC = () => {
           {/* Olfactory Pyramid (Notes) */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Olfactory Pyramid (Fragrance Notes)
+              {t("admin.productForm.notesHeading")}
             </h3>
             <p className="text-xs text-muted font-light">
-              Comma-separated list of key essence notes.
+              {t("admin.productForm.notesHelp")}
             </p>
 
             <div className="space-y-3">
               <div>
                 <label htmlFor="top-notes" className="block text-xs text-gold mb-1 uppercase tracking-wider font-semibold">
-                  Top Notes (Initial Opening)
+                  {t("admin.productForm.topNotesLabel")}
                 </label>
                 <input
                   id="top-notes"
@@ -1164,7 +1209,7 @@ export const ProductFormPage: React.FC = () => {
 
               <div>
                 <label htmlFor="heart-notes" className="block text-xs text-gold mb-1 uppercase tracking-wider font-semibold">
-                  Heart / Middle Notes (Core Heart)
+                  {t("admin.productForm.heartNotesLabel")}
                 </label>
                 <input
                   id="heart-notes"
@@ -1178,7 +1223,7 @@ export const ProductFormPage: React.FC = () => {
 
               <div>
                 <label htmlFor="base-notes" className="block text-xs text-gold mb-1 uppercase tracking-wider font-semibold">
-                  Base Notes (Dry Down Longevity)
+                  {t("admin.productForm.baseNotesLabel")}
                 </label>
                 <input
                   id="base-notes"
@@ -1195,7 +1240,7 @@ export const ProductFormPage: React.FC = () => {
           {/* Product Media Uploader */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Product Visuals & Presentation Cards
+              {t("admin.productForm.visualsHeading")}
             </h3>
             <ImageUploader
               images={images}
@@ -1216,13 +1261,13 @@ export const ProductFormPage: React.FC = () => {
           {/* SEO Metadata */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              SEO Engine Optimization & Snippet Preview
+              {t("admin.productForm.seoHeading")}
             </h3>
 
             <div className="space-y-3">
               <div>
                 <label htmlFor="seo-title" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  SEO Meta Title
+                  {t("admin.productForm.seoTitleLabel")}
                 </label>
                 <input
                   id="seo-title"
@@ -1236,14 +1281,14 @@ export const ProductFormPage: React.FC = () => {
 
               <div>
                 <label htmlFor="seo-description" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  SEO Meta Description
+                  {t("admin.productForm.seoDescriptionLabel")}
                 </label>
                 <textarea
                   id="seo-description"
                   rows={2}
                   value={seoDescription}
                   onChange={(e) => setSeoDescription(e.target.value)}
-                  placeholder="Discover Royal Amber Oud extrait de parfum…"
+                  placeholder={t("admin.productForm.seoDescriptionPlaceholder")}
                   className="w-full bg-navy border border-gold/30 rounded p-3 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                 />
               </div>
@@ -1262,12 +1307,12 @@ export const ProductFormPage: React.FC = () => {
           {/* Base Pricing & Stock Card */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Base 50ml Reference Price
+              {t("admin.productForm.basePriceHeading")}
             </h3>
 
             <div>
               <label htmlFor="base-price" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                50ml Base Price (PKR) *
+                {t("admin.productForm.basePriceRequiredLabel")}
               </label>
               <input
                 id="base-price"
@@ -1281,7 +1326,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div>
               <label htmlFor="sale-price" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Special Sale Price (PKR)
+                {t("admin.productForm.specialSalePriceLabel")}
               </label>
               <input
                 id="sale-price"
@@ -1290,7 +1335,7 @@ export const ProductFormPage: React.FC = () => {
                 onChange={(e) =>
                   setSalePrice(e.target.value ? Number(e.target.value) : undefined)
                 }
-                placeholder="Optional promo price"
+                placeholder={t("admin.productForm.promoPricePlaceholder")}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
               />
             </div>
@@ -1298,7 +1343,7 @@ export const ProductFormPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
                 <label htmlFor="stock-units" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Stock Units *
+                  {t("admin.productForm.stockUnitsRequired")}
                 </label>
                 <input
                   id="stock-units"
@@ -1312,7 +1357,7 @@ export const ProductFormPage: React.FC = () => {
 
               <div>
                 <label htmlFor="low-limit" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                  Low Limit
+                  {t("admin.inventory.lowLimit")}
                 </label>
                 <input
                   id="low-limit"
@@ -1323,7 +1368,7 @@ export const ProductFormPage: React.FC = () => {
                   className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
                 />
                 <p id="low-limit-help" className="text-[10px] text-muted mt-1">
-                  Default for new size rows. Adjust each size in the table.
+                  {t("admin.productForm.lowLimitHelp")}
                 </p>
               </div>
             </div>
@@ -1332,12 +1377,12 @@ export const ProductFormPage: React.FC = () => {
           {/* Specifications */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-4">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Flacon Specifications
+              {t("admin.productForm.specsHeading")}
             </h3>
 
             <div>
               <label htmlFor="gender" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Gender Classification
+                {t("admin.productForm.genderLabel")}
               </label>
               <select
                 id="gender"
@@ -1345,15 +1390,15 @@ export const ProductFormPage: React.FC = () => {
                 onChange={(e) => setGender(e.target.value as "men" | "women" | "unisex")}
                 className="w-full bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold capitalize"
               >
-                <option value="unisex">Unisex</option>
-                <option value="men">Men</option>
-                <option value="women">Women</option>
+                <option value="unisex">{t("admin.products.unisex")}</option>
+                <option value="men">{t("admin.products.men")}</option>
+                <option value="women">{t("admin.products.women")}</option>
               </select>
             </div>
 
             <div>
               <label htmlFor="base-flacon-size" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Base Flacon Size
+                {t("admin.productForm.baseFlaconSizeLabel")}
               </label>
               <input
                 id="base-flacon-size"
@@ -1367,7 +1412,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div>
               <label htmlFor="concentration" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Concentration Tier
+                {t("admin.productForm.concentrationLabel")}
               </label>
               <input
                 id="concentration"
@@ -1381,7 +1426,7 @@ export const ProductFormPage: React.FC = () => {
 
             <div>
               <label htmlFor="collection" className="block text-xs text-muted mb-1 uppercase tracking-wider">
-                Collection Assignment
+                {t("admin.productForm.collectionLabel")}
               </label>
               <select
                 id="collection"
@@ -1401,10 +1446,10 @@ export const ProductFormPage: React.FC = () => {
           {/* Visibility & Flags */}
           <div className="bg-navy2/90 border border-gold/20 rounded-lg p-6 space-y-3">
             <h3 className="font-serif text-base font-bold text-ivory border-b border-gold/15 pb-2">
-              Visibility & Badges
+              {t("admin.productForm.visibilityHeading")}
             </h3>
 
-            <label htmlFor="flag-active" className="flex items-center space-x-3 cursor-pointer py-1">
+            <label htmlFor="flag-active" className="flex items-center gap-3 cursor-pointer py-1">
               <input
                 id="flag-active"
                 type="checkbox"
@@ -1412,10 +1457,10 @@ export const ProductFormPage: React.FC = () => {
                 onChange={(e) => setActive(e.target.checked)}
                 className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               />
-              <span className="text-xs text-ivory">Active in Boutique</span>
+              <span className="text-xs text-ivory">{t("admin.productForm.activeInBoutique")}</span>
             </label>
 
-            <label htmlFor="flag-featured" className="flex items-center space-x-3 cursor-pointer py-1">
+            <label htmlFor="flag-featured" className="flex items-center gap-3 cursor-pointer py-1">
               <input
                 id="flag-featured"
                 type="checkbox"
@@ -1423,10 +1468,10 @@ export const ProductFormPage: React.FC = () => {
                 onChange={(e) => setFeatured(e.target.checked)}
                 className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               />
-              <span className="text-xs text-ivory">Featured Fragrance</span>
+              <span className="text-xs text-ivory">{t("admin.productForm.featuredFragrance")}</span>
             </label>
 
-            <label htmlFor="flag-bestseller" className="flex items-center space-x-3 cursor-pointer py-1">
+            <label htmlFor="flag-bestseller" className="flex items-center gap-3 cursor-pointer py-1">
               <input
                 id="flag-bestseller"
                 type="checkbox"
@@ -1434,10 +1479,10 @@ export const ProductFormPage: React.FC = () => {
                 onChange={(e) => setBestseller(e.target.checked)}
                 className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               />
-              <span className="text-xs text-ivory">Bestseller Badge</span>
+              <span className="text-xs text-ivory">{t("admin.productForm.bestsellerBadge")}</span>
             </label>
 
-            <label htmlFor="flag-new" className="flex items-center space-x-3 cursor-pointer py-1">
+            <label htmlFor="flag-new" className="flex items-center gap-3 cursor-pointer py-1">
               <input
                 id="flag-new"
                 type="checkbox"
@@ -1445,7 +1490,7 @@ export const ProductFormPage: React.FC = () => {
                 onChange={(e) => setNewArrival(e.target.checked)}
                 className="rounded border-gold/30 bg-navy text-gold focus:outline-none focus-visible:ring-1 focus-visible:ring-gold"
               />
-              <span className="text-xs text-ivory">New Arrival Badge</span>
+              <span className="text-xs text-ivory">{t("admin.productForm.newArrivalBadge")}</span>
             </label>
           </div>
         </div>

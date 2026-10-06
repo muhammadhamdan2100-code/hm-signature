@@ -4,10 +4,12 @@ import { Link } from "react-router-dom";
 import { products as fallbackProducts, type Product } from "../data/products";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { getCatalogProducts } from "../services/catalog";
+import { useI18n } from "../i18n/I18nProvider";
 import Bottle from "./Bottle";
 import Pedestal from "./Pedestal";
 
 export default function FeaturedProduct() {
+  const { t, language } = useI18n();
   // The demo catalogue is only a stand-in while Supabase is unconfigured; a live
   // store never features a fragrance the database did not return.
   const [featured, setFeatured] = useState<Product | null>(() =>
@@ -29,7 +31,7 @@ export default function FeaturedProduct() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [language.code]);
 
   if (!featured) return null;
 
@@ -38,7 +40,7 @@ export default function FeaturedProduct() {
       className="relative py-28 lg:py-36 overflow-hidden"
       style={{ background: "radial-gradient(circle at 70% 50%, #3A1118, #2A0D13 70%)" }}
     >
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] rounded-full border border-gold/20" />
+      <div className="absolute start-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] rounded-full border border-gold/20" />
       <div className="max-w-[1400px] mx-auto px-6 lg:px-10 relative grid lg:grid-cols-2 gap-14 items-center">
         <motion.div
           initial={{ opacity: 0, x: -30 }}
@@ -48,19 +50,18 @@ export default function FeaturedProduct() {
         >
           <div className="w-10 h-px bg-gold mb-6" />
           <h2 className="font-serif text-4xl lg:text-6xl leading-[1.05] mb-6">
-            THE SIGNATURE
+            {t("home.featuredTitleLine1")}
             <br />
-            COLLECTION
+            {t("home.featuredTitleLine2")}
           </h2>
           <p className="text-muted leading-[1.9] max-w-sm mb-6">
-            A fragrance created to make an unforgettable impression — for the moments that
-            deserve one.
+            {t("home.featuredBody")}
           </p>
           <div className="text-goldLight text-xs tracking-[2.5px] mb-8">
             {featured.concentration.toUpperCase()} · {featured.size}
           </div>
           <Link to={`/product/${featured.slug}`} className="btn-gold-fill">
-            SHOP NOW →
+            {t("home.featuredShopNow")}
           </Link>
           <div className="w-10 h-px bg-gold mt-6" />
         </motion.div>
