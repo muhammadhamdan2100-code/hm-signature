@@ -189,7 +189,7 @@ async function testLegitimateCheckoutFlow() {
   // First, authenticate as customer
   let customerAuth;
   try {
-    const { data: authData, error: authError } = await serviceRoleClient.auth.admin.createUser({
+    const { data: authData, error: _authError } = await serviceRoleClient.auth.admin.createUser({
       email: TEST_CUSTOMER_EMAIL,
       password: TEST_CUSTOMER_PASSWORD
     });
@@ -403,10 +403,11 @@ function printSummary() {
   console.log(`Regression Tests: ${regressionTotal} tests checked (session-based)`);
   
   // Write results
-  const fs = await import('fs');
-  const outputPath = './p0-test-results.json';
-  fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
-  console.log(`\nResults saved to: ${outputPath}`);
+  import('fs').then(fs => {
+    fs.writeFileSync('./p0-test-results.json', JSON.stringify(results, null, 2));
+  });
+  
+  console.log('\nResults saved to: ./p0-test-results.json');
   
   console.log('\n=== TEST SUITE COMPLETE ===\n');
 }
