@@ -1,0 +1,104 @@
+{
+  "timestamp": "2026-10-07T05:43:28.796Z",
+  "mode": "anonymous",
+  "environment": "https://ttnfdxabfkmqlqssqdep.supabase.co",
+  "credential_status": {
+    "anon": "CONFIGURED",
+    "service_role": "MISSING",
+    "customer": "MISSING",
+    "staff": "MISSING"
+  },
+  "tests": [
+    {
+      "id": "A1",
+      "name": "Anonymous POST Paid",
+      "status": "PASS",
+      "reason": "PGRST204",
+      "details": "Could not find the 'billing_address' column of 'orders' in the schema cache"
+    },
+    {
+      "id": "A2",
+      "name": "Anonymous POST Verified",
+      "status": "PASS",
+      "reason": "42501",
+      "details": "new row violates row-level security policy for table \"orders\""
+    },
+    {
+      "id": "A3",
+      "name": "Anonymous RPC place_order",
+      "status": "PASS",
+      "reason": "PGRST202",
+      "details": "Could not find the function public.place_order(billing_address, customer_id, items, shipping_address) in the schema cache"
+    },
+    {
+      "id": "A4",
+      "name": "Anonymous UPDATE orders",
+      "status": "PASS",
+      "reason": "22P02",
+      "details": "invalid input syntax for type uuid: \"999999999\""
+    },
+    {
+      "id": "A5",
+      "name": "Anonymous SELECT orders",
+      "status": "PASS",
+      "reason": "Empty result",
+      "details": null
+    },
+    {
+      "id": "DB-C1",
+      "name": "Guard trigger exists",
+      "status": "UNVERIFIED",
+      "reason": "No service-role key",
+      "details": null
+    },
+    {
+      "id": "DB-C2",
+      "name": "RLS policies configured",
+      "status": "UNVERIFIED",
+      "reason": "No service-role key",
+      "details": null
+    },
+    {
+      "id": "DB-C3",
+      "name": "Function grants revoked",
+      "status": "UNVERIFIED",
+      "reason": "No service-role key",
+      "details": null
+    },
+    {
+      "id": "CUST-E1",
+      "name": "Customer Pending→Paid blocked",
+      "status": "UNVERIFIED",
+      "reason": "Credentials missing",
+      "details": null
+    },
+    {
+      "id": "CUST-E2",
+      "name": "Customer modify financial fields",
+      "status": "UNVERIFIED",
+      "reason": "Credentials missing",
+      "details": null
+    },
+    {
+      "id": "CUST-E3",
+      "name": "Customer modify other user orders",
+      "status": "UNVERIFIED",
+      "reason": "Credentials missing",
+      "details": null
+    },
+    {
+      "id": "R1",
+      "name": "Legitimate checkout flow",
+      "status": "UNVERIFIED",
+      "reason": "Requires full session + products",
+      "details": null
+    },
+    {
+      "id": "R2",
+      "name": "Payment verification allowed for service",
+      "status": "UNVERIFIED",
+      "reason": "No service-role",
+      "details": null
+    }
+  ]
+}
