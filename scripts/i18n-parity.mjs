@@ -124,7 +124,7 @@ for (const lang of languages) {
   const missing = enKeys.filter((k) => !maps[lang].has(k));
   const extra = [...maps[lang].keys()].filter((k) => !maps.en.has(k));
   const latin = [...maps[lang].entries()].filter(
-    ([k, v]) =>
+    ([_k, v]) =>
       (lang === "ar" || lang === "ur") &&
       typeof v === "string" &&
       !/[؀-ۿؠ-٩ݐ-ݿ]/.test(v) &&

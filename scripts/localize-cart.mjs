@@ -144,7 +144,7 @@ const swaps = [
   ['aria-label="Increase quantity"', 'aria-label={t("cart.increaseQuantity", { name: item.product.name })}'],
   ["<Heart size={13} /> Save for later", "<Heart size={13} /> {t(\"cart.saveForLater\")}"],
   ["<Trash2 size={13} /> Remove", "<Trash2 size={13} /> {t(\"cart.remove\")}"],
-  ['aria-label="Promotion code"', 'aria-label={t(\"cart.promotionCode\")}'],
+  ['aria-label="Promotion code"', 'aria-label={t("cart.promotionCode")}'],
   ['placeholder="PROMO CODE"', 'placeholder={t("cart.promoCodePlaceholder")}'],
   ["<button type=\"submit\" className=\"btn-gold\">APPLY</button>", "<button type=\"submit\" className=\"btn-gold\">{t(\"cart.apply\")}</button>"],
   ['promoFailed ? promoError || "That code could not be applied." : promoMsg || "Enter a promotion code if you have one."', 'promoFailed ? promoError || t("cart.promoFailedFallback") : promoMsg || t("cart.promoHint")'],
