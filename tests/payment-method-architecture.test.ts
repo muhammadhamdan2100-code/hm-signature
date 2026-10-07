@@ -265,7 +265,7 @@ describe("live configuration is public to read and closed to write", () => {
   it("needs the linked project", () => {
     if (!env) {
       reportSkip("no Supabase environment — live payment configuration checks skipped");
-      expect(false).toBe(true);
+      return;
     }
   });
 
