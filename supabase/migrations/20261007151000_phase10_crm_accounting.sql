@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS public.crm_customers (
   external_customer_id TEXT NOT NULL,
   provider_code TEXT NOT NULL,  -- 'salesforce', 'hubspot', 'stripe', etc.
   
-  -- Internal mapping
+  -- Internal mapping (customer_id is denormalized from orders for reference, no FK due to non-unique)
   user_id UUID REFERENCES auth.users(id),
-  customer_id UUID REFERENCES public.orders(customer_id),
+  customer_id TEXT,  -- Denormalized customer identifier from orders table
   
   -- Customer data (from CRM)
   first_name TEXT,
@@ -92,8 +92,8 @@ CREATE INDEX IF NOT EXISTS idx_crm_events_unprocessed ON public.crm_events(recei
 CREATE TABLE IF NOT EXISTS public.accounting_invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   
-  -- Internal reference
-  order_id UUID NOT NULL REFERENCES public.orders(id),
+  -- Internal reference (order_id references orders.id which is PK)
+  order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
   
   -- External invoice reference
   external_invoice_id TEXT NOT NULL,
@@ -136,9 +136,9 @@ CREATE INDEX IF NOT EXISTS idx_acc_sync_status ON public.accounting_invoices(syn
 CREATE TABLE IF NOT EXISTS public.accounting_payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   
-  -- Internal reference
+  -- Internal reference (payment_id references payments.id, order_id references orders.id)
   payment_id UUID REFERENCES public.payments(id) ON DELETE SET NULL,
-  order_id UUID REFERENCES public.orders(id),
+  order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE,
   
   -- External payment reference
   external_payment_id TEXT NOT NULL,
