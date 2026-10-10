@@ -35,12 +35,19 @@ export interface CheckoutMethod {
  * The checkout rails computed directly from publicly-readable Supabase configuration.
  *
  * This reads only configuration that anonymous shoppers are already allowed to read under RLS
- * (payment_methods joined to payment_providers). It never reads or infers a secret: a rail is
- * offered as submittable only when the shop has marked it 'enabled' AND its provider declares NO
- * credential dependency (credential_env_vars is empty — the cash and manual-transfer rails). Every
- * rail that depends on a provider credential is reported as 'not_configured' and cannot be
- * submitted, because only a server could know whether that credential is present in this
- * deployment. That is the honest degraded view, not a claim that a card/wallet gateway works.
+ * (payment_methods joined to payment_providers). It never reads or infers a secret. A rail is
+ * submittable when the shop has marked it 'enabled' AND it can be completed without a live server
+ * gateway, which is true for exactly two kinds of rail:
+ *   - a manual rail that declares NO provider credential (cash on delivery, direct bank transfer);
+ *   - an evidence rail the customer settles themselves and staff verify — one that asks for a
+ *     payment reference and/or a proof screenshot (requires_reference / requires_proof). The money
+ *     moves outside the browser, the proof goes to the private storage bucket, and the row is
+ *     written by submit_payment_proof, so no server secret is involved and payment is still marked
+ *     'Verification Pending' rather than claimed as settled.
+ * A rail that expects an ONLINE capture — it declares credentials AND asks for no manual evidence
+ * (card / wallet / gateway rails) — is reported as 'not_configured' and cannot be submitted,
+ * because only a server could know whether that gateway's credential is present and initiate it.
+ * That is the honest degraded view, not a claim that a card/wallet gateway works.
  */
 export async function directCheckoutMethods(
   countryCode: string,
@@ -60,17 +67,19 @@ export async function directCheckoutMethods(
     .map((r: any) => {
       const providers = Array.isArray(r.payment_providers) ? r.payment_providers : [r.payment_providers];
       const credentialVars = providers[0]?.credential_env_vars;
-      // Fail closed: a rail is credential-dependent (not submittable) unless the provider is
-      // confirmed present AND declares an EMPTY credential list. Only then is it a genuinely
-      // offline rail (cash / manual transfer) that needs no server secret to place an order.
-      const needsCredential = !Array.isArray(credentialVars) || credentialVars.length > 0;
+      // Fail closed on the gateway question: a rail is treated as credential-dependent unless the
+      // provider is confirmed present AND declares an EMPTY credential list.
+      const declaresCredential = !Array.isArray(credentialVars) || credentialVars.length > 0;
+      const evidenceRail = Boolean(r.requires_reference) || Boolean(r.requires_proof);
       const enabled = r.status === "enabled";
-      const canSubmit = enabled && !needsCredential;
+      // Only an online-capture rail (a credential AND no manual-evidence path) needs the server.
+      const requiresGateway = enabled && declaresCredential && !evidenceRail;
+      const canSubmit = enabled && !requiresGateway;
       const state: CheckoutMethodState = !enabled
         ? r.status === "coming_soon"
           ? "coming_soon"
           : "disabled"
-        : needsCredential
+        : requiresGateway
           ? "not_configured"
           : "available";
       return {
