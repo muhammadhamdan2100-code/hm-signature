@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { directCheckoutMethods } from "./storeConfig";
 
 // Phase 8: the payment-method architecture is configuration, not code. Nothing in this file
 // writes payment_methods or boutiques directly - every mutation goes through a SECURITY DEFINER
@@ -149,22 +150,16 @@ export async function deletePaymentMethod(code: string): Promise<{ success: bool
 }
 
 /**
- * What a shopper in one country actually sees. The states depend on this deployment's provider
- * credentials, which only the server can read, so the preview asks the same endpoint checkout
- * does instead of guessing from the table.
+ * What a shopper in one country actually sees. This uses the same fail-closed computation the
+ * checkout page falls back to, so the admin preview and the storefront can never disagree: a
+ * credential-dependent rail is shown as not submittable here exactly as it is to the shopper.
  */
 export async function previewCountryMethods(
   countryCode: string,
   currencyCode: string
 ): Promise<{ code: string; name: string; state: string; canSubmit: boolean }[]> {
-  const res = await fetch(
-    `/api/payment-methods?country=${encodeURIComponent(countryCode)}&currency=${encodeURIComponent(currencyCode)}`
-  );
-  if (!res.ok) return [];
-  const body = (await res.json()) as {
-    methods?: { code: string; name: string; state: string; canSubmit: boolean }[];
-  };
-  return body.methods || [];
+  const methods = await directCheckoutMethods(countryCode, currencyCode);
+  return methods.map((m) => ({ code: m.code, name: m.name, state: m.state, canSubmit: m.canSubmit }));
 }
 
 // ─── Boutiques ────────────────────────────────────────────────────────────────────────────────

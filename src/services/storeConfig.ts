@@ -31,16 +31,89 @@ export interface CheckoutMethod {
   requiresProof: boolean;
 }
 
+/**
+ * The checkout rails computed directly from publicly-readable Supabase configuration.
+ *
+ * This reads only configuration that anonymous shoppers are already allowed to read under RLS
+ * (payment_methods joined to payment_providers). It never reads or infers a secret: a rail is
+ * offered as submittable only when the shop has marked it 'enabled' AND its provider declares NO
+ * credential dependency (credential_env_vars is empty — the cash and manual-transfer rails). Every
+ * rail that depends on a provider credential is reported as 'not_configured' and cannot be
+ * submitted, because only a server could know whether that credential is present in this
+ * deployment. That is the honest degraded view, not a claim that a card/wallet gateway works.
+ */
+export async function directCheckoutMethods(
+  countryCode: string,
+  currencyCode: string
+): Promise<CheckoutMethod[]> {
+  const { data, error } = await supabase
+    .from("payment_methods")
+    .select(
+      "code, provider_code, type, display_name, description, icon, country_codes, currency_codes, status, environment, requires_reference, requires_proof, sort_order, payment_providers(credential_env_vars)"
+    )
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  return (data || [])
+    .filter((r: any) => (r.country_codes || []).includes(countryCode))
+    .filter((r: any) => (r.currency_codes || []).includes(currencyCode))
+    .map((r: any) => {
+      const providers = Array.isArray(r.payment_providers) ? r.payment_providers : [r.payment_providers];
+      const credentialVars = providers[0]?.credential_env_vars;
+      // Fail closed: a rail is credential-dependent (not submittable) unless the provider is
+      // confirmed present AND declares an EMPTY credential list. Only then is it a genuinely
+      // offline rail (cash / manual transfer) that needs no server secret to place an order.
+      const needsCredential = !Array.isArray(credentialVars) || credentialVars.length > 0;
+      const enabled = r.status === "enabled";
+      const canSubmit = enabled && !needsCredential;
+      const state: CheckoutMethodState = !enabled
+        ? r.status === "coming_soon"
+          ? "coming_soon"
+          : "disabled"
+        : needsCredential
+          ? "not_configured"
+          : "available";
+      return {
+        code: r.code,
+        provider: r.provider_code,
+        type: r.type,
+        name: r.display_name,
+        description: r.description ?? "",
+        icon: r.icon ?? "",
+        state,
+        status: r.status,
+        environment: r.environment ?? "none",
+        canSubmit,
+        requiresReference: Boolean(r.requires_reference),
+        requiresProof: Boolean(r.requires_proof),
+      } as CheckoutMethod;
+    });
+}
+
 export async function fetchCheckoutMethods(
   countryCode: string,
   currencyCode: string
 ): Promise<{ methods: CheckoutMethod[]; degraded: boolean }> {
-  const res = await fetch(
-    `/api/payment-methods?country=${encodeURIComponent(countryCode)}&currency=${encodeURIComponent(currencyCode)}`
-  );
-  if (!res.ok) throw new Error(`payment-methods responded ${res.status}`);
-  const body = (await res.json()) as { methods?: CheckoutMethod[]; degraded?: boolean };
-  return { methods: Array.isArray(body.methods) ? body.methods : [], degraded: Boolean(body.degraded) };
+  // Authoritative path: the server derives each rail's state from this deployment's
+  // provider credentials, which the browser can never see.
+  try {
+    const res = await fetch(
+      `/api/payment-methods?country=${encodeURIComponent(countryCode)}&currency=${encodeURIComponent(currencyCode)}`,
+      { headers: { Accept: "application/json" } }
+    );
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      const body = (await res.json()) as { methods?: CheckoutMethod[]; degraded?: boolean };
+      return { methods: Array.isArray(body.methods) ? body.methods : [], degraded: Boolean(body.degraded) };
+    }
+  } catch {
+    // Endpoint absent (the Vercel Hobby deployment currently ships no serverless functions), or it
+    // returned the SPA's HTML fallback. Either way, fall through to the direct-Supabase read.
+  }
+
+  // Direct-Supabase fallback: this is the degraded view, honestly labelled.
+  const methods = await directCheckoutMethods(countryCode, currencyCode);
+  return { methods, degraded: true };
 }
 
 export interface PaymentMethodConfig {
