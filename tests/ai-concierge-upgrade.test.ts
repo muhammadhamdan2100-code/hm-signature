@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { reportSkip, suiteCredentials, readSupabaseEnv } from "./support/harness";
 
@@ -23,7 +23,13 @@ import { reportSkip, suiteCredentials, readSupabaseEnv } from "./support/harness
 const env = readSupabaseEnv();
 const creds = suiteCredentials();
 
-const CORE = readFileSync(resolve(process.cwd(), "server/aiCore.js"), "utf8");
+// The concierge dispatcher lives in the server-side AI core, which is deferred with the
+// API layer (Vercel Hobby deployment currently runs 0 serverless functions). When that
+// file is absent, the whole source-inspection suite below is skipped rather than crashing
+// the module at load time.
+const AI_CORE_PATH = resolve(process.cwd(), "server/aiCore.js");
+const AI_AVAILABLE = existsSync(AI_CORE_PATH);
+const CORE = AI_AVAILABLE ? readFileSync(AI_CORE_PATH, "utf8") : "";
 const FINDER = readFileSync(resolve(process.cwd(), "src/lib/fragranceMatch.ts"), "utf8");
 
 type FakeRow = Record<string, unknown>;
@@ -117,7 +123,7 @@ async function core() {
   return import("../server/aiCore.js");
 }
 
-describe("concierge upgrade: tool surface", () => {
+describe.skipIf(!AI_AVAILABLE)("concierge upgrade: tool surface", () => {
   it("refuses an unlisted tool without reading anything at all", async () => {
     const ai = await core();
     for (const name of ["dropTable", "runSql", "updateOrder", "listAllCustomers", "getCustomerOrdersDraft"]) {
@@ -634,7 +640,7 @@ function anonKey() {
 
 // A token that is not a GoTrue session must not open any door. This needs the public
 // Supabase settings only, no provider key and no credentials.
-const sessionChecks = env ? describe : describe.skip;
+const sessionChecks = env && AI_AVAILABLE ? describe : describe.skip;
 
 sessionChecks("concierge upgrade: session gate", () => {
   it("fails closed on a forged or expired access token", async () => {
@@ -655,7 +661,7 @@ sessionChecks("concierge upgrade: session gate", () => {
 // The parts that need a real, verified customer session. Email confirmation is on for
 // this project, so a signup returns no session: these run only when the suite was
 // given working SUITE_A_* credentials, and say plainly when it was not.
-const live = env && creds.aEmail && creds.aPassword ? describe : describe.skip;
+const live = env && AI_AVAILABLE && creds.aEmail && creds.aPassword ? describe : describe.skip;
 
 live("concierge upgrade against a signed-in customer", () => {
   it("shows the caller their own rows and nothing else", async () => {

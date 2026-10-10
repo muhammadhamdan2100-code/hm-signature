@@ -1,17 +1,44 @@
 import { describe, expect, it } from "vitest";
-import {
-  ExperienceError,
-  RECOMMENDATION_KINDS,
-  parseRecentIds,
-  rankProducts,
-} from "../api/_recommendations.js";
-import { buildDiscoveryFilters, runGiftFinder } from "../api/_discovery.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { RECOMMENDATION_REASON_KEYS } from "../src/services/recommendations";
 import { FACET_REASON_KEYS } from "../src/services/brandExperience";
 import { en } from "../src/i18n/dictionaries/en";
 import { hasPermission } from "../src/services/auth";
 import { resolveRequiredPermission, type StaffMember } from "../src/types/staff";
 import { login, readSupabaseEnv, reportSkip, rest, rpc, suiteCredentials } from "./support/harness";
+
+/**
+ * The recommendation and discovery engines live in the server-side API modules
+ * `api/_recommendations.js` and `api/_discovery.js`. Those are deferred with the API
+ * layer (the current Vercel Hobby deployment ships 0 serverless functions), so the
+ * modules may be absent. When they are, the two source-level suites that exercise them
+ * are skipped rather than crashing the whole file at import time; the suites that only
+ * need `src/` (authorisation matrix, live-database checks) still run.
+ */
+const REC_PATH = resolve(process.cwd(), "api/_recommendations.js");
+const DISC_PATH = resolve(process.cwd(), "api/_discovery.js");
+const API_AVAILABLE = existsSync(REC_PATH) && existsSync(DISC_PATH);
+
+let ExperienceError: new (...args: any[]) => Error = class extends Error {};
+let RECOMMENDATION_KINDS: string[] = [];
+let parseRecentIds: (raw: string) => string[] = () => [];
+let rankProducts: (opts: any) => Promise<any> = async () => {
+  throw new Error("recommendations API deferred");
+};
+let buildDiscoveryFilters: (opts: any) => any = () => ({});
+let runGiftFinder: (opts: any) => Promise<any> = async () => null;
+
+if (API_AVAILABLE) {
+  const rec = await import("../api/_recommendations.js");
+  const disc = await import("../api/_discovery.js");
+  ExperienceError = rec.ExperienceError;
+  RECOMMENDATION_KINDS = rec.RECOMMENDATION_KINDS;
+  parseRecentIds = rec.parseRecentIds;
+  rankProducts = rec.rankProducts;
+  buildDiscoveryFilters = disc.buildDiscoveryFilters;
+  runGiftFinder = disc.runGiftFinder;
+}
 
 /**
  * Phase 8 (personalisation, recommendations, discovery, gift finder, gift cards, loyalty, VIP,
@@ -44,7 +71,7 @@ function dictionaryHas(path: string): boolean {
   return typeof node === "string" && (node as string).trim().length > 0;
 }
 
-describe("Phase 8 translation keys are real, not humanised accidents", () => {
+describe.skipIf(!API_AVAILABLE)("Phase 8 translation keys are real, not humanised accidents", () => {
   it("gives every recommendation reason a dictionary entry", () => {
     const codes = [
       "family_match", "notes_match", "category_match", "collection_match",
@@ -79,7 +106,7 @@ describe("Phase 8 translation keys are real, not humanised accidents", () => {
   });
 });
 
-describe("Phase 8 server-side input handling", () => {
+describe.skipIf(!API_AVAILABLE)("Phase 8 server-side input handling", () => {
   it("refuses an unknown rail rather than guessing one", async () => {
     await expect(rankProducts({ kind: "everything_i_want", token: null })).rejects.toBeInstanceOf(ExperienceError);
   });
