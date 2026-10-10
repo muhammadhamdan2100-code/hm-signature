@@ -69,13 +69,18 @@ const normalizeAddress = (raw: RawAddress | null | undefined) => ({
 });
 
 export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
+  // NOTE: the Phase 10 `shipments` table relates to `orders` through `fulfillments`, so there is
+  // no direct orders→shipments PostgREST relationship; embedding `shipments (…)` here made the
+  // WHOLE query fail with HTTP 400 ("could not find a relationship"), emptying the admin orders
+  // list and erroring on every page load. Order shipping status is therefore derived from the
+  // order itself (see below) until a SECURITY DEFINER join is added; tracking/ETA already read the
+  // denormalized orders columns.
   const { data, error } = await supabase
     .from("orders")
     .select(
       `*,
        order_items (id, product_id, product_name, variant_size, sku, unit_price, quantity, image_url),
-       payments (id, reference_id, proof_file_path, proof_note, status),
-       shipments (status)`
+       payments (id, reference_id, proof_file_path, proof_note, status)`
     )
     .order("created_at", { ascending: false });
 
@@ -110,8 +115,8 @@ export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
   return data.map((o: any) => {
     // payments.order_id is UNIQUE, so PostgREST embeds a to-one object here.
     const payment = Array.isArray(o.payments) ? o.payments[0] : o.payments;
-    // shipments.order_id is UNIQUE, so PostgREST embeds a to-one object here, not an array
-    const shipment = Array.isArray(o.shipments) ? o.shipments[0] : o.shipments;
+    // No orders→shipments embed (see the select note); shipping state is read from the order's
+    // own denormalized columns, defaulting to "Unfulfilled" when none is recorded.
     const timeline: OrderTimelineItem[] = historyRows
       .filter((h) => h.order_id === o.id)
       .map((h) => ({
@@ -161,7 +166,7 @@ export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
       destinationCountry: o.destination_country ?? null,
       totalInCurrency: o.total_in_currency === null || o.total_in_currency === undefined ? null : Number(o.total_in_currency),
       status: o.status as OrderStatus,
-      shippingStatus: mapShipmentToShippingStatus(shipment?.status),
+      shippingStatus: mapShipmentToShippingStatus(o.shipping_status),
       paymentStatus: (payment?.status || o.payment_status || "Pending") as PaymentStatus,
       paymentMethod: o.payment_method as Order["paymentMethod"],
       paymentReference: payment?.reference_id || undefined,
@@ -169,8 +174,8 @@ export async function fetchAdminOrdersFromDB(): Promise<Order[]> {
       paymentProofNote: payment?.proof_note || undefined,
       courier: o.courier_name || undefined,
       trackingNumber: o.tracking_id || undefined,
-      trackingUrl: o.tracking_url || shipment?.tracking_url || undefined,
-      estimatedDelivery: o.estimated_delivery || shipment?.estimated_delivery || undefined,
+      trackingUrl: o.tracking_url || undefined,
+      estimatedDelivery: o.estimated_delivery || undefined,
       adminNotes: notesByOrder.get(o.id) || undefined,
       customerNotes: o.customer_notes || undefined,
       isGiftWrap: Boolean(o.is_gift_wrap),

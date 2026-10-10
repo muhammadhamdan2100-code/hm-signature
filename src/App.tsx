@@ -17,6 +17,7 @@ import StructuredData from "./components/StructuredData";
 import { organizationData, webSiteData } from "./lib/seo";
 import { useI18n } from "./i18n/I18nProvider";
 import { StaffRouteGuard, CustomerRouteGuard } from "./components/ProtectedRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const Home = lazy(() => import("./pages/Home"));
 const Collections = lazy(() => import("./pages/Collections"));
@@ -94,7 +95,8 @@ export default function App() {
                 <WishlistProvider>
                   <ScrollToTop />
                   <AnalyticsBeacon />
-                  <Suspense fallback={<RouteFallback />}>
+                  <ErrorBoundary>
+                    <Suspense fallback={<RouteFallback />}>
                     <Routes>
                       {/* Customer Login Route */}
                       <Route path="/login" element={<Login />} />
@@ -151,6 +153,7 @@ export default function App() {
                       </Route>
                     </Routes>
                   </Suspense>
+                  </ErrorBoundary>
                 </WishlistProvider>
               </CartProvider>
             </AdminDataProvider>

@@ -51,7 +51,6 @@ export async function fetchCustomerOrdersFromDB(): Promise<CustomerOrderView[]> 
       `*,
        order_items (id, product_id, variant_id, product_name, variant_size, sku, unit_price, quantity, line_total, image_url),
        payments (id, status, method, reference_id, proof_file_path, proof_note, amount),
-       shipments (status, tracking_url, estimated_delivery, courier_name, tracking_number),
        order_status_history (status, note, created_at),
        refunds (id, payment_id, order_id, amount, status, refund_reference, reason, created_at, refunded_at)`
     )
@@ -64,8 +63,9 @@ export async function fetchCustomerOrdersFromDB(): Promise<CustomerOrderView[]> 
 
   return (data || []).map((o: any) => {
     const payment = Array.isArray(o.payments) ? o.payments[0] : o.payments;
-    // shipments.order_id is UNIQUE → PostgREST embeds a to-one object.
-    const shipment = Array.isArray(o.shipments) ? o.shipments[0] : o.shipments;
+    // The Phase 10 `shipments` table relates to `orders` through `fulfillments` (no direct
+    // PostgREST path), and is empty today; embedding it 400'd the whole customer-orders query and
+    // blanked "My Orders". Tracking is read from the order's own denormalized columns instead.
     const items: OrderItem[] = (o.order_items || []).map((it: any) => ({
       id: it.id,
       productId: it.product_id || "",
@@ -116,20 +116,20 @@ export async function fetchCustomerOrdersFromDB(): Promise<CustomerOrderView[]> 
       shippingFee: Number(o.shipping_cost || 0),
       total: Number(o.total),
       status: o.status as OrderStatus,
-      shippingStatus: shipmentToShippingStatus(shipment?.status),
+      shippingStatus: shipmentToShippingStatus(o.shipping_status),
       paymentStatus: (payment?.status || o.payment_status || "Pending") as PaymentStatus,
       paymentMethod: o.payment_method as PaymentMethod,
       paymentReference: payment?.reference_id || undefined,
       paymentProofUrl: o.payment_proof_url || payment?.proof_file_path || undefined,
       paymentProofNote: payment?.proof_note || undefined,
-      courier: o.courier_name || shipment?.courier_name || undefined,
-      trackingNumber: o.tracking_id || shipment?.tracking_number || undefined,
+      courier: o.courier_name || undefined,
+      trackingNumber: o.tracking_id || undefined,
       timeline,
       createdAt: fmtDate(o.created_at),
       placedAt: fmtDateTime(o.created_at),
-      trackingUrl: o.tracking_url || shipment?.tracking_url || undefined,
-      estimatedDelivery: o.estimated_delivery || shipment?.estimated_delivery || undefined,
-      shipmentStatus: shipment?.status || undefined,
+      trackingUrl: o.tracking_url || undefined,
+      estimatedDelivery: o.estimated_delivery || undefined,
+      shipmentStatus: o.shipping_status || undefined,
       refundedTotal,
       refundRecords: refundRows.map((r) => ({
         amount: r.amount,
