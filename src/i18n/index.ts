@@ -20,7 +20,7 @@ export interface LanguageMeta {
 // dictionary here will stay English rather than show empty text.
 export const BUILT_IN_LANGUAGES: LanguageMeta[] = [
   { code: "en", name: "English", nativeName: "English", direction: "ltr", locale: "en-US" },
-  { code: "ar", name: "Arabic", nativeName: "العربية", direction: "rtl", locale: "ar" },
+  { code: "ar", name: "Arabic", nativeName: "العربية", direction: "rtl", locale: "ar-AE" },
   { code: "fr", name: "French", nativeName: "Français", direction: "ltr", locale: "fr-FR" },
   { code: "es", name: "Spanish", nativeName: "Español", direction: "ltr", locale: "es-ES" },
   { code: "ur", name: "Urdu", nativeName: "اردو", direction: "rtl", locale: "ur-PK" },

@@ -40,9 +40,10 @@ export function sumMinor(values: number[]): number {
 
 /**
  * The store's own symbol is used instead of Intl's currency display name so the
- * storefront keeps its "Rs 1,370" identity and cannot change with browser locale data.
- * Intl still owns digit grouping, and Arabic asks for Latin digits so a price stays
- * verifiable against the order record.
+ * storefront keeps its "Rs 1,370" identity. Grouping separators follow the shopper's
+ * locale, but digits are pinned to Latin (`numberingSystem: "latn"`) so an Arabic or
+ * Urdu shopper sees "Rs 1,370" exactly as the order record stores it, never Arabic-Indic
+ * digits — the price stays verifiable against the checkout total.
  */
 export function formatMinor(minor: number, currency: CurrencyDef, locale = "en-US"): string {
   const digits = Math.max(0, Math.min(3, currency.minorUnits));
@@ -50,11 +51,13 @@ export function formatMinor(minor: number, currency: CurrencyDef, locale = "en-U
   let formatter: Intl.NumberFormat;
   try {
     formatter = new Intl.NumberFormat(locale, {
+      numberingSystem: "latn",
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
     });
   } catch {
     formatter = new Intl.NumberFormat("en-US", {
+      numberingSystem: "latn",
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
     });

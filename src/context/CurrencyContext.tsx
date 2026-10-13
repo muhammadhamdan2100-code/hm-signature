@@ -10,6 +10,7 @@ import {
 } from "../lib/money";
 import { fetchCurrencies, fetchCountries, type CountryRule } from "../services/internationalConfig";
 import { isSupabaseConfigured } from "../lib/supabase";
+import { useI18n } from "../i18n/I18nProvider";
 
 const CURRENCY_KEY = "hm-signature-currency";
 const COUNTRY_KEY = "hm-signature-country";
@@ -58,6 +59,8 @@ function detectRegion(): string | undefined {
 }
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
+  // The shopper's language decides number grouping; digits stay Latin (see money.ts).
+  const { locale } = useI18n();
   const [currencies, setCurrencies] = useState<CurrencyDef[]>(FALLBACK_CURRENCIES);
   const [countries, setCountries] = useState<CountryRule[]>([]);
   const [ready, setReady] = useState(false);
@@ -141,16 +144,16 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   );
 
   const format = useCallback(
-    (baseAmount: number) => formatMinor(toMinor(baseAmount, resolvedCurrency), resolvedCurrency),
-    [resolvedCurrency]
+    (baseAmount: number) => formatMinor(toMinor(baseAmount, resolvedCurrency), resolvedCurrency, locale),
+    [resolvedCurrency, locale]
   );
 
   const formatIn = useCallback(
     (baseAmount: number, code: string) => {
       const target = currencyByCode(currencies, code) ?? resolvedCurrency;
-      return formatMinor(toMinor(baseAmount, target), target);
+      return formatMinor(toMinor(baseAmount, target), target, locale);
     },
-    [currencies, resolvedCurrency]
+    [currencies, resolvedCurrency, locale]
   );
 
   const ratesAreManual = useMemo(
