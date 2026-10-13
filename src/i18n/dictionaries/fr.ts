@@ -1749,7 +1749,7 @@ export const fr = {
       "orders": "Commandes",
       "products": "Produits",
       "reconciliation": "Rapprochement",
-      "reviews": "avis",
+      "reviews": "Avis",
       "staffAndRoles": "Personnel et rôles",
       "dashboard": "Tableau de bord",
       "categories": "Catégories",
