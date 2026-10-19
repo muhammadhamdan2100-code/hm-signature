@@ -1,4 +1,9 @@
 -- ============================================================================
+-- APPLIED to the live project (ttnfdxabfkmqlqssqdep) on 2026-10-19 through the dashboard
+-- SQL editor, and verified from outside with the public anon key: anon DELETE now 401 on
+-- every probed table, the coupon list 401, checkout_coupon 200, and
+-- tests/phase10-security-hardening.test.ts passes 35/35 with 0 failures.
+
 -- COUPON CODES STOP BEING A PUBLIC LIST
 --
 -- WHY (measured 2026-10-19 with the public anon key): `GET /rest/v1/coupons`

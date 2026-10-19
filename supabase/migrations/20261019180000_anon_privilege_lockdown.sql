@@ -1,4 +1,9 @@
 -- ============================================================================
+-- APPLIED to the live project (ttnfdxabfkmqlqssqdep) on 2026-10-19 through the dashboard
+-- SQL editor, and verified from outside with the public anon key: anon DELETE now 401 on
+-- every probed table, the coupon list 401, checkout_coupon 200, and
+-- tests/phase10-security-hardening.test.ts passes 35/35 with 0 failures.
+
 -- ANON PRIVILEGE LOCKDOWN — the public key must not be able to write anything
 --
 -- WHY THIS EXISTS (measured against the live project on 2026-10-19, with only the

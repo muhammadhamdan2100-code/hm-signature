@@ -1,3 +1,23 @@
+> ## APPLIED — 2026-10-19, live project `ttnfdxabfkmqlqssqdep`
+>
+> All three security files were run through the owner’s dashboard SQL editor and verified from
+> outside with the public anon key: anon DELETE now returns **401** on every probed table
+> (products, site_settings, coupons, orders, audit_log, locations), `GET /coupons` is **401**,
+> `checkout_coupon("WELCOME10")` returns the row and an unknown code returns `[]`, RLS is enabled
+> on the 31 Phase 10 tables, the `audit_log` append-only trigger is installed, and the four
+> inventory `CHECK` constraints exist. `tests/phase10-security-hardening.test.ts` passes **35/35**
+> and the full suite is **3662 passed / 0 failed**. The two privilege files moved to
+> `supabase/migrations/` with an `APPLIED` header.
+>
+> **Not applied from this file:** the three rewritten RPC bodies (`adjust_location_stock`,
+> `reserve_order_stock`, `release_reservation`). `adjust_location_stock` still ends in
+> `500 invalid transaction termination`; no file under `src/` calls any of the three, so it is a
+> latent bug, not an open hole.
+>
+> **Newly found, still open:** functions reach `anon` through the **default `PUBLIC` execute
+> grant** as well as explicit ones, so `proacl LIKE '%anon=X%'` undercounts. Closing that needs an
+> allow-list migration checked against the admin panel — see below.
+
 # Phase 10 hardening + currency migrations — review before any execution
 
 Reviewed 2026-10-19 against the repository and the live project, **read-only**. Nothing in this

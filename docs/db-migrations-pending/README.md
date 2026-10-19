@@ -1,3 +1,9 @@
+> **2026-10-19:** the two privilege files that were listed here
+> (`20261019180000_anon_privilege_lockdown.sql`, `20261019190000_coupon_codes_not_public.sql`)
+> have since been applied to the live project and moved to `supabase/migrations/`.
+> What remains here is the currency-rate anchor migration, which the owner superseded
+> by entering the four rates directly in the admin panel.
+
 # Pending database migrations — prepared, NOT applied
 
 Files here are written for review and are deliberately kept **outside `supabase/migrations/`** so
