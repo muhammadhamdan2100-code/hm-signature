@@ -917,10 +917,11 @@ export const CustomerDetailPage: React.FC = () => {
                         {ev.amount !== undefined ? (
                           <>
                             {ev.detail ? " · " : ""}
-                            <span className="font-mono text-gold num-lining">
-                              {formatPKR(ev.amount)}
-                              {ev.currency && ev.currency !== "PKR" ? ` ${ev.currency}` : ""}
-                            </span>
+                            <span className="font-mono text-gold num-lining">{formatPKR(ev.amount)}</span>
+                            {/* A refund's stored currency records how it was settled; the amount
+                                itself is a rupee figure, so the code sits beside the amount rather
+                                than inside its label. */}
+                            {ev.currency && ev.currency !== "PKR" ? ` · ${ev.currency}` : ""}
                           </>
                         ) : null}
                       </p>

@@ -9,7 +9,7 @@ import {
 import { DataTable, type Column } from "../components/DataTable";
 import { StatCard } from "../components/StatCard";
 import { Scale, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
-import { formatPKR } from "../../utils/currency";
+import { formatBaseMoney } from "../../utils/currency";
 import { useI18n } from "../../i18n/I18nProvider";
 
 const WINDOWS = [30, 90, 365] as const;
@@ -25,13 +25,17 @@ const STATE_TONE: Record<string, string> = {
   review: "text-muted border-gold/20 bg-navy",
 };
 
-const money = (value: number, currency: string) =>
-  currency && currency !== "PKR" ? `${currency} ${value.toLocaleString()}` : formatPKR(value);
+// Expected, recorded and refunded figures all come from the ledger — `orders.total`,
+// `payments.amount` and `refunds.amount` — which is held in base rupees. `provider_currency`
+// names the currency the gateway actually settled in, so it is shown as its own tag rather
+// than as a label on a rupee amount.
+const settlementTag = (currency: string | null | undefined) =>
+  currency && currency !== "PKR" ? currency : null;
 
 const shortDate = (iso: string | null) => (iso ? iso.replace("T", " ").slice(0, 16) : "—");
 
 export const ReconciliationPage: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [days, setDays] = useState<number>(90);
   const [rows, setRows] = useState<ReconciliationRow[]>([]);
   const [duplicates, setDuplicates] = useState<Awaited<ReturnType<typeof fetchDuplicatePaymentEventsFromDB>>>([]);
@@ -95,16 +99,26 @@ export const ReconciliationPage: React.FC = () => {
     {
       header: t("admin.reconciliation.expected"),
       accessor: (r) => (
-        <span className="font-mono text-xs text-ivory">{money(r.expectedAmount, r.currency)}</span>
+        <div>
+          <span className="font-mono text-xs text-ivory">{formatBaseMoney(r.expectedAmount, locale)}</span>
+          {settlementTag(r.currency) && (
+            <span className="text-[10px] font-mono text-muted block">{r.currency}</span>
+          )}
+        </div>
       ),
       sortable: true,
     },
     {
       header: t("admin.reconciliation.recorded"),
       accessor: (r) => (
-        <span className={`font-mono text-xs ${r.difference === 0 ? "text-emerald-300" : "text-rose-300"}`}>
-          {money(r.recordedAmount, r.currency)}
-        </span>
+        <div>
+          <span className={`font-mono text-xs ${r.difference === 0 ? "text-emerald-300" : "text-rose-300"}`}>
+            {formatBaseMoney(r.recordedAmount, locale)}
+          </span>
+          {settlementTag(r.currency) && (
+            <span className="text-[10px] font-mono text-muted block">{r.currency}</span>
+          )}
+        </div>
       ),
       sortable: true,
     },
@@ -114,7 +128,7 @@ export const ReconciliationPage: React.FC = () => {
         r.difference === 0 ? (
           <span className="text-[10px] font-mono text-muted">—</span>
         ) : (
-          <span className="text-[10px] font-mono text-rose-300">{r.difference.toLocaleString()}</span>
+          <span className="text-[10px] font-mono text-rose-300">{formatBaseMoney(r.difference, locale)}</span>
         ),
       sortable: true,
     },
@@ -146,7 +160,7 @@ export const ReconciliationPage: React.FC = () => {
       header: t("admin.status.refunded"),
       accessor: (r) => (
         <span className="font-mono text-[10px] text-muted">
-          {r.refundedAmount > 0 ? money(r.refundedAmount, r.currency) : "—"}
+          {r.refundedAmount > 0 ? formatBaseMoney(r.refundedAmount, locale) : "—"}
         </span>
       ),
       sortable: true,

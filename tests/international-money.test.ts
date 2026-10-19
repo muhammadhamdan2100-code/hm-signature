@@ -90,7 +90,14 @@ describe("currency selection", () => {
   it("maps a browser region onto a supported currency only", () => {
     expect(currencyForRegion("AE", FALLBACK_CURRENCIES)?.code).toBe("AED");
     expect(currencyForRegion("gb", FALLBACK_CURRENCIES)?.code).toBe("GBP");
-    expect(currencyForRegion("CA", FALLBACK_CURRENCIES)?.code).toBe("USD");
+    // Canada's own money is CAD, which the store has not configured a rate for yet.
+    // Reporting nothing is the correct answer; reporting USD was the assumption this
+    // replaces. See tests/admin-order-currency.test.ts for CA resolving to CAD once the
+    // currency exists.
+    expect(currencyForRegion("CA", FALLBACK_CURRENCIES)).toBeNull();
+    expect(currencyForRegion("AU", FALLBACK_CURRENCIES)).toBeNull();
+    expect(currencyForRegion("QA", FALLBACK_CURRENCIES)).toBeNull();
+    expect(currencyForRegion("OM", FALLBACK_CURRENCIES)).toBeNull();
     expect(currencyForRegion("JP", FALLBACK_CURRENCIES)).toBeNull();
     expect(currencyForRegion(undefined, FALLBACK_CURRENCIES)).toBeNull();
   });

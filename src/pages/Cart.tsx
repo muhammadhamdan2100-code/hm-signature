@@ -28,6 +28,16 @@ export default function CartPage() {
   const [promoMsg, setPromoMsg] = useState("");
   const [promoFailed, setPromoFailed] = useState(false);
 
+  // The cart service reports a refusal as a key plus parameters instead of a finished English
+  // sentence, so the amount inside it is formatted here — in the currency the shopper is
+  // actually browsing in — instead of being pinned to rupees by the service.
+  const promoErrorText = promoError
+    ? t(promoError.key, {
+        ...promoError.params,
+        ...(typeof promoError.params?.amount === "number" ? { amount: format(promoError.params.amount) } : {}),
+      })
+    : "";
+
   const submitPromo = async (e: React.FormEvent) => {
     e.preventDefault();
     const ok = await applyPromo(promoInput);
@@ -119,7 +129,7 @@ export default function CartPage() {
                 role="status"
                 aria-live="polite"
               >
-                {promoFailed ? promoError || t("cart.promoFailedFallback") : promoMsg || t("cart.promoHint")}
+                {promoFailed ? promoErrorText || t("cart.promoFailedFallback") : promoMsg || t("cart.promoHint")}
               </p>
             </div>
 

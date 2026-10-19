@@ -22,9 +22,10 @@ import {
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useI18n } from "../../i18n/I18nProvider";
+import { formatBaseMoney, formatOrderCharged } from "../../utils/currency";
 
 export const OrderDetailPage: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const methodLabel = usePaymentMethodLabel();
   const { orders, updateOrderStatus, updateOrderShipping, payments, verifyPayment, rejectPayment, saveAdminNotes } = useAdminData();
   const navigate = useNavigate();
@@ -233,13 +234,13 @@ export const OrderDetailPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-3 px-3 font-mono">
-                        Rs. {item.price.toLocaleString()}
+                        {formatBaseMoney(item.price, locale)}
                       </td>
                       <td className="py-3 px-3 text-center font-mono font-bold text-gold">
                         {item.quantity}
                       </td>
                       <td className="py-3 px-3 text-end font-mono font-bold text-ivory">
-                        Rs. {(item.price * item.quantity).toLocaleString()}
+                        {formatBaseMoney(item.price * item.quantity, locale)}
                       </td>
                     </tr>
                   ))}
@@ -247,41 +248,44 @@ export const OrderDetailPage: React.FC = () => {
               </table>
             </div>
 
-            {/* Financial Totals */}
+            {/* Financial Totals — every line below is a base-rupee figure, which is how the
+                order stores them. What the customer was charged, in the currency recorded at
+                the time of the order, is stated separately and never re-derived from a rate. */}
             <div className="pt-4 border-t border-gold/15 space-y-2 max-w-xs ms-auto text-xs font-sans">
               <div className="flex justify-between text-muted">
                 <span>{t("admin.orderDetail.itemsSubtotal")}</span>
                 <span className="font-mono text-ivory">
-                  Rs. {order.subtotal.toLocaleString()}
+                  {formatBaseMoney(order.subtotal, locale)}
                 </span>
               </div>
               {order.discount > 0 && (
                 <div className="flex justify-between text-emerald-400">
                   <span>{t("admin.orderDetail.voucherDiscount")}</span>
-                  <span className="font-mono">- Rs. {order.discount.toLocaleString()}</span>
+                  <span className="font-mono">- {formatBaseMoney(order.discount, locale)}</span>
                 </div>
               )}
               <div className="flex justify-between text-muted">
                 <span>{t("admin.orderDetail.shippingFee")}</span>
                 <span className="font-mono text-ivory">
-                  {order.shippingFee === 0 ? t("common.complimentary") : `Rs. ${order.shippingFee}`}
+                  {order.shippingFee === 0 ? t("common.complimentary") : formatBaseMoney(order.shippingFee, locale)}
                 </span>
               </div>
               {Number(order.taxAmount || 0) > 0 && (
                 <div className="flex justify-between text-muted">
                   <span>{order.taxLabel || t("admin.orderDetail.tax")} ({order.taxRate}%):</span>
-                  <span className="font-mono text-ivory">Rs. {order.taxAmount!.toLocaleString()}</span>
+                  <span className="font-mono text-ivory">{formatBaseMoney(order.taxAmount!, locale)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm font-bold text-gold pt-2 border-t border-gold/20">
                 <span>{t("admin.orderDetail.orderTotal")}</span>
-                <span className="font-mono">Rs. {order.total.toLocaleString()}</span>
+                <span className="font-mono">{formatBaseMoney(order.total, locale)}</span>
               </div>
               {/* Recorded when the order was placed: a later rate or tax change cannot move it. */}
               <div className="flex justify-between text-[11px] text-muted pt-1">
                 <span>{t("admin.orderDetail.chargedInDestination")}</span>
                 <span className="font-mono text-ivory">
-                  {order.currency || "PKR"}
+                  {formatOrderCharged(order, locale)}
+                  {order.currency && order.currency !== "PKR" ? ` · ${order.currency}` : ""}
                   {order.destinationCountry ? ` · ${order.destinationCountry}` : ""}
                 </span>
               </div>

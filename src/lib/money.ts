@@ -2,6 +2,10 @@
 // way binary floats do. Conversion happens once, at the edge, against a rate that the
 // database owns.
 
+// Type-only in the other direction (currencyDisplay imports no runtime value from here),
+// so this is not a cycle.
+import { CURRENCY_DISPLAY } from "./currencyDisplay";
+
 export type RateSource = "manual" | "provider" | "imported";
 
 export interface CurrencyDef {
@@ -77,7 +81,9 @@ export const BASE_CURRENCY_CODE = "PKR";
 
 // Mirrors the seeded `currencies` rows so the storefront can still price a basket if the
 // configuration read fails. Rates are the store's own manual figures, not live market data.
-export const FALLBACK_CURRENCIES: CurrencyDef[] = [
+// Symbols and exponents are taken from the display registry, the same override
+// `mapCurrency` applies to live rows, so a degraded read cannot print a different money.
+const FALLBACK_ROWS: CurrencyDef[] = [
   { code: "PKR", name: "Pakistani Rupee", symbol: "Rs", minorUnits: 0, rateToBase: 1, isBase: true, enabled: true, rateSource: "manual", rateUpdatedAt: null, sortOrder: 1 },
   { code: "USD", name: "US Dollar", symbol: "$", minorUnits: 2, rateToBase: 278.5, isBase: false, enabled: true, rateSource: "manual", rateUpdatedAt: null, sortOrder: 2 },
   { code: "AED", name: "UAE Dirham", symbol: "AED", minorUnits: 2, rateToBase: 75.8, isBase: false, enabled: true, rateSource: "manual", rateUpdatedAt: null, sortOrder: 3 },
@@ -85,6 +91,11 @@ export const FALLBACK_CURRENCIES: CurrencyDef[] = [
   { code: "GBP", name: "British Pound", symbol: "£", minorUnits: 2, rateToBase: 355, isBase: false, enabled: true, rateSource: "manual", rateUpdatedAt: null, sortOrder: 5 },
   { code: "EUR", name: "Euro", symbol: "€", minorUnits: 2, rateToBase: 302, isBase: false, enabled: true, rateSource: "manual", rateUpdatedAt: null, sortOrder: 6 },
 ];
+
+export const FALLBACK_CURRENCIES: CurrencyDef[] = FALLBACK_ROWS.map((row) => {
+  const meta = CURRENCY_DISPLAY[row.code];
+  return meta ? { ...row, symbol: meta.symbol, minorUnits: meta.minorUnits } : row;
+});
 
 export function currencyByCode(list: CurrencyDef[], code: string | null | undefined): CurrencyDef | null {
   const wanted = (code || "").toUpperCase();
@@ -95,23 +106,31 @@ export function baseCurrency(list: CurrencyDef[]): CurrencyDef {
   return list.find((c) => c.isBase) ?? currencyByCode(list, BASE_CURRENCY_CODE) ?? FALLBACK_CURRENCIES[0];
 }
 
-/** Region hints from the browser, mapped only onto currencies the store supports. */
+/**
+ * Region hints from the browser, mapped only onto currencies the store supports.
+ *
+ * Each entry names that region's actual currency rather than the nearest one already
+ * configured, so the mapping stays true to ISO 4217 as the currency list grows.
+ * `currencyForRegion` still refuses anything the store does not yet enable, so CA/AU/QA/OM
+ * resolve to null until those rows exist in `currencies` — correctness here cannot invent
+ * a price.
+ */
 const REGION_CURRENCY: Record<string, string> = {
   PK: "PKR",
   AE: "AED",
   SA: "SAR",
   GB: "GBP",
   US: "USD",
-  CA: "USD",
-  AU: "USD",
+  CA: "CAD",
+  AU: "AUD",
   FR: "EUR",
   DE: "EUR",
   ES: "EUR",
   IT: "EUR",
   NL: "EUR",
   IE: "EUR",
-  QA: "USD",
-  OM: "SAR",
+  QA: "QAR",
+  OM: "OMR",
 };
 
 export function currencyForRegion(region: string | undefined, list: CurrencyDef[]): CurrencyDef | null {

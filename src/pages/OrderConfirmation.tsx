@@ -3,14 +3,16 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Check, Package, Truck } from "lucide-react";
 import { useAdminData } from "../admin/context/AdminDataContext";
-import { useCurrency } from "../context/CurrencyContext";
+import { formatBaseMoney, formatOrderCharged } from "../utils/currency";
 import { useI18n } from "../i18n/I18nProvider";
 import RewardsPanel from "../components/RewardsPanel";
 import { captureEvent } from "../services/analyticsCapture";
 
 export default function OrderConfirmation() {
-  const { t } = useI18n();
-  const { format } = useCurrency();
+  const { t, locale } = useI18n();
+  // This page is the customer's receipt: it reads the order as stored. The total is the
+  // currency the order was taken in, the lines below it are the base-rupee figures, and
+  // neither is re-derived from today's exchange rate.
   const { orderId } = useParams<{ orderId: string }>();
   const { orders } = useAdminData();
   const navigate = useNavigate();
@@ -127,7 +129,7 @@ export default function OrderConfirmation() {
                       <p className="text-[10px] text-muted font-mono">{item.size ? `${item.size} • ` : ''}{item.sku} • {t("account.qtyWord")} {item.quantity}</p>
                     </div>
                   </div>
-                  <span className="font-mono font-bold text-gold">{format(item.price * item.quantity)}</span>
+                  <span className="font-mono font-bold text-gold">{formatBaseMoney(item.price * item.quantity, locale)}</span>
                 </div>
               ))}
             </div>
@@ -137,18 +139,18 @@ export default function OrderConfirmation() {
           <div className="border-t border-gold/20 pt-4 space-y-2 text-xs">
             <div className="flex justify-between text-muted">
               <span>{t("account.itemsSubtotal")}</span>
-              <span className="font-mono text-ivory">{format(order.subtotal)}</span>
+              <span className="font-mono text-ivory">{formatBaseMoney(order.subtotal, locale)}</span>
             </div>
             {order.discount > 0 && (
               <div className="flex justify-between text-emerald-300">
                 <span>{t("common.discount")}</span>
-                <span className="font-mono">- {format(order.discount)}</span>
+                <span className="font-mono">- {formatBaseMoney(order.discount, locale)}</span>
               </div>
             )}
-            <div className="flex justify-between text-muted"><span>{t("checkout.shipping")}</span><span className="font-mono text-ivory">{order.shippingFee === 0 ? t("shipping.complimentary") : format(order.shippingFee)}</span></div>
+            <div className="flex justify-between text-muted"><span>{t("checkout.shipping")}</span><span className="font-mono text-ivory">{order.shippingFee === 0 ? t("shipping.complimentary") : formatBaseMoney(order.shippingFee, locale)}</span></div>
             <div className="flex justify-between pt-3 border-t border-gold/15 font-serif text-base font-bold">
               <span className="text-ivory">{t("account.totalAmountPaidPayable")}</span>
-              <span className="text-gold font-mono">{format(order.total)}</span>
+              <span className="text-gold font-mono">{formatOrderCharged(order, locale)}</span>
             </div>
           </div>
 

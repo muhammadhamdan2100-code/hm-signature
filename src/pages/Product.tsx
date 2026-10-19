@@ -10,6 +10,7 @@ import {
 } from "../data/products";
 import { getCatalogProductBySlug, getCatalogProducts, getProductReviews, submitProductReview } from "../services/catalog";
 import { useSeoMeta } from "../hooks/useSeoMeta";
+import { facetLabel, facetListLabel } from "../lib/facets";
 import { useI18n } from "../i18n/I18nProvider";
 import { useRecentlyViewed } from "../hooks/useRecentlyViewed";
 import { useCart } from "../context/CartContext";
@@ -344,19 +345,19 @@ export default function ProductPage() {
               {product.intensity && (
                 <div>
                   <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.intensityLabel")}</div>
-                  <div>{product.intensity}</div>
+                  <div>{facetLabel(t, product.intensity)}</div>
                 </div>
               )}
               {(product.occasions?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.occasionLabel")}</div>
-                  <div>{product.occasions!.join(" · ")}</div>
+                  <div>{facetListLabel(t, product.occasions)}</div>
                 </div>
               )}
               {(product.seasons?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.seasonLabel")}</div>
-                  <div>{product.seasons!.join(" · ")}</div>
+                  <div>{facetListLabel(t, product.seasons)}</div>
                 </div>
               )}
               {product.concentration && (
@@ -392,7 +393,7 @@ export default function ProductPage() {
               </div>
               <div>
                 <div className="text-[11px] text-muted tracking-widest mb-1">{t("product.genderLabel")}</div>
-                <div className="capitalize">{product.gender}</div>
+                <div className="capitalize">{facetLabel(t, product.gender)}</div>
               </div>
             </div>
 

@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { CURRENCY_DISPLAY } from "../lib/currencyDisplay";
 import { FALLBACK_CURRENCIES, type CurrencyDef, type RateSource } from "../lib/money";
 
 // Country, currency and language configuration lives in the database. Visitors read it
@@ -86,12 +87,19 @@ function isQuote(value: Record<string, any>): value is Record<string, any> & { c
 }
 
 function mapCurrency(row: any): CurrencyDef {
+  const code = String(row.code).toUpperCase();
+  // The display registry is the single source for how a currency is written down, so the
+  // navbar selector, the price on a card and the admin console cannot disagree. A row whose
+  // code the registry does not know keeps its stored symbol and exponent.
+  const meta = CURRENCY_DISPLAY[code];
   return {
-    code: String(row.code).toUpperCase(),
+    code,
     name: row.name,
-    symbol: row.symbol,
-    minorUnits: Number(row.minor_units ?? 2),
-    rateToBase: Number(row.rate_to_base ?? 1),
+    symbol: meta ? meta.symbol : row.symbol,
+    minorUnits: meta ? meta.minorUnits : Number(row.minor_units ?? 2),
+    // A row without a usable rate is read as having NO rate, never as a rate of 1: parity
+    // with the rupee is a claim this store has not made about any currency.
+    rateToBase: Number(row.rate_to_base ?? 0),
     isBase: Boolean(row.is_base),
     enabled: Boolean(row.enabled),
     rateSource: (row.rate_source ?? "manual") as RateSource,

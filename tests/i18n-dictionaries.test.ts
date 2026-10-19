@@ -99,6 +99,10 @@ describe("language dictionaries stay complete", () => {
       // ("Description"/"Notes"/"Source" in French, "Total"/"Subtotal"/"No" in Spanish,
       // "Status"/"Name"/"Journal" in German), a technical identifier, or a brand/product name.
       // A new identical value must be justified here rather than tolerated by a percentage.
+      // A few words are identical to English in one language and genuinely translated in
+      // another, so the exception is granted to the language, not to the value: "Winter" is
+      // correct German and must not become an excuse for an untranslated French cell.
+      const LANGUAGE_SCOPED_SHARED = new Set(["de:facet.season.winter"]);
       const shared = new Set([
         "Collections", "Contact", "Journal", "Menu", "Total", "Subtotal", "No", "Error", "FAQ",
         "OCCASION", "CONCENTRATION", "DESCRIPTION", "CONTACT", "CONFIRMATION", "MESSAGE",
@@ -141,7 +145,10 @@ describe("language dictionaries stay complete", () => {
       const identical = englishLeaves
         .filter((path) => lookup(dict, path) === lookup(en, path))
         .map((path) => ({ path, value: String(lookup(en, path)) }))
-        .filter(({ value }) => !shared.has(value.trim()));
+        .filter(
+          ({ path, value }) =>
+            !shared.has(value.trim()) && !LANGUAGE_SCOPED_SHARED.has(`${code}:${path}`)
+        );
       expect(
         identical.map(({ path, value }) => `${path} = ${JSON.stringify(value)}`),
         `${code} leaves these English strings untranslated`

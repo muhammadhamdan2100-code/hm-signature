@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAdminData, type AdminProduct } from "../context/AdminDataContext";
 import {
   type ProductVariant,
@@ -18,6 +18,9 @@ import { ImageUploader } from "../components/ImageUploader";
 import { GoogleSeoPreview } from "../components/GoogleSeoPreview";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { useI18n } from "../../i18n/I18nProvider";
+import { useCurrency } from "../../context/CurrencyContext";
+import { baseRupeesFor, currencyAmountForBase } from "../../lib/currencyOffer";
+import type { CurrencyDef } from "../../lib/money";
 import {
   ArrowLeft,
   Save,
@@ -37,6 +40,10 @@ const SHORT_DESCRIPTION_MAX = 160;
 export const ProductFormPage: React.FC = () => {
   const { t } = useI18n();
   const { products, categories, collections, addProduct, updateProduct } = useAdminData();
+  const { selectorCurrencies, hasConfiguredRate } = useCurrency();
+  // Chosen once, and every size row below reads its foreign figure from it, so the ladder the
+  // staff sees in the table is the same ladder the storefront renders for that currency.
+  const [bridgeCode, setBridgeCode] = useState("");
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -253,6 +260,23 @@ export const ProductFormPage: React.FC = () => {
 
   const isBaseRow = (v: ProductVariant) => normalizeSizeLabel(v.size) === "50ml";
   const isAutoRow = (v: ProductVariant) => !isBaseRow(v) && v.auto !== false;
+
+  // The same proportional ladder, read in another money. The shop stores one figure per size in
+  // base rupees and converts for display, so 50 ml is the only input in any currency — a size
+  // typed here would be a second source of truth that the storefront never reads.
+  const pricedCurrencies = useMemo(
+    () => selectorCurrencies.filter((c) => !c.isBase && hasConfiguredRate(c.code)),
+    [selectorCurrencies, hasConfiguredRate]
+  );
+  const bridgeCurrency = pricedCurrencies.find((c) => c.code === bridgeCode) ?? pricedCurrencies[0] ?? null;
+  const showInBridge = (rupees: number) => {
+    if (!bridgeCurrency || !Number.isFinite(rupees)) return "";
+    const amount = currencyAmountForBase(rupees, bridgeCurrency);
+    return `${bridgeCurrency.symbol} ${amount.toLocaleString("en-US", {
+      minimumFractionDigits: bridgeCurrency.minorUnits,
+      maximumFractionDigits: bridgeCurrency.minorUnits,
+    })}`;
+  };
 
   const handleOverrideVariant = (index: number) => {
     setVariants((prev) => prev.map((v, i) => (i === index ? { ...v, auto: false } : v)));
@@ -1012,6 +1036,14 @@ export const ProductFormPage: React.FC = () => {
                                 </button>
                               </div>
                             )}
+                            {bridgeCurrency ? (
+                              <p
+                                className="text-[9px] font-mono text-gold/70 mt-1"
+                                title={`${bridgeCurrency.code} ${t("admin.productForm.priceInOtherCurrency")}`}
+                              >
+                                {showInBridge(isAutoRow(v) ? autoPriceFor(price, v.size) : v.price)}
+                              </p>
+                            ) : null}
                           </td>
                           {/* Sale Price */}
                           <td className="py-2.5 px-3 w-32">
@@ -1324,6 +1356,15 @@ export const ProductFormPage: React.FC = () => {
               />
             </div>
 
+            <PriceCurrencyBridge
+              basePrice={price}
+              onApply={handlePriceChange}
+              sizes={variants.map((v) => v.size)}
+              code={bridgeCode}
+              onCodeChange={setBridgeCode}
+              currencies={pricedCurrencies}
+            />
+
             <div>
               <label htmlFor="sale-price" className="block text-xs text-muted mb-1 uppercase tracking-wider">
                 {t("admin.productForm.specialSalePriceLabel")}
@@ -1498,3 +1539,99 @@ export const ProductFormPage: React.FC = () => {
     </form>
   );
 };
+
+/**
+ * Lets the owner set the base price in a currency they think in.
+ *
+ * The stored figure stays base rupees — this converts once, on apply, using the rate the shop
+ * already configured. Currencies without a rate are not offered at all, so a missing rate can
+ * never become a price.
+ */
+function PriceCurrencyBridge({
+  basePrice,
+  onApply,
+  sizes,
+  code,
+  onCodeChange,
+  currencies,
+}: {
+  basePrice: number;
+  onApply: (rupees: number) => void;
+  sizes: string[];
+  code: string;
+  onCodeChange: (code: string) => void;
+  currencies: CurrencyDef[];
+}) {
+  const { t } = useI18n();
+  const [amount, setAmount] = useState("");
+
+  if (currencies.length === 0) return null;
+
+  const currency = currencies.find((c) => c.code === code) ?? currencies[0];
+  const parsed = Number(amount);
+  const rupees = amount.trim() === "" ? NaN : baseRupeesFor(parsed, currency);
+  const canApply = Number.isFinite(rupees) && rupees > 0;
+  const format = (value: number) =>
+    value.toLocaleString("en-US", {
+      minimumFractionDigits: currency.minorUnits,
+      maximumFractionDigits: currency.minorUnits,
+    });
+  const anchor = canApply ? rupees : basePrice;
+
+  return (
+    <div className="rounded border border-gold/20 bg-navy/60 p-3 space-y-2">
+      <label htmlFor="price-currency" className="block text-[10px] text-muted uppercase tracking-wider">
+        {t("admin.productForm.priceInOtherCurrency")}
+      </label>
+      <div className="flex gap-2">
+        <select
+          id="price-currency"
+          value={currency.code}
+          onChange={(e) => onCodeChange(e.target.value)}
+          aria-label={t("admin.international.currency")}
+          className="bg-navy border border-gold/30 rounded px-2 py-2 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
+        >
+          {currencies.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.symbol} {c.code}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder={currency.symbol}
+          aria-label={`${t("admin.productForm.priceInOtherCurrency")} (${currency.code})`}
+          className="flex-1 min-w-0 bg-navy border border-gold/30 rounded px-3 py-2 text-xs text-ivory font-mono focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
+        />
+        <button
+          type="button"
+          disabled={!canApply}
+          onClick={() => canApply && onApply(rupees)}
+          className="px-3 py-2 bg-gold text-navy rounded text-[10px] font-semibold uppercase tracking-wider hover:bg-goldLight transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {t("admin.productForm.applyPrice")}
+        </button>
+      </div>
+      <p className="text-[10px] text-muted font-light leading-relaxed">
+        {canApply
+          ? t("admin.productForm.willStoreAs", { amount: rupees.toLocaleString("en-US") })
+          : t("admin.productForm.currentInCurrency", { amount: format(basePrice), currency: currency.code })}
+      </p>
+      {/* One 50 ml figure — typed in rupees or in this currency — is the only input; every other
+          size is read off it, in this currency, exactly as the storefront renders it. */}
+      <ul className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+        {sizes.map((size) => (
+          <li key={size} className="text-[10px] font-mono text-muted">
+            <span className="text-gold/70">{normalizeSizeLabel(size)}</span>{" "}
+            {currency.symbol} {format(currencyAmountForBase(autoPriceFor(anchor, size), currency))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

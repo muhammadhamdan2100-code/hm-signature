@@ -14,6 +14,8 @@ import {
   type PaymentProviderRow,
 } from "../../services/paymentArchitecture";
 import { fetchCountries } from "../../services/internationalConfig";
+import { settlementCurrencyFor } from "../../lib/currencyOffer";
+import { BASE_CURRENCY_CODE } from "../../lib/money";
 import { useI18n } from "../../i18n/I18nProvider";
 
 // Super Admin control over the payment-method architecture. Two facts are kept visibly apart
@@ -84,8 +86,8 @@ export function PaymentMethodsPage() {
 
   useEffect(() => {
     setPreviewBusy(true);
-    const currency = countries.find((c) => c.code === previewCountry)?.currencyCode || "";
-    previewCountryMethods(previewCountry, currency)
+    // Asked in the same money the checkout asks in, so this preview cannot disagree with a shopper.
+    previewCountryMethods(previewCountry, settlementCurrencyFor(countries, previewCountry, BASE_CURRENCY_CODE))
       .then(setPreview)
       .catch(() => setPreview([]))
       .finally(() => setPreviewBusy(false));

@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { Truck, Clock, MapPin, PackageCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { fetchShippingConfig, DEFAULT_SHIPPING_CONFIG, type ShippingConfig } from "../services/storeConfig";
-import { formatPKR } from "../utils/currency";
+import { useCurrency } from "../context/CurrencyContext";
 import { useI18n } from "../i18n/I18nProvider";
 
 export default function ShippingDelivery() {
   const [shipping, setShipping] = useState<ShippingConfig>(DEFAULT_SHIPPING_CONFIG);
   const { t } = useI18n();
+  // A published policy, not a record: quoted in the money the shopper is browsing in, the
+  // same way the cart and checkout present the same thresholds.
+  const { format } = useCurrency();
 
   useEffect(() => {
     let mounted = true;
@@ -50,7 +53,7 @@ export default function ShippingDelivery() {
       icon: PackageCheck,
       titleKey: "legal.deliveryCostsTitle",
       textKey: "legal.deliveryCostsBody",
-      vars: { threshold: formatPKR(shipping.freeThreshold), cost: formatPKR(shipping.standardCost) },
+      vars: { threshold: format(shipping.freeThreshold), cost: format(shipping.standardCost) },
     },
   ];
 

@@ -18,6 +18,9 @@ import { captureEvent } from "../services/analyticsCapture";
 import { saveCustomerOrderNotes } from "../services/tracking";
 import { quoteOrder, type PricingQuote } from "../services/internationalConfig";
 import { useCurrency } from "../context/CurrencyContext";
+import { countryCurrency, flagFor } from "../lib/countries";
+import { settlementCurrencyFor } from "../lib/currencyOffer";
+import { formatBaseMoney, formatOrderCharged } from "../utils/currency";
 import { useI18n } from "../i18n/I18nProvider";
 
 const steps = ["CONTACT", "SHIPPING", "PAYMENT", "CONFIRMATION"] as const;
@@ -28,7 +31,7 @@ const BASE_CURRENCY = "PKR";
 export default function Checkout() {
   const { items, subtotal, shipping, total, promoCode, promoDiscountAmount, clearCart } = useCart();
   const { addOrder } = useAdminData();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { currency, countries, country, setCountryCode, format } = useCurrency();
 
   const [step, setStep] = useState<Step>("CONTACT");
@@ -101,10 +104,15 @@ export default function Checkout() {
     if (params.get("payment") === "cancelled") setReturnNotice(t("checkout.cardPaymentCancelled"));
   }, [t]);
 
+  // Rails are configured against the money a destination actually settles in. Asking them in
+  // the currency the shopper is browsing with asks the wrong question — cash on delivery cannot
+  // "accept CAD" — and answers "none", which is why a CAD or USD display used to empty the list.
+  const settlementCurrency = settlementCurrencyFor(countries, form.countryCode, BASE_CURRENCY);
+
   useEffect(() => {
     if (!form.countryCode) return;
     let alive = true;
-    fetchCheckoutMethods(form.countryCode, currency.code)
+    fetchCheckoutMethods(form.countryCode, settlementCurrency)
       .then(({ methods, degraded }) => {
         if (!alive) return;
         setConfiguredMethods(methods);
@@ -126,7 +134,7 @@ export default function Checkout() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.countryCode, currency.code]);
+  }, [form.countryCode, settlementCurrency]);
 
   // Follow the header destination once it is known, so the address form and the
   // priced basket always agree.
@@ -192,7 +200,9 @@ export default function Checkout() {
   const selectedLabel = selectedMethod?.name ?? "";
   const submittableMethods = configuredMethods.filter((m) => m.canSubmit);
   // Nothing settleable for this destination - abroad that is the honest "coming soon" state,
-  // because no international gateway has credentials yet.
+  // because no international gateway has credentials yet. The rails are asked for in the
+  // destination's own settlement money, so an empty list now genuinely means "no rail here"
+  // rather than "you are browsing in the wrong currency".
   const noPaymentRoute = configuredMethods.length === 0 || submittableMethods.length === 0;
   const paymentMethodsAvailable = Boolean(selectedMethod?.canSubmit) && !pricingProblem && !methodsProblem;
 
@@ -628,9 +638,12 @@ export default function Checkout() {
 
             <div className="border border-gold/25 p-6 text-start mb-8 bg-navy2 rounded-lg space-y-3 font-sans text-xs">
               <div className="flex justify-between text-muted"><span>{t("checkout.orderReference")}</span><span className="text-gold font-mono font-bold">{placedOrderNumber}</span></div>
-              <div className="flex justify-between text-muted"><span>{t("checkout.totalAmountLabel")}</span><span className="text-gold font-mono font-bold">{format(placedTotal)}</span></div>
+              {/* The receipt reads from what the order stored, not from today's rate: the total
+                  is the amount recorded in the order's own currency, and the tax line is the
+                  base-rupee figure the ledger keeps. */}
+              <div className="flex justify-between text-muted"><span>{t("checkout.totalAmountLabel")}</span><span className="text-gold font-mono font-bold">{formatOrderCharged({ total: placedTotal, currency: placedReceipt?.currency ?? null, totalInCurrency: placedReceipt?.totalInCurrency ?? null }, locale)}</span></div>
               {placedReceipt && placedReceipt.tax > 0 && (
-                <div className="flex justify-between text-muted"><span>{t("checkout.taxLine")}</span><span className="text-ivory font-mono">{format(placedReceipt.tax)}</span></div>
+                <div className="flex justify-between text-muted"><span>{t("checkout.taxLine")}</span><span className="text-ivory font-mono">{formatBaseMoney(placedReceipt.tax, locale)}</span></div>
               )}
               <div className="flex justify-between text-muted"><span>{t("checkout.currencyLabel")}</span><span className="text-ivory font-semibold">{placedReceipt?.currency ?? currency.code}</span></div>
               <div className="flex justify-between text-muted"><span>{t("checkout.deliveryToLabel")}</span><span className="text-ivory font-semibold">{form.countryName}</span></div>
@@ -1165,11 +1178,17 @@ function CountryField({
         className="w-full bg-navy border border-gold/25 px-4 py-2.5 text-ivory focus:outline-none focus:border-gold rounded font-sans"
       >
         <option value="">—</option>
-        {countries.map((c) => (
-          <option key={c.code} value={c.code} disabled={!c.enabled}>
-            {c.enabled ? c.name : `${c.name} — ${unavailableSuffix}`}
-          </option>
-        ))}
+        {countries.map((c) => {
+          // Flag and local money, so the destination reads the same way here as it does in
+          // the navbar. Availability still decides whether the row can be chosen at all.
+          const money = countryCurrency(c.code);
+          const base = `${flagFor(c.code)} ${c.name}${money ? ` · ${money.code}` : ""}`;
+          return (
+            <option key={c.code} value={c.code} disabled={!c.enabled}>
+              {c.enabled ? base : `${base} — ${unavailableSuffix}`}
+            </option>
+          );
+        })}
       </select>
     </label>
   );

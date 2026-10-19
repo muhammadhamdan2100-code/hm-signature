@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Languages, Globe2, Coins, Pencil, RefreshCw } from "lucide-react";
+import { Languages, Globe2, Coins, Pencil, Plus, RefreshCw } from "lucide-react";
 import { DataTable, type Column } from "../components/DataTable";
 import { Modal } from "../components/Modal";
 import { useAdminData } from "../context/AdminDataContext";
@@ -16,7 +16,19 @@ import {
 } from "../../services/internationalConfig";
 import type { CurrencyDef } from "../../lib/money";
 import type { LanguageDef } from "../../services/internationalConfig";
+import { newCurrencyDraft, validateCurrencyDraft, type CurrencyDraftProblem } from "../../lib/currencyOffer";
+import { formatBaseMoney } from "../../utils/currency";
 import { useI18n } from "../../i18n/I18nProvider";
+
+/** The modal edits an existing row or creates a new one; the two validate differently. */
+type CurrencyTarget = { row: CurrencyDef; isNew: boolean };
+
+const CURRENCY_PROBLEM_KEYS: Record<CurrencyDraftProblem, string> = {
+  codeShape: "admin.international.codeInvalid",
+  codeDuplicate: "admin.international.codeTaken",
+  rateMissing: "admin.international.rateAboveZero",
+  ratePlaceholder: "admin.international.rateLooksPlaceholder",
+};
 
 const numberOr = (value: string, fallback: number | null = null): number | null => {
   const trimmed = value.trim();
@@ -28,7 +40,7 @@ const numberOr = (value: string, fallback: number | null = null): number | null 
 const textOr = (value: string): string | null => (value.trim() ? value.trim() : null);
 
 export function InternationalPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { showToast } = useAdminData();
   const canManage = hasPermission(getCurrentStaff(), "settings.manage");
 
@@ -39,7 +51,7 @@ export function InternationalPage() {
   const [busy, setBusy] = useState(false);
 
   const [editingCountry, setEditingCountry] = useState<CountryRule | null>(null);
-  const [editingCurrency, setEditingCurrency] = useState<CurrencyDef | null>(null);
+  const [editingCurrency, setEditingCurrency] = useState<CurrencyTarget | null>(null);
   const [editingLanguage, setEditingLanguage] = useState<LanguageDef | null>(null);
 
   const load = useCallback(async () => {
@@ -96,8 +108,9 @@ export function InternationalPage() {
   };
 
   const commitCurrency = async (draft: CurrencyDef) => {
-    if (draft.rateToBase <= 0) {
-      showToast("error", t("admin.international.rateAboveZero"));
+    const problem = validateCurrencyDraft(draft, currencies.map((c) => c.code), editingCurrency?.isNew ?? false);
+    if (problem) {
+      showToast("error", t(CURRENCY_PROBLEM_KEYS[problem]));
       return;
     }
     setBusy(true);
@@ -143,10 +156,13 @@ export function InternationalPage() {
     },
     { header: t("admin.international.currency"), accessor: (row) => <span className="font-mono text-xs">{row.currencyCode ?? "—"}</span> },
     {
+      // Shipping is configured and quoted in base rupees; `quote_order` adds the fee to the
+      // rupee goods value before converting once at the end. Labelling the fee with the
+      // destination's own currency would read a rupee figure as dirhams or riyals.
       header: t("admin.international.fee"),
       accessor: (row) => (
         <span className="font-mono text-xs text-ivory">
-          {row.shippingFee === null ? "—" : `${row.currencyCode ?? "PKR"} ${row.shippingFee.toLocaleString()}`}
+          {row.shippingFee === null ? "—" : formatBaseMoney(row.shippingFee, locale)}
         </span>
       ),
     },
@@ -154,7 +170,7 @@ export function InternationalPage() {
       header: t("admin.international.freeOver"),
       accessor: (row) => (
         <span className="font-mono text-xs text-muted">
-          {row.freeShippingThreshold === null ? "—" : row.freeShippingThreshold.toLocaleString()}
+          {row.freeShippingThreshold === null ? "—" : formatBaseMoney(row.freeShippingThreshold, locale)}
         </span>
       ),
     },
@@ -233,7 +249,7 @@ export function InternationalPage() {
       header: "",
       accessor: (row) => (
         <button
-          onClick={() => setEditingCurrency(row)}
+          onClick={() => setEditingCurrency({ row, isNew: false })}
           disabled={!canManage}
           title={canManage ? t("admin.international.configureCurrency") : t("admin.international.settingsAccessRequired")}
           className="p-1.5 rounded bg-navy2 border border-gold/25 hover:border-gold text-gold disabled:opacity-40"
@@ -330,6 +346,20 @@ export function InternationalPage() {
         <div className="flex items-center gap-2 text-gold">
           <Coins className="w-4 h-4" />
           <h2 className="text-xs font-mono uppercase tracking-[2px]">{t("admin.international.currenciesHeading")}</h2>
+          <button
+            onClick={() =>
+              setEditingCurrency({
+                row: newCurrencyDraft("", Math.max(0, ...currencies.map((c) => c.sortOrder)) + 1),
+                isNew: true,
+              })
+            }
+            disabled={!canManage}
+            title={canManage ? t("admin.international.addCurrency") : t("admin.international.settingsAccessRequired")}
+            className="ms-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gold/30 text-gold hover:border-gold text-[10px] font-mono uppercase tracking-wider disabled:opacity-40"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {t("admin.international.addCurrency")}
+          </button>
         </div>
         <DataTable
           columns={currencyColumns}
@@ -367,7 +397,13 @@ export function InternationalPage() {
       )}
 
       {editingCurrency && (
-        <CurrencyModal currency={editingCurrency} busy={busy} onClose={() => setEditingCurrency(null)} onSave={commitCurrency} />
+        <CurrencyModal
+          currency={editingCurrency.row}
+          isNew={editingCurrency.isNew}
+          busy={busy}
+          onClose={() => setEditingCurrency(null)}
+          onSave={commitCurrency}
+        />
       )}
 
       {editingLanguage && (
@@ -564,11 +600,13 @@ function CountryModal({
 
 function CurrencyModal({
   currency,
+  isNew,
   busy,
   onClose,
   onSave,
 }: {
   currency: CurrencyDef;
+  isNew: boolean;
   busy: boolean;
   onClose: () => void;
   onSave: (draft: CurrencyDef) => void;
@@ -577,8 +615,26 @@ function CurrencyModal({
   const [draft, setDraft] = useState<CurrencyDef>(currency);
 
   return (
-    <Modal isOpen onClose={onClose} title={t("admin.international.currencyTitle", { code: currency.code })} subtitle={currency.isBase ? t("admin.international.baseCurrency") : t("admin.international.displayCurrency")} maxWidth="md">
+    <Modal isOpen onClose={onClose} title={isNew ? t("admin.international.newCurrency") : t("admin.international.currencyTitle", { code: currency.code })} subtitle={currency.isBase ? t("admin.international.baseCurrency") : t("admin.international.displayCurrency")} maxWidth="md">
       <div className="space-y-4 font-sans text-xs">
+        {isNew && (
+          <div>
+            <Label>{t("admin.international.currencyCode")}</Label>
+            <input
+              className={inputClass}
+              maxLength={3}
+              spellCheck={false}
+              placeholder="CAD"
+              value={draft.code}
+              onChange={(e) => {
+                // The code is the only thing a staff member types here: name, symbol and
+                // decimal count come from the ISO tables, and a rate the shop already approved
+                // is offered so it does not have to be looked up again.
+                setDraft(newCurrencyDraft(e.target.value, draft.sortOrder));
+              }}
+            />
+          </div>
+        )}
         <div>
           <Label>{t("admin.international.name")}</Label>
           <input className={inputClass} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />

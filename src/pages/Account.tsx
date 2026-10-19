@@ -31,7 +31,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { useI18n } from "../i18n/I18nProvider";
-import { useCurrency } from "../context/CurrencyContext";
+import { formatBaseMoney, formatOrderCharged } from "../utils/currency";
 
 // Standard Stepper Order Pipeline
 // The `status` values are the persisted database strings the stepper is keyed on; only the
@@ -447,8 +447,10 @@ const OrderNotesAndActions: React.FC<{
 };
 
 export default function Account() {
-  const { t } = useI18n();
-  const { format } = useCurrency();
+  const { t, locale } = useI18n();
+  // Order history is a record, not a quote: the money below is rendered in the currency the
+  // order was actually taken in. Converting it with `useCurrency().format` would re-derive
+  // past amounts from today's rate.
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -726,7 +728,7 @@ export default function Account() {
 
                         {refundedTotal > 0 && (
                           <span className="px-3 py-1 rounded text-xs font-mono border border-sky-800/40 bg-sky-950/40 text-sky-300">
-                            {t("status.refunded")} {format(refundedTotal)}
+                            {t("status.refunded")} {formatBaseMoney(refundedTotal, locale)}
                           </span>
                         )}
 
@@ -734,7 +736,7 @@ export default function Account() {
                         <div className="text-end">
                           <span className="text-[10px] text-muted block uppercase font-mono">{t("common.total")}</span>
                           <span className="font-mono font-bold text-sm sm:text-base text-gold">
-                            {format(order.total)}
+                            {formatOrderCharged(order, locale)}
                           </span>
                         </div>
                       </div>
@@ -838,10 +840,10 @@ export default function Account() {
                             </div>
                             <div className="text-end shrink-0">
                               <span className="text-xs font-mono font-bold text-gold">
-                                {format(item.price * item.quantity)}
+                                {formatBaseMoney(item.price * item.quantity, locale)}
                               </span>
                               <span className="text-[10px] text-muted block">
-                                ({format(item.price)} {t("account.each")})
+                                ({formatBaseMoney(item.price, locale)} {t("account.each")})
                               </span>
                             </div>
                           </div>
@@ -942,7 +944,7 @@ export default function Account() {
                         <ul className="space-y-1 text-[11px] text-muted font-mono">
                           {order.refundRecords.map((r) => (
                             <li key={`${r.reference || "refund"}-${r.date}`}>
-                              {format(r.amount)} — {r.status}
+                              {formatBaseMoney(r.amount, locale)} — {r.status}
                               {r.reference ? ` · ref ${r.reference}` : ""} · {r.date}
                             </li>
                           ))}

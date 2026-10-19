@@ -4,9 +4,10 @@ import { Modal, ConfirmDialog } from "../components/Modal";
 import { StatusBadge } from "../components/StatusBadge";
 import { Plus, Edit, Trash2, Sparkles, Check } from "lucide-react";
 import { useI18n } from "../../i18n/I18nProvider";
+import { formatBaseMoney } from "../../utils/currency";
 
 export const CollectionsPage: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { collections, products, addCollection, updateCollection, deleteCollection, contentName } =
     useAdminData();
 
@@ -283,7 +284,7 @@ export const CollectionsPage: React.FC = () => {
                       <span className="font-semibold text-ivory">{p.name}</span>
                       <span className="text-[10px] font-mono text-gold/80">({p.sku})</span>
                     </div>
-                    <span className="font-mono text-gold">Rs. {p.price.toLocaleString()}</span>
+                    <span className="font-mono text-gold">{formatBaseMoney(p.price, locale)}</span>
                   </div>
                 );
               })}

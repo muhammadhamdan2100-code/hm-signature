@@ -17,9 +17,10 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "../../i18n/I18nProvider";
+import { formatBaseMoney } from "../../utils/currency";
 
 export const ProductsList: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const {
     products,
     categories,
@@ -103,11 +104,11 @@ export const ProductsList: React.FC = () => {
       accessor: (p) => (
         <div>
           <span className="text-xs font-mono font-semibold text-gold block">
-            Rs. {p.price.toLocaleString()}
+            {formatBaseMoney(p.price, locale)}
           </span>
           {p.salePrice && (
             <span className="text-[10px] font-mono text-muted line-through">
-              Rs. {p.salePrice.toLocaleString()}
+              {formatBaseMoney(p.salePrice, locale)}
             </span>
           )}
         </div>
@@ -370,7 +371,7 @@ export const ProductsList: React.FC = () => {
                       {t("admin.products.price")}
                     </span>
                     <span className="text-sm font-mono font-bold text-gold">
-                      Rs. {quickViewProduct.price.toLocaleString()}
+                      {formatBaseMoney(quickViewProduct.price, locale)}
                     </span>
                   </div>
                   <div className="bg-navy/80 p-2.5 rounded border border-gold/15">

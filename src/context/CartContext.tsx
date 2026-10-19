@@ -3,7 +3,7 @@ import type { Product } from "../data/products";
 import { useAuth } from "./AuthContext";
 import { useCurrency } from "./CurrencyContext";
 import { isSupabaseConfigured } from "../lib/supabase";
-import { previewCoupon } from "../services/checkoutOps";
+import { previewCoupon, type CouponMessage } from "../services/checkoutOps";
 import { fetchShippingConfig, DEFAULT_SHIPPING_CONFIG, type ShippingConfig } from "../services/storeConfig";
 import { clearServerCart, fetchServerCart, pushCartToServer } from "../services/cartSync";
 import { captureEvent } from "../services/analyticsCapture";
@@ -39,7 +39,7 @@ interface CartContextType {
   promoCode: string;
   applyPromo: (code: string) => Promise<boolean>;
   clearPromo: () => void;
-  promoError: string;
+  promoError: CouponMessage | null;
   promoDiscountAmount: number;
   freeShippingThreshold: number;
   syncing: boolean;
@@ -87,7 +87,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [promoCode, setPromoCode] = useState(readStoredPromo);
   const [promoPercentage, setPromoPercentage] = useState(0);
   const [fixedDiscount, setFixedDiscount] = useState(0);
-  const [promoError, setPromoError] = useState("");
+  const [promoError, setPromoError] = useState<CouponMessage | null>(null);
   const [shippingConfig, setShippingConfig] = useState<ShippingConfig>(DEFAULT_SHIPPING_CONFIG);
   const [syncing, setSyncing] = useState(false);
 
@@ -233,7 +233,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearPromo = () => {
     resetPromo();
-    setPromoError("");
+    setPromoError(null);
   };
 
   const clearCart = () => {
@@ -269,7 +269,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         if (!result.valid || !result.type) {
           resetPromo();
-          setPromoError(result.reason || `${promoCode} no longer applies to this bag.`);
+          setPromoError(result.reason ?? { key: "cart.promoReasonStale", params: { code: promoCode } });
           return;
         }
         // Only the code survives a refresh, so the money value is re-derived here with
@@ -302,18 +302,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // server-side before any money is charged.
   const applyPromo = async (code: string): Promise<boolean> => {
     const clean = code.trim().toUpperCase();
-    setPromoError("");
+    setPromoError(null);
 
     if (!clean) {
       resetPromo();
-      setPromoError("Enter a promotion code.");
+      setPromoError({ key: "cart.promoReasonEnterCode" });
       return false;
     }
 
     const result = await previewCoupon(clean, rawSubtotal);
     if (!result.valid || !result.type) {
       resetPromo();
-      setPromoError(result.reason || "That code is not recognised.");
+      setPromoError(result.reason ?? { key: "cart.promoReasonNotRecognised", params: { code: clean } });
       return false;
     }
 

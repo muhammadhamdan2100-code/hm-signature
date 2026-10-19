@@ -4,11 +4,11 @@ import { DataTable, type Column } from "../components/DataTable";
 import { StatCard } from "../components/StatCard";
 import { ArrowLeftRight, Banknote, RotateCcw, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
-import { formatPKR } from "../../utils/currency";
+import { formatBaseMoney } from "../../utils/currency";
 import { useI18n } from "../../i18n/I18nProvider";
 
 export const RefundsPage: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { refunds, payments } = useAdminData();
 
   const paymentById = (id: string): PaymentRecord | undefined =>
@@ -45,7 +45,7 @@ export const RefundsPage: React.FC = () => {
         return (
           <div>
             <span className="font-mono text-[11px] text-ivory block">
-              {formatPKR(p?.amount ?? 0)}
+              {formatBaseMoney(p?.amount ?? 0, locale)}
             </span>
             <span className="text-[10px] text-muted">{p?.method || "—"}</span>
           </div>
@@ -53,12 +53,19 @@ export const RefundsPage: React.FC = () => {
       },
     },
     {
+      // `refunds.amount` is validated against the payment it comes out of, which the ledger
+      // holds in rupees, so the figure is base PKR. The stored currency is a settlement record
+      // and is shown as its own line rather than as a label on the rupee amount.
       header: t("admin.refunds.refundAmount"),
       accessor: (r) => (
-        <span className="font-mono font-bold text-rose-300 text-xs">
-          − {formatPKR(r.amount)}
-          {r.currency && r.currency !== "PKR" ? ` ${r.currency}` : ""}
-        </span>
+        <div>
+          <span className="font-mono font-bold text-rose-300 text-xs">
+            − {formatBaseMoney(r.amount, locale)}
+          </span>
+          {r.currency && r.currency !== "PKR" && (
+            <span className="text-[10px] font-mono text-muted block">{r.currency}</span>
+          )}
+        </div>
       ),
       sortable: true,
     },
@@ -140,7 +147,7 @@ export const RefundsPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           title={t("admin.refunds.totalRefunded")}
-          value={formatPKR(totalRefunded)}
+          value={formatBaseMoney(totalRefunded, locale)}
           subtitle={t("admin.refunds.processedRefunds")}
           icon={Wallet}
           accent={true}

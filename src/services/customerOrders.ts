@@ -115,6 +115,11 @@ export async function fetchCustomerOrdersFromDB(): Promise<CustomerOrderView[]> 
       discount: Number(o.discount_amount || 0),
       shippingFee: Number(o.shipping_cost || 0),
       total: Number(o.total),
+      // The order's own money, exactly as the database recorded it at placement. These are
+      // snapshots: a later rate change must not move what this shopper was charged.
+      currency: o.currency || "PKR",
+      totalInCurrency:
+        o.total_in_currency === null || o.total_in_currency === undefined ? null : Number(o.total_in_currency),
       status: o.status as OrderStatus,
       shippingStatus: shipmentToShippingStatus(o.shipping_status),
       paymentStatus: (payment?.status || o.payment_status || "Pending") as PaymentStatus,

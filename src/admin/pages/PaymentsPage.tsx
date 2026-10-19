@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { useI18n } from "../../i18n/I18nProvider";
+import { formatBaseMoney } from "../../utils/currency";
 
 // "Verification Pending" is a real status written by submit_payment_proof once a
 // customer attaches evidence, so it needs the same staff actions as "Pending".
@@ -29,7 +30,7 @@ const AWAITING_STAFF_STATUSES: PaymentStatus[] = ["Pending", "Verification Pendi
 const isAwaitingStaffAction = (status: PaymentStatus) => AWAITING_STAFF_STATUSES.includes(status);
 
 export const PaymentsPage: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { payments, refunds, verifyPayment, rejectPayment, markCodCollected, createRefund } = useAdminData();
   const navigate = useNavigate();
 
@@ -159,7 +160,7 @@ export const PaymentsPage: React.FC = () => {
       header: t("admin.payments.amount"),
       accessor: (p) => (
         <span className="font-mono font-bold text-gold text-xs">
-          Rs. {p.amount.toLocaleString()}
+          {formatBaseMoney(p.amount, locale)}
         </span>
       ),
       sortable: true,
@@ -203,7 +204,7 @@ export const PaymentsPage: React.FC = () => {
         return (
           <div className="space-y-0.5">
             <span className="font-mono text-[11px] text-gold block">
-              Rs. {total.toLocaleString()} / {p.amount.toLocaleString()}
+              {formatBaseMoney(total, locale)} / {formatBaseMoney(p.amount, locale)}
             </span>
             <span className={`text-[9px] font-mono uppercase tracking-wider ${pendingOnly ? "text-amber-300" : "text-rose-300"}`}>
               {pendingOnly
@@ -298,7 +299,7 @@ export const PaymentsPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title={t("admin.payments.totalVerifiedSettlement")}
-          value={`Rs. ${totalVerifiedAmount.toLocaleString()}`}
+          value={formatBaseMoney(totalVerifiedAmount, locale)}
           subtitle={t("admin.payments.settledVerifiedPayments")}
           icon={Building2}
           accent={true}

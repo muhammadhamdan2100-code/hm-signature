@@ -265,17 +265,4 @@ export const dbService = {
     return true;
   },
 
-  // COUPONS
-  async validateCoupon(code: string): Promise<DBCoupon | null> {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from("coupons")
-        .select("*")
-        .eq("code", code.trim().toUpperCase())
-        .eq("active", true)
-        .single();
-      if (!error && data) return data as DBCoupon;
-    }
-    return null;
-  }
 };

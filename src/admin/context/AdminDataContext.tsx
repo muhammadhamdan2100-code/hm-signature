@@ -18,6 +18,7 @@ import {
   deleteCollectionSafeFromDB,
   adjustStockAtomicDB,
 } from "../../services/adminCatalog";
+import { getCurrentStaff } from "../../services/auth";
 import {
   fetchAdminOrdersFromDB,
   fetchAdminPaymentsFromDB,
@@ -1508,9 +1509,14 @@ export const AdminDataProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (dbCols.length > 0) setCollections(dbCols);
         }
 
+        // Orders and the coupon list are staff data. A shopper's page asks for neither, and
+        // fetching the coupon list from the public key is how every discount code the shop has
+        // issued ends up readable by anyone. getCurrentStaff reads the session synchronously, so
+        // the admin panel still gets both on its first load.
+        const staffSession = Boolean(getCurrentStaff());
         const [dbOrders, dbCoupons, dbShipping] = await Promise.all([
-          fetchAdminOrdersFromDB(),
-          fetchAdminCouponsFromDB(),
+          staffSession ? fetchAdminOrdersFromDB() : Promise.resolve([]),
+          staffSession ? fetchAdminCouponsFromDB() : Promise.resolve([]),
           fetchAdminShippingMethodsFromDB(),
         ]);
 

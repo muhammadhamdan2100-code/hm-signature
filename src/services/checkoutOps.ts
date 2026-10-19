@@ -1,5 +1,4 @@
 import { supabase } from "../lib/supabase";
-import { formatPKR } from "../utils/currency";
 
 export interface PlaceOrderItem {
   variant_id: string;
@@ -126,7 +125,17 @@ export interface CouponPreview {
   value?: number;
   minSpend?: number;
   maxDiscount?: number;
-  reason?: string;
+  /**
+   * A translation key plus its parameters, never a finished sentence: this runs in a
+   * service with no language context, and the shopper's currency for an amount is only
+   * known where the message is rendered.
+   */
+  reason?: CouponMessage;
+}
+
+export interface CouponMessage {
+  key: string;
+  params?: Record<string, string | number>;
 }
 
 // Real coupon lookup for the cart display. The authoritative discount is still
@@ -134,29 +143,58 @@ export interface CouponPreview {
 // server would refuse.
 export async function previewCoupon(code: string, subtotal: number): Promise<CouponPreview> {
   const clean = code.trim().toUpperCase();
-  if (!clean) return { code, valid: false, reason: "Enter a promotion code." };
+  if (!clean) return { code, valid: false, reason: { key: "cart.promoReasonEnterCode" } };
 
-  const { data, error } = await supabase
-    .from("coupons")
-    .select("code, type, value, min_spend, max_discount, start_date, end_date, usage_limit, used_count, per_user_limit, active")
-    .eq("code", clean)
-    .maybeSingle();
-
-  if (error || !data) return { code, valid: false, reason: `The promotion code ${clean} is not recognised.` };
+  // The database answers for the one code the shopper typed. Reading the table would let anyone
+  // list every discount the shop has issued; the table path below only runs until
+  // `checkout_coupon` is installed, so deploying and migrating are safe in either order.
+  type CouponRow = {
+    code: string;
+    type: "percentage" | "fixed";
+    value: number | string;
+    min_spend: number | string | null;
+    max_discount: number | string | null;
+    start_date: string | null;
+    end_date: string | null;
+    usage_limit: number | null;
+    used_count: number | null;
+    active: boolean;
+  };
+  const notRecognised = { code, valid: false, reason: { key: "cart.promoReasonNotRecognised", params: { code: clean } } };
+  const called = await supabase.rpc("checkout_coupon", { p_code: clean });
+  let row: CouponRow | null = called.error ? null : ((called.data ?? [])[0] as CouponRow | undefined) ?? null;
+  if (called.error) {
+    // PostgREST reports an uninstalled function as code PGRST202; the text is a separate field.
+    const missing = /PGRST202|does not exist|Could not find the function/i.test(
+      `${called.error.code || ""} ${called.error.message || ""}`
+    );
+    if (!missing) return notRecognised;
+    const legacy = await supabase
+      .from("coupons")
+      .select("code, type, value, min_spend, max_discount, start_date, end_date, usage_limit, used_count, per_user_limit, active")
+      .eq("code", clean)
+      .maybeSingle();
+    if (legacy.error || !legacy.data) return notRecognised;
+    row = legacy.data as CouponRow;
+  }
+  const data = row;
+  if (!data) return notRecognised;
 
   const now = Date.now();
-  if (!data.active) return { code, valid: false, reason: `The promotion ${data.code} is no longer active.` };
+  if (!data.active) return { code, valid: false, reason: { key: "cart.promoReasonInactive", params: { code: data.code } } };
   if (data.start_date && new Date(data.start_date).getTime() > now) {
-    return { code, valid: false, reason: `The promotion ${data.code} is not active yet.` };
+    return { code, valid: false, reason: { key: "cart.promoReasonNotStarted", params: { code: data.code } } };
   }
   if (data.end_date && new Date(data.end_date).getTime() < now) {
-    return { code, valid: false, reason: `The promotion ${data.code} has expired.` };
+    return { code, valid: false, reason: { key: "cart.promoReasonExpired", params: { code: data.code } } };
   }
-  if (data.usage_limit != null && data.used_count >= data.usage_limit) {
-    return { code, valid: false, reason: `The promotion ${data.code} has reached its usage limit.` };
+  if (data.usage_limit != null && Number(data.used_count ?? 0) >= data.usage_limit) {
+    return { code, valid: false, reason: { key: "cart.promoReasonUsageLimit", params: { code: data.code } } };
   }
   if (data.min_spend != null && subtotal < Number(data.min_spend)) {
-    return { code, valid: false, reason: `A minimum spend of ${formatPKR(Number(data.min_spend))} applies to ${data.code}.` };
+    // The amount is a base-rupee rule from the catalogue; the screen that shows it knows
+    // which currency the shopper is browsing in, so the number travels unformatted.
+    return { code, valid: false, reason: { key: "cart.promoReasonMinSpend", params: { code: data.code, amount: Number(data.min_spend) } } };
   }
 
   return {

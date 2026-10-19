@@ -5,9 +5,10 @@ import { StatusBadge, useStatusLabel, usePaymentMethodLabel } from "../component
 import { Eye } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "../../i18n/I18nProvider";
+import { formatBaseMoney, formatOrderCharged, orderBaseAmountLabel } from "../../utils/currency";
 
 export const OrdersList: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   // Payment and order states are stored in English; the badge helper renders them in the
   // console language and leaves a status the dictionaries have never seen exactly as it arrived.
   const statusLabel = useStatusLabel();
@@ -62,24 +63,30 @@ export const OrdersList: React.FC = () => {
     },
     {
       header: t("admin.orders.totalAmount"),
-      accessor: (o) => (
-        <div>
-          <span className="text-xs font-mono font-bold text-gold block">
-            Rs. {o.total.toLocaleString()}
-          </span>
-          {(o.destinationCountry || (o.currency && o.currency !== "PKR")) && (
-            <span className="text-[10px] font-mono text-muted block">
-              {o.currency || "PKR"}
-              {o.destinationCountry ? ` · ${o.destinationCountry}` : ""}
-            </span>
-          )}
-          {o.discount > 0 && (
-            <span className="text-[10px] font-mono text-emerald-400 block">
-              Saved Rs. {o.discount}
-            </span>
-          )}
-        </div>
-      ),
+      accessor: (o) => {
+        // The charged figure comes from the order's own currency snapshot. A USD order is
+        // shown in dollars and the rupee amount is named as rupees; neither one borrows the
+        // other's label, and neither changes when the storefront currency is switched.
+        const charged = formatOrderCharged(o, locale);
+        const base = orderBaseAmountLabel(o, locale);
+        return (
+          <div>
+            <span className="text-xs font-mono font-bold text-gold block">{charged}</span>
+            {base && <span className="text-[10px] font-mono text-muted block">{base}</span>}
+            {(o.destinationCountry || (o.currency && o.currency !== "PKR")) && (
+              <span className="text-[10px] font-mono text-muted block">
+                {o.currency || "PKR"}
+                {o.destinationCountry ? ` · ${o.destinationCountry}` : ""}
+              </span>
+            )}
+            {o.discount > 0 && (
+              <span className="text-[10px] font-mono text-emerald-400 block">
+                Saved {formatBaseMoney(o.discount, locale)}
+              </span>
+            )}
+          </div>
+        );
+      },
       sortable: true,
     },
     {

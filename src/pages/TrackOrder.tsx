@@ -588,6 +588,9 @@ export default function TrackOrder() {
                   </span>
                   {typeof result.total === "number" && (
                     <span className="block mt-1 font-mono text-sm font-bold text-gold num-lining">
+                      {/* `get_order_tracking` returns the base rupee total and no currency
+                          snapshot, so this stays rupees rather than being re-derived at
+                          today's rate. Naming the recorded currency needs the RPC. */}
                       {formatPKR(result.total)}
                     </span>
                   )}

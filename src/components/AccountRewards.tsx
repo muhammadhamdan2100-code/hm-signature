@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Coins, Gift, Loader2, Package, Sparkles, X } from "lucide-react";
 import { useI18n } from "../i18n/I18nProvider";
-import { useCurrency } from "../context/CurrencyContext";
+import { formatStoredAmount } from "../utils/currency";
 import { useAuth } from "../context/AuthContext";
 import {
   cancelMyPreOrder,
@@ -29,7 +29,6 @@ import {
  */
 export function AccountRewards() {
   const { t, locale } = useI18n();
-  const { format } = useCurrency();
   const { user } = useAuth();
   const [loyalty, setLoyalty] = useState<LoyaltyState | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
@@ -195,7 +194,12 @@ export function AccountRewards() {
             {cards.map((card) => (
               <li key={card.id} className="border border-gold/20 bg-navy rounded px-4 py-3 space-y-1">
                 <p className="font-mono text-sm text-gold">{card.codeMasked}</p>
-                <p className="text-lg font-serif text-ivory">{format(card.balance)}</p>
+                {/* `gift_cards.balance` is held in the card's own currency, so it is rendered as
+                    stored. Treating it as a rupee amount and converting it would move a gift's
+                    value with the exchange rate the shopper happens to be browsing in. */}
+                <p className="text-lg font-serif text-ivory">
+                  {formatStoredAmount(card.balance, card.currency, locale)}
+                </p>
                 <p className="text-[11px] text-muted">
                   {card.status === "Active" ? t("rewards.cardActive") : card.status === "Partially Redeemed" ? t("rewards.cardPartial") : card.status}
                 </p>

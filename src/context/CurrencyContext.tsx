@@ -9,6 +9,8 @@ import {
   type CurrencyDef,
 } from "../lib/money";
 import { fetchCurrencies, fetchCountries, type CountryRule } from "../services/internationalConfig";
+import { countryCurrency } from "../lib/countries";
+import { buildSelectorCurrencies, hasUsableRate } from "../lib/currencyOffer";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useI18n } from "../i18n/I18nProvider";
 
@@ -38,6 +40,16 @@ interface CurrencyContextType {
   countries: CountryRule[];
   deliverableCountries: CountryRule[];
   currency: CurrencyDef;
+  /**
+   * What the navbar's currency control offers: every currency the shop prices in, plus the
+   * own money of each configured destination even where no rate exists yet. Deduplicated by
+   * code, so France, Germany and Spain contribute one EUR.
+   */
+  selectorCurrencies: CurrencyDef[];
+  /** Whether the currency on screen has a configured rate, so prices really are converted. */
+  rateIsConfigured: boolean;
+  /** The same question for any code, used by the selector's per-row state. */
+  hasConfiguredRate: (code: string) => boolean;
   country: CountryRule | null;
   setCurrencyCode: (code: string) => void;
   setCountryCode: (code: string) => void;
@@ -102,33 +114,47 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
 
   const deliverableCountries = useMemo(() => countries.filter((c) => c.enabled), [countries]);
 
+  // Priced currencies first, then each configured destination's own money even where the shop
+  // has no rate for it. A rate-less entry is selectable and renders as itself in the list, but
+  // `format` refuses to convert with it — see `rateIsConfigured`.
+  const selectorCurrencies = useMemo(() => buildSelectorCurrencies(enabledCurrencies), [enabledCurrencies]);
+
+  const hasConfiguredRate = useCallback(
+    (code: string) => hasUsableRate(currencyByCode(selectorCurrencies, code)),
+    [selectorCurrencies]
+  );
+
+  // A saved destination decides the currency unless the shopper has picked one by hand. The
+  // destination's money is read from ISO metadata, not from the `countries` row, because four of
+  // those rows still name the wrong currency for their country.
   const resolvedCurrency = useMemo(() => {
-    const stored = currencyByCode(enabledCurrencies, currencyCode);
+    const stored = currencyByCode(selectorCurrencies, currencyCode);
     if (stored) return stored;
     if (!chosenByShopper) {
-      const fromCountry = resolvedCountry?.currencyCode
-        ? currencyByCode(enabledCurrencies, resolvedCountry.currencyCode)
-        : null;
+      const inferred = countryCurrency(resolvedCountry?.code ?? null)?.code;
+      const fromCountry = inferred ? currencyByCode(selectorCurrencies, inferred) : null;
       if (fromCountry) return fromCountry;
-      const fromRegion = currencyForRegion(detectRegion(), enabledCurrencies);
+      const fromRegion = currencyForRegion(detectRegion(), selectorCurrencies);
       if (fromRegion) return fromRegion;
     }
     return base;
-  }, [enabledCurrencies, currencyCode, chosenByShopper, resolvedCountry, base]);
+  }, [selectorCurrencies, currencyCode, chosenByShopper, resolvedCountry, base]);
+
+  const rateIsConfigured = hasUsableRate(resolvedCurrency);
 
   // Only an explicit choice is remembered. Persisting an inferred value here would lock the
   // shopper out of their destination's own currency the moment the configuration arrives, and
   // would keep honouring a country the store later closes.
   const setCurrencyCode = useCallback(
     (code: string) => {
-      const next = currencyByCode(enabledCurrencies, code);
+      const next = currencyByCode(selectorCurrencies, code);
       if (!next) return;
       setCode(next.code);
       write(CURRENCY_KEY, next.code);
       setChosen(true);
       write(CURRENCY_CHOSEN_KEY, "1");
     },
-    [enabledCurrencies]
+    [selectorCurrencies]
   );
 
   const setCountryCode = useCallback(
@@ -144,16 +170,22 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   );
 
   const format = useCallback(
-    (baseAmount: number) => formatMinor(toMinor(baseAmount, resolvedCurrency), resolvedCurrency, locale),
-    [resolvedCurrency, locale]
+    (baseAmount: number) => {
+      // No rate, no conversion. The rupee price is printed as itself and the selector explains
+      // why, rather than inventing a figure in a currency nobody supplied a rate for.
+      const target = rateIsConfigured ? resolvedCurrency : base;
+      return formatMinor(toMinor(baseAmount, target), target, locale);
+    },
+    [resolvedCurrency, rateIsConfigured, base, locale]
   );
 
   const formatIn = useCallback(
     (baseAmount: number, code: string) => {
-      const target = currencyByCode(currencies, code) ?? resolvedCurrency;
+      const wanted = currencyByCode(selectorCurrencies, code) ?? resolvedCurrency;
+      const target = hasUsableRate(wanted) ? wanted : base;
       return formatMinor(toMinor(baseAmount, target), target, locale);
     },
-    [currencies, resolvedCurrency, locale]
+    [selectorCurrencies, resolvedCurrency, base, locale]
   );
 
   const ratesAreManual = useMemo(
@@ -167,6 +199,9 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     countries,
     deliverableCountries,
     currency: resolvedCurrency,
+    selectorCurrencies,
+    rateIsConfigured,
+    hasConfiguredRate,
     country: resolvedCountry,
     setCurrencyCode,
     setCountryCode,

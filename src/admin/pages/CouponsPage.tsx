@@ -5,9 +5,10 @@ import { StatusBadge } from "../components/StatusBadge";
 import { Modal, ConfirmDialog } from "../components/Modal";
 import { Plus, Edit, Trash2, Tag, RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n/I18nProvider";
+import { formatBaseMoney } from "../../utils/currency";
 
 export const CouponsPage: React.FC = () => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { coupons, addCoupon, updateCoupon, deleteCoupon } = useAdminData();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -109,7 +110,7 @@ export const CouponsPage: React.FC = () => {
     },
     {
       header: t("admin.coupons.minOrder"),
-      accessor: (c) => <span className="font-mono text-muted">Rs. {c.minOrder}</span>,
+      accessor: (c) => <span className="font-mono text-muted">{formatBaseMoney(c.minOrder, locale)}</span>,
       sortable: true,
     },
     {

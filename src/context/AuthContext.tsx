@@ -9,6 +9,7 @@ import {
   type AddressRecord,
 } from "../services/customerAddresses";
 import { getCurrentStaff, setCurrentStaff, logoutStaff } from "../services/auth";
+import { passwordProblem } from "../services/authFlow";
 import { INITIAL_STAFF_MEMBERS, getDefaultPermissionsForRole } from "../services/staff";
 import { PRIMARY_ADMIN_EMAIL, isPrimaryAdmin, ROLE_PERMISSIONS, type StaffMember, type StaffRole } from "../types/staff";
 
@@ -52,7 +53,6 @@ interface AuthContextType {
   login: (email: string, password?: string, rememberMe?: boolean) => Promise<{ success: boolean; role?: UserRole; error?: string }>;
   signup: (email: string, password: string, fullName: string) => Promise<{ success: boolean; role?: UserRole; error?: string; needsEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
-  forgotPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   completePasswordReset: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
   addAddress: (address: Omit<UserAddress, "id">) => Promise<boolean>;
@@ -518,6 +518,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     password: string,
     fullName: string
   ): Promise<{ success: boolean; role?: UserRole; error?: string; needsEmailConfirmation?: boolean }> => {
+    // Refused before the password is ever sent: the shop minimum is a rule, not a hint.
+    if (passwordProblem(password)) {
+      return {
+        success: false,
+        error: "Choose a stronger password: at least 8 characters, with a letter and a number.",
+      };
+    }
     setIsLoading(true);
     try {
       if (isSupabaseConfigured()) {
@@ -570,26 +577,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const forgotPassword = async (
-    email: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    if (!isSupabaseConfigured()) {
-      return { success: false, error: "Password reset requires Supabase to be configured." };
-    }
-    const redirectTo = `${window.location.origin}/login?reset=1`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo,
-    });
-    if (error) return { success: false, error: error.message };
-    return { success: true };
-  };
-
   const completePasswordReset = async (
     newPassword: string
   ): Promise<{ success: boolean; error?: string }> => {
     if (!isSupabaseConfigured()) return { success: false, error: "Not connected." };
-    if (newPassword.length < 6) {
-      return { success: false, error: "Password must be at least 6 characters." };
+    // The same rule the form applies, enforced again where the write actually happens.
+    if (passwordProblem(newPassword)) {
+      return { success: false, error: "Choose a stronger password: at least 8 characters, with a letter and a number." };
     }
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) {
@@ -694,7 +688,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isCustomer: isCustomerRole(user?.role),
         login,
         signup,
-        forgotPassword,
         completePasswordReset,
         logout,
         updateProfile,

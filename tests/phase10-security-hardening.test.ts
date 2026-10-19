@@ -9,14 +9,21 @@ import { readSupabaseEnv, rest } from "./support/harness";
  * them is read directly by the React client, so under a correct posture an anonymous
  * visitor — holding only the public anon key — must be denied every row. Before the
  * Phase 10 security-hardening migration this suite is RED (locations and
- * shipping_providers returned live rows to anon); after it is GREEN. A run that leaves
- * no rows is required, so the one write probe deletes exactly the row it created.
+ * shipping_providers returned live rows to anon); after it is GREEN.
+ *
+ * The read probes below send nothing that can change a row, so they run by default and are
+ * the evidence that the hole is still open. The two WRITE probes are opt-in, because this
+ * suite runs against the live project: `HARDENING_WRITE_PROBE=1` is required to attempt an
+ * INSERT or PATCH at all. Without it they report skipped instead of leaving a real
+ * production row that a cleanup delete would have to chase.
  *
  *     npx vitest run tests/phase10-security-hardening.test.ts
+ *     HARDENING_WRITE_PROBE=1 npx vitest run tests/phase10-security-hardening.test.ts
  */
 
 const env = readSupabaseEnv();
 const run = env ? describe : describe.skip;
+const runWrites = env && process.env.HARDENING_WRITE_PROBE === "1" ? describe : describe.skip;
 
 // Tables proven to hold configuration/rows that must never be public.
 const DATA_BEARING = ["locations", "shipping_providers"];
@@ -66,7 +73,9 @@ run("Phase 10 authorization (RLS enforcement against the anon key)", () => {
     const rows = res.json<unknown[]>();
     expect(Array.isArray(rows) ? rows.length : 1).toBe(0);
   });
+});
 
+runWrites("Phase 10 write probes (opt-in — these touch the live project)", () => {
   it("anon cannot append a fabricated row to the audit ledger (and cleans up if it could)", async () => {
     // Attempt the tamper. With RLS enforced the insert is rejected and nothing is created.
     const probe = {

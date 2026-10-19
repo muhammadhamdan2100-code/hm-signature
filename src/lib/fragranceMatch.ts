@@ -9,6 +9,7 @@
  */
 
 import type { Product } from "../data/products";
+import { facetLabel } from "./facets";
 import {
   FRAGRANCE_FAMILIES,
   INTENSITY_OPTIONS,
@@ -71,7 +72,7 @@ export interface FinderStep {
 export interface RankedProduct {
   product: Product;
   score: number;
-  reasons: string[];
+  reasons: MatchReason[];
   matchedAttributes: string[];
 }
 
@@ -351,8 +352,38 @@ export function matchedNoteNames(text: string, product: Product): string[] {
 
 interface DimensionResult {
   points: number;
-  reason?: string;
+  reason?: MatchReason;
   attribute?: string;
+}
+
+/**
+ * A "why this matched" line as data: a dictionary key plus the words that fill it. The
+ * engine has no language, so it must not compose a sentence — it names the reason and the
+ * screen that shows it translates the sentence and any facet word inside it.
+ */
+export interface MatchReason {
+  key: string;
+  params?: Record<string, string>;
+}
+
+/** Params that carry a catalogue enum token rather than free text. */
+const FACET_PARAMS = new Set(["intensity", "season", "occasion"]);
+
+/**
+ * Turn a `MatchReason` into the shopper's sentence. The facet words inside it go through
+ * the same table the spec sheet uses, so "Moderate" reads "Modérée" in French in both
+ * places. Anything the facet table does not know is passed through untouched.
+ */
+export function resolveMatchReason(
+  reason: MatchReason,
+  t: (key: string, params?: Record<string, string | number>) => string
+): string {
+  if (!reason.params) return t(reason.key);
+  const params: Record<string, string> = {};
+  for (const [name, value] of Object.entries(reason.params)) {
+    params[name] = FACET_PARAMS.has(name) ? facetLabel(t, value) : value;
+  }
+  return t(reason.key, params);
 }
 
 const familyDimension = (answers: FinderAnswers, product: Product): DimensionResult => {
@@ -366,10 +397,10 @@ const familyDimension = (answers: FinderAnswers, product: Product): DimensionRes
   return {
     points: SCORE_WEIGHTS.family * factor,
     attribute: factor === 1 ? "family" : "family:adjacent",
-    reason:
-      factor === 1
-        ? `${label} matches the family you chose.`
-        : `Its ${label} character overlaps with the family you chose.`,
+    reason: {
+      key: factor === 1 ? "scentFinder.reasonFamilyExact" : "scentFinder.reasonFamilyAdjacent",
+      params: { family: label },
+    },
   };
 };
 
@@ -380,10 +411,15 @@ const intensityDimension = (answers: FinderAnswers, product: Product): Dimension
   return {
     points: SCORE_WEIGHTS.intensity * factor,
     attribute: factor === 1 ? "intensity" : "intensity:adjacent",
-    reason:
-      factor === 1
-        ? `Declared ${lower(product.intensity)} projection — the level you asked for.`
-        : `Its ${lower(product.intensity)} projection sits a step ${direction > 0 ? "above" : "below"} the level you chose.`,
+    reason: {
+      key:
+        factor === 1
+          ? "scentFinder.reasonIntensityExact"
+          : direction > 0
+          ? "scentFinder.reasonIntensityAbove"
+          : "scentFinder.reasonIntensityBelow",
+      params: { intensity: lower(product.intensity) },
+    },
   };
 };
 
@@ -395,15 +431,15 @@ const seasonDimension = (answers: FinderAnswers, product: Product): DimensionRes
   const listed = lower(value);
   const declaredAllSeason = listed === "all season";
 
-  let reason: string;
+  let reason: MatchReason;
   if (declaredAllSeason && wanted !== "all season") {
-    reason = `Marked all season, so it answers your ${wanted} brief.`;
+    reason = { key: "scentFinder.reasonSeasonAllFor", params: { season: wanted } };
   } else if (wanted === "all season" && !declaredAllSeason) {
-    reason = `Marked ${listed}, which covers part of the year you described.`;
+    reason = { key: "scentFinder.reasonSeasonPartial", params: { season: listed } };
   } else if (factor === 1) {
-    reason = `Listed for ${listed} — the season you named.`;
+    reason = { key: "scentFinder.reasonSeasonExact", params: { season: listed } };
   } else {
-    reason = `Its ${listed} listing covers part of your ${wanted} brief.`;
+    reason = { key: "scentFinder.reasonSeasonNear", params: { season: listed, wanted } };
   }
 
   return {
@@ -420,10 +456,13 @@ const occasionDimension = (answers: FinderAnswers, product: Product): DimensionR
   return {
     points: SCORE_WEIGHTS.occasion * factor,
     attribute: factor === 1 ? "occasion" : "occasion:adjacent",
-    reason:
-      factor === 1
-        ? `Listed for ${lower(value)} wear, as you described.`
-        : `Its ${lower(value)} listing sits close to your ${lower(answers.occasion)} moment.`,
+    reason: {
+      key: factor === 1 ? "scentFinder.reasonOccasionExact" : "scentFinder.reasonOccasionNear",
+      params:
+        factor === 1
+          ? { occasion: lower(value) }
+          : { occasion: lower(value), wanted: lower(answers.occasion) },
+    },
   };
 };
 
@@ -435,7 +474,14 @@ const leaningDimension = (answers: FinderAnswers, product: Product): DimensionRe
   return {
     points: SCORE_WEIGHTS.leaning * factor,
     attribute: "leaning",
-    reason: word === "versatile" ? "Composed as a versatile scent, suited to anyone." : `Composed as a ${word} scent.`,
+    reason: {
+      key:
+        word === "versatile"
+          ? "scentFinder.reasonLeaningVersatile"
+          : word === "masculine"
+          ? "scentFinder.reasonLeaningMasculine"
+          : "scentFinder.reasonLeaningFeminine",
+    },
   };
 };
 
@@ -449,9 +495,10 @@ const notesDimension = (answers: FinderAnswers, product: Product): DimensionResu
   return {
     points: SCORE_WEIGHTS.notes * (counted.length / 4),
     attribute: "notes",
-    reason: hits.length > 3
-      ? `It declares ${named} and more of the notes you mentioned.`
-      : `It declares ${named} — the notes you mentioned.`,
+    reason: {
+      key: hits.length > 3 ? "scentFinder.reasonNotesMany" : "scentFinder.reasonNotes",
+      params: { notes: named },
+    },
   };
 };
 
@@ -467,7 +514,7 @@ export function scoreProduct(answers: FinderAnswers, product: Product): RankedPr
   ];
 
   let points = 0;
-  const reasons: string[] = [];
+  const reasons: MatchReason[] = [];
   const matchedAttributes: string[] = [];
 
   dimensions.forEach((d) => {

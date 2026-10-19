@@ -4,9 +4,20 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Lock, Mail, User, X, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
 import { useAuth, isStaffRole } from "../context/AuthContext";
 import { useI18n } from "../i18n/I18nProvider";
+import {
+  OTP_LENGTH,
+  fetchEnabledProviders,
+  normalizeOtp,
+  passwordProblem,
+  requestRecoveryCode,
+  startOAuth,
+  verifyRecoveryCode,
+  type AuthProvider,
+  type PasswordProblem,
+} from "../services/authFlow";
 
 export default function Login() {
-  const { user, login, signup, forgotPassword, completePasswordReset, isLoading } = useAuth();
+  const { user, login, signup, completePasswordReset, isLoading } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -32,9 +43,12 @@ export default function Login() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
-  const [resetSuccess, setResetSuccess] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
+  // Three steps: the address, the code that address receives, then the new password. Someone who
+  // only knows a customer's email must still hold their inbox to reach the password field.
+  const [recoveryStage, setRecoveryStage] = useState<"email" | "code" | "password">("email");
+  const [otp, setOtp] = useState("");
 
   // Auto-redirect if already authenticated (except while completing a password reset)
   useEffect(() => {
@@ -53,7 +67,8 @@ export default function Login() {
   useEffect(() => {
     if (resetMode) {
       setIsResetOpen(true);
-      setResetSuccess(false);
+      // The emailed link already proved they hold the inbox, so only the password is left.
+      setRecoveryStage("password");
     }
   }, [resetMode]);
 
@@ -106,6 +121,11 @@ export default function Login() {
         setErrorMessage(t("validation.fullNameRequired"));
         return;
       }
+      const weak = passwordProblem(password);
+      if (weak) {
+        setErrorMessage(t(PASSWORD_PROBLEM_KEYS[weak]));
+        return;
+      }
 
       const result = await signup(email, password, fullName);
       if (!result.success) {
@@ -125,14 +145,22 @@ export default function Login() {
     }
   };
 
+  const PASSWORD_PROBLEM_KEYS: Record<PasswordProblem, string> = {
+    tooShort: "validation.passwordMinCharacters",
+    tooLong: "validation.passwordTooLong",
+    needsLetter: "validation.passwordNeedsLetter",
+    needsNumber: "validation.passwordNeedsNumber",
+    tooCommon: "validation.passwordTooCommon",
+  };
+
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetEmail) return;
+    setErrorMessage("");
 
-    if (resetMode) {
-      // Completing reset: session already established via the emailed link
-      if (newPassword.length < 6) {
-        setErrorMessage(t("validation.passwordMinCharacters"));
+    if (recoveryStage === "password") {
+      const problem = passwordProblem(newPassword);
+      if (problem) {
+        setErrorMessage(t(PASSWORD_PROBLEM_KEYS[problem]));
         return;
       }
       setResetBusy(true);
@@ -150,17 +178,33 @@ export default function Login() {
       return;
     }
 
-    const res = await forgotPassword(resetEmail);
-    if (!res.success) {
-      setErrorMessage(res.error || t("auth.resetSendFailed"));
+    if (recoveryStage === "code") {
+      if (!normalizeOtp(otp)) {
+        setErrorMessage(t("validation.recoveryCodeShape"));
+        return;
+      }
+      setResetBusy(true);
+      const res = await verifyRecoveryCode(resetEmail, otp);
+      setResetBusy(false);
+      if (!res.verified) {
+        setErrorMessage(t("auth.recoveryCodeInvalid"));
+        return;
+      }
+      setRecoveryStage("password");
       return;
     }
-    setResetSuccess(true);
-    setTimeout(() => {
-      setIsResetOpen(false);
-      setResetSuccess(false);
-      setResetEmail("");
-    }, 3500);
+
+    if (!resetEmail) return;
+    setResetBusy(true);
+    const res = await requestRecoveryCode(resetEmail);
+    setResetBusy(false);
+    if (!res.sent) {
+      setErrorMessage(t("auth.resetSendFailed"));
+      return;
+    }
+    // Whether the address is ours or not, the words are the same — this form must not double as a
+    // member list. The code step follows either way.
+    setRecoveryStage("code");
   };
 
   return (
@@ -218,6 +262,8 @@ export default function Login() {
               </motion.div>
             )}
           </div>
+
+          <ProviderSignInRow />
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Full Name field (Signup Mode Only) */}
@@ -410,90 +456,167 @@ export default function Login() {
                 </button>
               </div>
 
-              {resetSuccess ? (
-                <div role="status" className="py-4 text-center space-y-2">
-                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                  <p className="text-sm text-ivory font-serif font-bold">{t("auth.resetInstructionsSent")}</p>
-                  <p className="text-xs text-muted">
-                    {t("auth.resetCheckInboxPrefix")} <span className="text-gold font-mono">{resetEmail}</span> {t("auth.resetCheckInboxSuffix")}
+              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                {errorMessage && (
+                  <p id="recovery-form-error" role="alert" className="text-xs text-rose-300">
+                    {errorMessage}
                   </p>
-                </div>
-              ) : (
-                <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
-                  {errorMessage && (
-                    <p id="recovery-form-error" role="alert" className="text-xs text-rose-300">
-                      {errorMessage}
+                )}
+                {recoveryStage === "password" ? (
+                  <>
+                    <p className="text-xs text-muted">{t("auth.recoveryCodeVerified")}</p>
+                    <div>
+                      <label htmlFor="recovery-password" className="block text-xs text-ivory mb-1">
+                        {t("auth.newPasswordLabel")}
+                      </label>
+                      <input
+                        id="recovery-password"
+                        type="password"
+                        required
+                        minLength={8}
+                        aria-invalid={errorMessage ? true : undefined}
+                        aria-describedby={errorMessage ? "recovery-form-error" : undefined}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
+                      />
+                      <p className="text-[10px] text-muted mt-1">{t("auth.newPasswordHint")}</p>
+                    </div>
+                  </>
+                ) : recoveryStage === "code" ? (
+                  <>
+                    <p className="text-xs text-muted">
+                      {t("auth.resetInstructionsSent")}{" "}
+                      {t("auth.resetCheckInboxPrefix")}{" "}
+                      <span className="text-gold font-mono break-all">{resetEmail}</span>{" "}
+                      {t("auth.resetCheckInboxSuffix")}
                     </p>
-                  )}
-                  {resetMode ? (
-                    <>
-                      <p className="text-xs text-muted">
-                        {t("auth.resetLinkVerified")}
-                      </p>
-                      <div>
-                        <label htmlFor="recovery-password" className="block text-xs text-ivory mb-1">
-                          {t("auth.newPasswordLabel")}
-                        </label>
-                        <input
-                          id="recovery-password"
-                          type="password"
-                          required
-                          minLength={6}
-                          aria-invalid={errorMessage ? true : undefined}
-                          aria-describedby={errorMessage ? "recovery-form-error" : undefined}
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="••••••••"
-                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
-                        />
-                        <p className="text-[10px] text-muted mt-1">{t("auth.newPasswordHint")}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-muted">
-                        {t("auth.forgotPasswordHelp")}
-                      </p>
-                      <div>
-                        <label htmlFor="recovery-email" className="block text-xs text-ivory mb-1">
-                          {t("auth.emailLabel")}
-                        </label>
-                        <input
-                          id="recovery-email"
-                          type="email"
-                          required
-                          aria-invalid={errorMessage ? true : undefined}
-                          aria-describedby={errorMessage ? "recovery-form-error" : undefined}
-                          value={resetEmail}
-                          onChange={(e) => setResetEmail(e.target.value)}
-                          placeholder="name@domain.com"
-                          className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
-                        />
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsResetOpen(false)}
-                      className="px-4 py-2 min-h-11 rounded text-xs text-muted hover:text-ivory"
-                    >
-                      {t("common.cancel")}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={resetBusy}
-                      className="px-4 py-2 min-h-11 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-50"
-                    >
-                      {resetMode ? t("auth.setNewPassword") : t("auth.sendInstructions")}
-                    </button>
-                  </div>
-                </form>
-              )}
+                    <div>
+                      <label htmlFor="recovery-code" className="block text-xs text-ivory mb-1">
+                        {t("auth.recoveryCodeLabel")}
+                      </label>
+                      <input
+                        id="recovery-code"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        required
+                        maxLength={OTP_LENGTH + 4}
+                        aria-invalid={errorMessage ? true : undefined}
+                        aria-describedby={errorMessage ? "recovery-form-error" : undefined}
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value)}
+                        placeholder="••••••"
+                        className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory font-mono tracking-[6px] focus:outline-none focus:border-gold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecoveryStage("email");
+                          setOtp("");
+                        }}
+                        className="mt-2 text-[10px] text-muted hover:text-gold underline underline-offset-2"
+                      >
+                        {t("auth.recoveryUseOtherEmail")}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted">{t("auth.forgotPasswordHelp")}</p>
+                    <div>
+                      <label htmlFor="recovery-email" className="block text-xs text-ivory mb-1">
+                        {t("auth.emailLabel")}
+                      </label>
+                      <input
+                        id="recovery-email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        aria-invalid={errorMessage ? true : undefined}
+                        aria-describedby={errorMessage ? "recovery-form-error" : undefined}
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        placeholder="name@domain.com"
+                        className="w-full bg-navy border border-gold/20 rounded px-3 py-2 min-h-11 text-xs text-ivory focus:outline-none focus:border-gold"
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsResetOpen(false)}
+                    className="px-4 py-2 min-h-11 rounded text-xs text-muted hover:text-ivory"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetBusy}
+                    className="px-4 py-2 min-h-11 bg-gold text-navy font-semibold text-xs rounded hover:bg-goldLight disabled:opacity-50"
+                  >
+                    {recoveryStage === "password"
+                      ? t("auth.setNewPassword")
+                      : recoveryStage === "code"
+                        ? t("auth.verifyCode")
+                        : t("auth.sendInstructions")}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
     </main>
+  );
+}
+
+/**
+ * One-tap sign-in with the providers this project was actually given credentials for. The list is
+ * read from the auth server rather than assumed, so an unconfigured provider never appears as a
+ * button that only leads to an error page.
+ */
+function ProviderSignInRow() {
+  const { t } = useI18n();
+  const [providers, setProviders] = useState<AuthProvider[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchEnabledProviders()
+      .then((list) => {
+        if (alive) setProviders(list.filter((p) => p.kind === "oauth"));
+      })
+      .catch(() => {
+        if (alive) setProviders([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (providers.length === 0) return null;
+
+  return (
+    <div className="mb-5 space-y-3">
+      <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[2px] text-muted">
+        <span className="h-px flex-1 bg-gold/20" />
+        <span>{t("auth.orContinueWith")}</span>
+        <span className="h-px flex-1 bg-gold/20" />
+      </div>
+      <div className="grid gap-2">
+        {providers.map((provider) => (
+          <button
+            key={provider.id}
+            type="button"
+            onClick={() => startOAuth(provider.id)}
+            className="w-full min-h-11 rounded-lg border border-gold/25 bg-navy px-4 text-xs text-ivory hover:border-gold/60 hover:text-gold transition-colors focus:outline-none focus-visible:border-gold focus-visible:ring-1 focus-visible:ring-gold"
+          >
+            {t("auth.continueWith", { provider: provider.label })}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

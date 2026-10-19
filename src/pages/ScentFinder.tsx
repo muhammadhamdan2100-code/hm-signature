@@ -8,6 +8,7 @@ import { useCart } from "../context/CartContext";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 import ProductVisual from "../components/ProductVisual";
 import { useCurrency } from "../context/CurrencyContext";
+import { facetLabel } from "../lib/facets";
 import { useI18n } from "../i18n/I18nProvider";
 import {
   FINDER_STEPS,
@@ -17,6 +18,7 @@ import {
   defaultFinderAnswers,
   describeAnswers,
   familyOptionsForCatalogue,
+  resolveMatchReason,
   scoreProducts,
   selectRecommendations,
   sizesFor,
@@ -301,7 +303,7 @@ export default function ScentFinder() {
       if (option.value === "self") return t("scentFinder.intentSelf");
       if (option.value === "gift") return t("scentFinder.intentGift");
     }
-    return option.label;
+    return facetLabel(t, option.value) || option.label;
   };
 
   const optionCaption = (definition: FinderStep, option: FinderOption): string | undefined => {
@@ -693,11 +695,11 @@ function ResultCard({ item, rank, strong }: { item: RankedProduct; rank: number;
           <div className="text-[11px] tracking-[1.5px] text-goldLight mb-3">{t("scentFinder.whyMatched")}</div>
           <ul className="space-y-2 text-sm text-ivory/90">
             {reasons.map((reason) => (
-              <li key={reason} className="flex gap-2 leading-relaxed">
+              <li key={reason.key} className="flex gap-2 leading-relaxed">
                 <span className="text-gold shrink-0" aria-hidden="true">
                   ·
                 </span>
-                <span className="min-w-0 break-words">{reason}</span>
+                <span className="min-w-0 break-words">{resolveMatchReason(reason, t)}</span>
               </li>
             ))}
           </ul>
