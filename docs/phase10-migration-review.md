@@ -14,9 +14,14 @@
 > `500 invalid transaction termination`; no file under `src/` calls any of the three, so it is a
 > latent bug, not an open hole.
 >
-> **Newly found, still open:** functions reach `anon` through the **default `PUBLIC` execute
-> grant** as well as explicit ones, so `proacl LIKE '%anon=X%'` undercounts. Closing that needs an
-> allow-list migration checked against the admin panel — see below.
+> **Closed after that first pass:** functions reach `anon` through the **default `PUBLIC` execute
+> grant** as well as explicit ones, so `proacl LIKE '%anon=X%'` undercounts — `has_function_privilege()`
+> is the only honest predicate. Twelve warehouse / fulfilment / audit RPCs were still enterable by a
+> visitor for that reason. `20261019200000_anon_function_execute_lockdown.sql` revokes them from
+> `PUBLIC, anon` and re-grants to `authenticated, service_role`; applied and verified (401 at REST,
+> `still-anon-executable=NONE` in the catalog), with a standing test block in
+> `phase10-security-hardening.test.ts`. Every public route was re-swept afterwards: 0 failed
+> requests, 0 console errors.
 
 # Phase 10 hardening + currency migrations — review before any execution
 

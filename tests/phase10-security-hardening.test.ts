@@ -159,3 +159,65 @@ run("A visitor cannot enumerate the shop's discount codes", () => {
     ).toBe(0);
   });
 });
+
+/**
+ * The privilege that `REVOKE ... FROM anon` cannot reach.
+ *
+ * PostgreSQL has no deny: when a function's EXECUTE arrives through the default `PUBLIC` grant,
+ * revoking it from `anon` alone changes nothing, and the acl text still looks clean. The only way
+ * back is to revoke from `PUBLIC` and re-grant the roles that legitimately need it — which is what
+ * 20261019200000 does for the warehouse, fulfilment and audit functions.
+ *
+ * A 401 is asserted rather than "not 200", because before the fix `adjust_location_stock` answered
+ * 500 — it had entered the body and failed there. Only a privilege denial keeps it out.
+ */
+const PRIVATE_RPCS: Array<[string, Record<string, unknown>]> = [
+  [
+    "adjust_location_stock",
+    {
+      p_location_id: "00000000-0000-0000-0000-000000000000",
+      p_variant_id: "00000000-0000-0000-0000-000000000000",
+      p_quantity: 0,
+      p_movement_type_code: "probe",
+    },
+  ],
+  [
+    "reserve_order_stock",
+    {
+      p_order_id: "00000000-0000-0000-0000-000000000000",
+      p_location_id: "00000000-0000-0000-0000-000000000000",
+      p_variant_id: "00000000-0000-0000-0000-000000000000",
+      p_quantity: 1,
+    },
+  ],
+  ["release_reservation", { p_reservation_id: "00000000-0000-0000-0000-000000000000" }],
+  ["get_location_stock", { p_location_id: "00000000-0000-0000-0000-000000000000", p_variant_id: "00000000-0000-0000-0000-000000000000" }],
+  ["create_fulfillment_from_order", { p_order_id: "00000000-0000-0000-0000-000000000000" }],
+  ["generate_fulfillment_number", {}],
+  // `publish_audit_event` and `write_audit_log` are also revoked at the database, but they are
+  // internal helpers whose argument shape the browser never learns: through REST they answer 404
+  // "no such signature" whether or not the privilege exists, so asserting on them here would
+  // prove nothing. They are covered by the privilege catalog in the migration's verify section.
+];
+
+run("Anon cannot run the warehouse or audit RPCs (PUBLIC-default privilege)", () => {
+  it.each(PRIVATE_RPCS)("rpc/%s is not executable by the public key", async (fn, payload) => {
+    const res = await rest(env!, null, `rpc/${fn}`, { method: "POST", body: payload });
+    expect(res.status, `anon ran ${fn} and got ${res.status}: ${res.text.slice(0, 120)}`).toBe(401);
+  });
+
+  it("leaves the shopper's own lookups reachable, so this is a lockdown and not an outage", async () => {
+    const tracking = await rest(env!, null, "rpc/get_order_tracking", {
+      method: "POST",
+      body: { p_lookup: "HMS-00000000-0000", p_email: "probe@example.com" },
+    });
+    expect(tracking.status).toBeLessThan(400);
+    const quote = await rest(env!, null, "rpc/quote_order", {
+      method: "POST",
+      body: { p_items: [], p_country_code: "PK" },
+    });
+    expect(quote.status).toBeLessThan(400);
+    const coupon = await rest(env!, null, "rpc/checkout_coupon", { method: "POST", body: { p_code: "WELCOME10" } });
+    expect(coupon.status).toBeLessThan(400);
+  });
+});
