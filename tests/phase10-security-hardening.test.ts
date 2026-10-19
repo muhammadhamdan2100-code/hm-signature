@@ -111,3 +111,51 @@ runWrites("Phase 10 write probes (opt-in — these touch the live project)", () 
     }
   });
 });
+
+/**
+ * The privilege layer, measured with statements that cannot change a row.
+ *
+ * Every filter below matches nothing, so these probes ask one question only: was the statement
+ * permitted at all? PostgREST checks the table privilege before it looks at any row, so a 2xx
+ * here means the public key still holds that privilege — and `representation: false` is what
+ * keeps a permitted-but-empty DELETE from reporting 404 and passing by accident.
+ *
+ * This suite is RED until 20261019180000_anon_privilege_lockdown.sql is applied, and is the
+ * proof that it worked.
+ */
+const WRITE_PROTECTED: Record<string, string> = {
+  products: "slug=eq.__qa_no_row__",
+  coupons: "code=eq.__QA_NO_ROW__",
+  site_settings: "key=eq.__qa_no_row__",
+  orders: "order_number=eq.__QA-NO-ROW__",
+  payments: "id=eq.00000000-0000-0000-0000-000000000000",
+  profiles: "id=eq.00000000-0000-0000-0000-000000000000",
+  categories: "slug=eq.__qa_no_row__",
+  collections: "slug=eq.__qa_no_row__",
+  product_variants: "id=eq.00000000-0000-0000-0000-000000000000",
+  audit_log: "id=eq.00000000-0000-0000-0000-000000000000",
+  staff_permissions: "id=eq.00000000-0000-0000-0000-000000000000",
+  locations: "code=eq.__qa_no_row__",
+};
+
+run("Anon holds no write privilege on the shop's own data (zero-row probes)", () => {
+  it.each(Object.entries(WRITE_PROTECTED))("anon cannot DELETE from %s", async (table, filter) => {
+    const del = await rest(env!, null, `${table}?${filter}`, { method: "DELETE", representation: false });
+    expect(
+      del.status,
+      `anon DELETE on ${table} answered ${del.status} — the table privilege is still granted to the public key`
+    ).toBeGreaterThanOrEqual(400);
+  });
+});
+
+run("A visitor cannot enumerate the shop's discount codes", () => {
+  it("listing coupons as anon yields no rows", async () => {
+    const res = await rest(env!, null, "coupons?select=code&limit=50");
+    if (res.status >= 400) return; // denied outright — secure
+    const rows = res.json<{ code?: string }[]>();
+    expect(
+      Array.isArray(rows) ? rows.length : 1,
+      `anon listed ${Array.isArray(rows) ? rows.map((r) => r.code).join(",") : "an unreadable response"}`
+    ).toBe(0);
+  });
+});
