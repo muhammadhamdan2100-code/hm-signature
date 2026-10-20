@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# The admin console is a client-side guard, not a robots rule. Keeping it out of the
+# index costs nothing and avoids exposing the shape of the back office.
+Disallow: /admin/
+Disallow: /account/
+Disallow: /cart
+Disallow: /checkout
+Disallow: /order-confirmation/
+
+Sitemap: https://hm-signature.vercel.app/sitemap.xml

@@ -14,9 +14,13 @@ here, and no deployment was performed or verified from this machine. Treat every
 | Data + auth + storage | Supabase project `ttnfdxabfkmqlqssqdep` (region: Northeast Asia, Tokyo) | Row-level security decides authorisation; the browser never holds a service-role key |
 | Authoritative money/stock maths | Postgres (`place_order`, `verify_payment`, `record_refund`, …) | The client sends intent only (variant ids, quantities, coupon code) |
 
-Routing is a SPA catch-all (`vercel.json` → `/(.*)` → `/index.html`) with `api/`
-functions taking precedence, so deep links such as `/product/mystic-oud` and
-`/account/orders` work on refresh.
+Routing is a SPA catch-all (`vercel.json` → `/(.*)` → `/index.html`). Vercel matches real files in
+`dist/` before applying a rewrite, so hashed assets and the static SEO documents are not shadowed,
+and deep links such as `/product/mystic-oud` and `/account/orders` work on refresh. There is no
+`api/` tier on this deployment (Vercel Hobby ships zero functions), so a same-origin `/api/...`
+request is answered with the SPA's HTML at status 200; every caller in `src/` reads `content-type`
+or parses inside a `try`, so it degrades the same way it did when those paths returned 404.
+`tests/deploy-config.test.ts` keeps any rewrite pointing at the dead API layer out of the config.
 
 ## 2. Build and run
 
@@ -274,11 +278,15 @@ is connected, and the interface says so where the shopper can see it.
 domain. If it is empty the code falls back to `window.location.origin`, which means a preview
 deployment would canonicalise itself.
 
-`/robots.txt` and `/sitemap.xml` are served by `api/robots.js` and `api/sitemap.js` through the
-two rewrites added at the top of `vercel.json` (they must stay ahead of the single-page fallback;
-`tests/deploy-config.test.ts` asserts that order). Any non-production Vercel host is answered with
-`Disallow: /` so staging is never indexed twice. The product list in the sitemap is read from the
-live catalogue through the same public policies a visitor uses.
+`/robots.txt` and `/sitemap.xml` are static files in `public/`, copied into `dist/` by the build.
+They used to be `api/robots.js` and `api/sitemap.js` behind two rewrites, and those functions no
+longer exist — under a catch-all an absent `/robots.txt` would return the SPA's HTML at status 200,
+which a crawler indexes as a page, so the documents have to be real files. `public/sitemap.xml`
+lists only routes that render real content on any deploy: product slugs are deliberately left out,
+because a stale or invented slug would fall through to the "this page doesn't exist" screen and be
+read as a soft 404. Search engines reach product pages by following the links on the home page,
+collections, men and women. When a custom domain replaces `hm-signature.vercel.app`, both files
+must be repointed to it and `VITE_SITE_URL` set to the same origin.
 
 **Currencies — Admin → International**
 
