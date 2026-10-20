@@ -38,7 +38,7 @@ export default function ParentCompany() {
             transition={{ duration: 0.8 }}
             className="border border-gold/25 overflow-hidden"
           >
-            <img src="/xeltrio-banner.png" alt="Xeltrio Technologies" className="w-full h-auto" />
+            <img src="/xeltrio-banner.jpg" alt="Xeltrio Technologies" className="w-full h-auto" />
           </motion.div>
         </div>
       </section>

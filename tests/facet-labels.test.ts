@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dictionaries } from "../src/i18n";
+import { dictionaries } from "./support/dictionaries";
 import { lookup } from "../src/i18n";
 import { facetKey, facetLabel, facetListLabel } from "../src/lib/facets";
 import { INTENSITY_OPTIONS, OCCASION_OPTIONS, SEASON_OPTIONS } from "../src/data/products";

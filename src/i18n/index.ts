@@ -1,9 +1,4 @@
 import { en } from "./dictionaries/en";
-import { ar } from "./dictionaries/ar";
-import { fr } from "./dictionaries/fr";
-import { es } from "./dictionaries/es";
-import { ur } from "./dictionaries/ur";
-import { de } from "./dictionaries/de";
 
 export type Dict = typeof en;
 
@@ -49,7 +44,38 @@ export function interpolate(template: string, vars?: Record<string, string | num
   );
 }
 
-export const dictionaries: Record<string, Dict> = { en, ar, fr, es, ur, de };
+// English is the only dictionary that ships with the app: it is the fallback every other
+// language is measured against, and it is what a first visit renders. The other five are 200-270 KB
+// of text each, so they are fetched the first time a shopper actually chooses that language -
+// loading all six up front cost more JavaScript than the entire rest of the storefront combined.
+export const dictionaries: Record<string, Dict> = { en };
+
+const loaders: Record<string, () => Promise<Record<string, unknown>>> = {
+  ar: () => import("./dictionaries/ar"),
+  fr: () => import("./dictionaries/fr"),
+  es: () => import("./dictionaries/es"),
+  ur: () => import("./dictionaries/ur"),
+  de: () => import("./dictionaries/de"),
+};
+
+/**
+ * Fetch one dictionary, once. A language with no loader is not a failure: the caller keeps
+ * rendering English, which is what an untranslated interface is supposed to do.
+ */
+export function loadDictionary(code: string): Promise<void> {
+  const wanted = (code || "").toLowerCase();
+  if (dictionaries[wanted] || !loaders[wanted]) return Promise.resolve();
+  return loaders[wanted]().then((mod) => {
+    const dict = ((mod as { default?: Dict }).default ?? (mod as Record<string, Dict>)[wanted]) as Dict | undefined;
+    // Set it last: a half-published dictionary would render a page in two languages.
+    if (dict) dictionaries[wanted] = dict;
+  });
+}
+
+export function dictionaryReady(code: string): boolean {
+  const wanted = (code || "").toLowerCase();
+  return !!dictionaries[wanted] || !loaders[wanted];
+}
 
 export function translateFor(code: string): Translator {
   const dict = dictionaries[code] ?? dictionaries[DEFAULT_LANGUAGE];

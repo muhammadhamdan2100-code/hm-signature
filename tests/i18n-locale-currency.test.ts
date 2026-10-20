@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_LANGUAGES, dictionaries, interpolate, lookup } from "../src/i18n";
+import { dictionaries } from "./support/dictionaries";
+import { BUILT_IN_LANGUAGES, interpolate, lookup } from "../src/i18n";
 import { FALLBACK_CURRENCIES, formatMinor } from "../src/lib/money";
 
 /**

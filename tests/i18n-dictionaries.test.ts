@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_LANGUAGES, dictionaries, lookup } from "../src/i18n";
+import { dictionaries } from "./support/dictionaries";
+import { BUILT_IN_LANGUAGES, lookup } from "../src/i18n";
 import { en } from "../src/i18n/dictionaries/en";
 import { ar } from "../src/i18n/dictionaries/ar";
 import { fr } from "../src/i18n/dictionaries/fr";

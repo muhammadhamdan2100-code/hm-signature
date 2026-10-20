@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { applyBundle, type TranslationBundle } from "../src/services/localizedContent";
-import { BUILT_IN_LANGUAGES, dictionaries, interpolate, lookup, translateFor } from "../src/i18n";
+// Loaded for its effect: it fills the translator's map with all six dictionaries, which is
+// what lets this file assert that Arabic wins over the English fallback.
+import "./support/dictionaries";
+import { BUILT_IN_LANGUAGES, interpolate, lookup, translateFor } from "../src/i18n";
 import { en } from "../src/i18n/dictionaries/en";
 import { login, readSupabaseEnv, reportSkip, rest, rpc, suiteCredentials } from "./support/harness";
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dictionaries, lookup } from "../src/i18n";
+import { dictionaries } from "./support/dictionaries";
+import { lookup } from "../src/i18n";
 import {
   defaultFinderAnswers,
   resolveMatchReason,

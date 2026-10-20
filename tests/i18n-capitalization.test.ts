@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dictionaries } from "../src/i18n";
+import { dictionaries } from "./support/dictionaries";
 import { lookup } from "../src/i18n";
 
 // Nav labels are proper labels, not sentences, so in Latin-script locales they start with an

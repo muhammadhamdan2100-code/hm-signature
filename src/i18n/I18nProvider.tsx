@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import {
   BUILT_IN_LANGUAGES,
   DEFAULT_LANGUAGE,
+  dictionaryReady,
+  loadDictionary,
   translateFor,
   type LanguageMeta,
   type Translator,
@@ -47,6 +49,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [languages, setLanguages] = useState<LanguageMeta[]>(BUILT_IN_LANGUAGES);
   const [code, setCode] = useState(() => languageFromUrl() || storedLanguage());
   const [ready, setReady] = useState(false);
+  // Bumped when a language’s dictionary finishes downloading, so the page re-renders in it.
+  const [dictionaryVersion, setDictionaryVersion] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -110,12 +114,28 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     (next: string) => {
       const wanted = (next || "").toLowerCase();
       if (!languages.some((l) => l.code === wanted)) return;
-      setCode(wanted);
+      // Switch once the words have arrived, never to a half-translated screen.
+      loadDictionary(wanted).then(() => setCode(wanted));
     },
     [languages]
   );
 
-  const t = useMemo(() => translateFor(language.code), [language.code]);
+  // Only English ships with the app; the chosen language is fetched the first time it is needed.
+  useEffect(() => {
+    if (dictionaryReady(language.code)) return;
+    let alive = true;
+    loadDictionary(language.code).then(() => {
+      if (alive) setDictionaryVersion((version) => version + 1);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [language.code]);
+
+  // The translator reads a module-level map, so a finished download is invisible to a memo that
+  // only lists the language. `dictionaryVersion` is the one thing that says "the words arrived".
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const t = useMemo(() => translateFor(language.code), [language.code, dictionaryVersion]);
 
   // Memoised so a provider re-render does not hand every useI18n() consumer a new object —
   // admin pages subscribe to several contexts, and an unstable value amplifies re-render storms.

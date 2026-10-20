@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BUILT_IN_LANGUAGES, dictionaries } from "../src/i18n";
+import { dictionaries } from "./support/dictionaries";
+import { BUILT_IN_LANGUAGES } from "../src/i18n";
 import { SEO_LANGUAGES } from "../src/lib/seo";
 import type { Product } from "../src/data/products";
 import {
